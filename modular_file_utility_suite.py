@@ -1,3 +1,4 @@
+import ctypes
 import csv
 import glob
 import hashlib
@@ -173,6 +174,8 @@ BACKEND_DESCRIPTIONS: dict[str, str] = {
     "ImageMagick": "Image processing backend for advanced transform and format workflows.",
 }
 
+SINGLE_INSTANCE_MUTEX_NAME = "Local\\UniversalFileUtilitySuite_SingleInstanceMutex"
+
 
 def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
@@ -214,6 +217,55 @@ def hash_file(path: Path, algorithm: str = "sha256") -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _show_startup_warning(message: str) -> None:
+    if os.name == "nt":
+        try:
+            ctypes.windll.user32.MessageBoxW(None, message, APP_TITLE, 0x00000030)
+            return
+        except Exception:
+            pass
+    print(message, file=sys.stderr)
+
+
+def _focus_existing_window() -> None:
+    if os.name != "nt":
+        return
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, APP_TITLE)
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+    except Exception:
+        return
+
+
+def _acquire_single_instance_mutex() -> tuple[bool, int | None]:
+    if os.name != "nt":
+        return True, None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        create_mutex = kernel32.CreateMutexW
+        create_mutex.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+        create_mutex.restype = ctypes.c_void_p
+        handle = create_mutex(None, False, SINGLE_INSTANCE_MUTEX_NAME)
+        if not handle:
+            return True, None
+        already_exists = kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+        return (not already_exists), int(handle)
+    except Exception:
+        return True, None
+
+
+def _release_single_instance_mutex(handle: int | None) -> None:
+    if os.name != "nt" or not handle:
+        return
+    try:
+        ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(handle))
+    except Exception:
+        return
 
 
 def read_structured(path: Path):
@@ -4811,9 +4863,17 @@ class PresetsBatchTab(ModuleTab):
 
 
 def main() -> None:
+    acquired, mutex_handle = _acquire_single_instance_mutex()
+    if not acquired:
+        _focus_existing_window()
+        _show_startup_warning("Universal File Utility Suite is already running.\n\nOnly one instance can be open at a time.")
+        return
     root = tk.Tk()
-    SuiteApp(root)
-    root.mainloop()
+    try:
+        SuiteApp(root)
+        root.mainloop()
+    finally:
+        _release_single_instance_mutex(mutex_handle)
 
 
 if __name__ == "__main__":

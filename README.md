@@ -19,6 +19,18 @@ This is a modular desktop suite for practical file workflows:
 
 This file is the combined **README + How-To** guide.
 
+## 0) Install/Launch Safety
+
+Installer behavior is configured to reduce duplicate installs and preserve upgrades:
+- Reuses previous install directory automatically (`UsePreviousAppDir`)
+- Hides directory chooser for upgrades (`DisableDirPage=auto`)
+- Detects running app/updater instances via mutex and requests closing before install (`AppMutex`)
+- Replaces existing installed files with the new version during upgrade
+
+Runtime behavior:
+- Main app is single-instance (one running copy at a time)
+- Updater is also single-instance
+
 ## 1) What The App Does
 
 Universal File Utility Suite is designed as one desktop app with separate tools, instead of a single tangled converter view.

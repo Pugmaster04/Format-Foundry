@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import threading
+import ctypes
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,11 +20,61 @@ from tkinter import BooleanVar, StringVar, filedialog, messagebox, ttk
 APP_TITLE = "Universal File Utility Suite Updater"
 CURRENT_VERSION = "0.5"
 APP_SLUG = "UniversalFileUtilitySuite"
+SINGLE_INSTANCE_MUTEX_NAME = "Local\\UniversalFileUtilitySuiteUpdater_SingleInstanceMutex"
 
 
 def looks_like_sha256(value: str) -> bool:
     candidate = value.strip().lower()
     return bool(re.fullmatch(r"[0-9a-f]{64}", candidate))
+
+
+def _show_startup_warning(message: str) -> None:
+    if os.name == "nt":
+        try:
+            ctypes.windll.user32.MessageBoxW(None, message, APP_TITLE, 0x00000030)
+            return
+        except Exception:
+            pass
+    print(message, file=sys.stderr)
+
+
+def _focus_existing_window() -> None:
+    if os.name != "nt":
+        return
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.FindWindowW(None, APP_TITLE)
+        if hwnd:
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            user32.SetForegroundWindow(hwnd)
+    except Exception:
+        return
+
+
+def _acquire_single_instance_mutex() -> tuple[bool, int | None]:
+    if os.name != "nt":
+        return True, None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        create_mutex = kernel32.CreateMutexW
+        create_mutex.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+        create_mutex.restype = ctypes.c_void_p
+        handle = create_mutex(None, False, SINGLE_INSTANCE_MUTEX_NAME)
+        if not handle:
+            return True, None
+        already_exists = kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+        return (not already_exists), int(handle)
+    except Exception:
+        return True, None
+
+
+def _release_single_instance_mutex(handle: int | None) -> None:
+    if os.name != "nt" or not handle:
+        return
+    try:
+        ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(handle))
+    except Exception:
+        return
 
 
 def version_tuple(value: str) -> tuple[int, ...]:
@@ -494,9 +545,17 @@ class UpdaterApp:
 
 
 def main() -> None:
+    acquired, mutex_handle = _acquire_single_instance_mutex()
+    if not acquired:
+        _focus_existing_window()
+        _show_startup_warning("Universal File Utility Suite Updater is already running.\n\nOnly one updater instance can be open at a time.")
+        return
     root = tk.Tk()
-    UpdaterApp(root)
-    root.mainloop()
+    try:
+        UpdaterApp(root)
+        root.mainloop()
+    finally:
+        _release_single_instance_mutex(mutex_handle)
 
 
 if __name__ == "__main__":

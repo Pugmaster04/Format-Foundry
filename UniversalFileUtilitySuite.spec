@@ -5,7 +5,10 @@ a = Analysis(
     ['modular_file_utility_suite.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets\\universal_file_utility_suite.ico', 'assets')],
+    datas=[
+        ('assets\\universal_file_utility_suite.ico', 'assets'),
+        ('HOW_TO_Universal_File_Utility_Suite.txt', '.'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

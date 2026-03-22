@@ -44,6 +44,11 @@ try:
 except Exception:
     imageio_ffmpeg = None
 
+try:
+    import windnd
+except Exception:
+    windnd = None
+
 
 APP_TITLE = "Universal Conversion Hub (UCH)"
 APP_SLUG = "UniversalConversionHubUCH"
@@ -1108,6 +1113,11 @@ class SuiteApp:
         self._startup_tasks_scheduled = False
         self._startup_update_flow_handled = False
         self.tabs: dict[str, ttk.Frame] = {}
+        self.top_notebook: ttk.Notebook | None = None
+        self.notebook: ttk.Notebook | None = None
+        self.workspace_tab: ttk.Frame | None = None
+        self.drag_drop_enabled = False
+        self._last_drop_signature: tuple[tuple[str, ...], float] | None = None
         self.backend_hover_cards: list[HoverCard] = []
         self._normal_geometry = self.root.geometry()
         self._normal_zoomed = False
@@ -1127,6 +1137,7 @@ class SuiteApp:
         self._configure_styles()
         self._build_menu()
         self._build_ui()
+        self._setup_drag_and_drop()
         if bool(self.fullscreen_var.get()) and bool(self.borderless_max_var.get()):
             self.borderless_max_var.set(False)
         self._set_backend_summary_status()
@@ -1908,6 +1919,7 @@ class SuiteApp:
 
         workspace_tab = ttk.Frame(top_notebook, style="App.TFrame")
         top_notebook.add(workspace_tab, text="Workspace")
+        self.workspace_tab = workspace_tab
 
         suite_plan_tab = SuitePlanTab(top_notebook, self)
         self.tabs["Suite Plan"] = suite_plan_tab
@@ -1963,6 +1975,88 @@ class SuiteApp:
         ttk.Label(status_bar, textvariable=self.status_right_var, style="StatusRight.TLabel").pack(side="right", padx=(0, 10), pady=4)
 
         self.log("Suite ready.")
+
+    def _setup_drag_and_drop(self) -> None:
+        if os.name != "nt" or windnd is None:
+            self.drag_drop_enabled = False
+            return
+        try:
+            self._hook_drag_drop_widget_tree(self.root)
+            self.drag_drop_enabled = True
+            self.log("Drag and drop enabled.")
+        except Exception as exc:
+            self.drag_drop_enabled = False
+            self.log(f"Drag and drop unavailable: {exc}")
+
+    def _hook_drag_drop_widget_tree(self, widget: tk.Misc) -> None:
+        if getattr(widget, "_uch_drop_hooked", False):
+            return
+        try:
+            windnd.hook_dropfiles(widget, func=lambda files: self._queue_external_drop(files))
+            setattr(widget, "_uch_drop_hooked", True)
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            self._hook_drag_drop_widget_tree(child)
+
+    @staticmethod
+    def _decode_drop_paths(raw_items: list[Any]) -> list[Path]:
+        decoded: list[Path] = []
+        for item in raw_items:
+            try:
+                text = os.fsdecode(item).replace("\x00", "").strip()
+            except Exception:
+                continue
+            if len(text) >= 2 and text.startswith("{") and text.endswith("}"):
+                text = text[1:-1]
+            if not text:
+                continue
+            path = Path(text).expanduser()
+            if path.exists():
+                decoded.append(path)
+        return ModuleTab._dedupe_paths(decoded)
+
+    def _queue_external_drop(self, raw_items: list[Any]) -> None:
+        paths = self._decode_drop_paths(raw_items)
+        if not paths:
+            return
+        self.root.after(0, lambda dropped=paths: self._dispatch_external_drop(dropped))
+
+    def _active_drop_target_tab(self):
+        try:
+            if self.top_notebook is None:
+                return None
+            selected_top = self.top_notebook.select()
+            if not selected_top:
+                return None
+            top_widget = self.root.nametowidget(selected_top)
+            if self.workspace_tab is not None and top_widget == self.workspace_tab and self.notebook is not None:
+                selected_inner = self.notebook.select()
+                if not selected_inner:
+                    return None
+                return self.root.nametowidget(selected_inner)
+            return top_widget
+        except Exception:
+            return None
+
+    def _dispatch_external_drop(self, paths: list[Path]) -> None:
+        signature = tuple(str(path) for path in paths)
+        now = time.time()
+        if self._last_drop_signature and self._last_drop_signature[0] == signature and (now - self._last_drop_signature[1]) < 0.75:
+            return
+        self._last_drop_signature = (signature, now)
+        target = self._active_drop_target_tab()
+        if target is None or not hasattr(target, "handle_external_drop"):
+            self.status_left_var.set("Current tab does not accept dropped files.")
+            return
+        try:
+            handled = bool(target.handle_external_drop(paths))
+        except Exception as exc:
+            self.error(f"Drag-and-drop failed:\n{exc}")
+            return
+        if not handled:
+            tab_name = getattr(target, "tab_name", "Current tab")
+            self.status_left_var.set(f"{tab_name} does not accept the dropped files.")
 
     def _open_path(self, path: Path) -> None:
         try:
@@ -3297,6 +3391,81 @@ class ModuleTab(ttk.Frame):
         if raw:
             variable.set(raw)
 
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return False
+
+    @staticmethod
+    def _dedupe_paths(paths: list[Path]) -> list[Path]:
+        ordered: list[Path] = []
+        seen: set[Path] = set()
+        for path in paths:
+            if path in seen:
+                continue
+            seen.add(path)
+            ordered.append(path)
+        return ordered
+
+    def _collect_drop_files(self, paths: list[Path], expand_directories: bool = True) -> list[Path]:
+        collected: list[Path] = []
+        for path in self._dedupe_paths(paths):
+            if path.is_file():
+                collected.append(path)
+                continue
+            if expand_directories and path.is_dir():
+                collected.extend(child for child in path.rglob("*") if child.is_file())
+        return self._dedupe_paths(collected)
+
+    def _set_drop_feedback(self, message: str) -> None:
+        status_var = getattr(self, "status_var", None)
+        if hasattr(status_var, "set"):
+            status_var.set(message)
+        elif hasattr(self.app, "status_left_var"):
+            self.app.status_left_var.set(message)
+
+    def _append_paths_to_queue(self, files: list[Path], listbox: tk.Listbox, candidates: list[Path]) -> tuple[int, int]:
+        added = 0
+        duplicates = 0
+        for path in self._dedupe_paths(candidates):
+            if path in files:
+                duplicates += 1
+                continue
+            files.append(path)
+            listbox.insert(END, str(path))
+            added += 1
+        return added, duplicates
+
+    def _add_dropped_file_paths(
+        self, files: list[Path], listbox: tk.Listbox, dropped_paths: list[Path], expand_directories: bool = True
+    ) -> bool:
+        candidates = self._collect_drop_files(dropped_paths, expand_directories=expand_directories)
+        if not candidates:
+            self._set_drop_feedback("No valid files were found in the dropped selection.")
+            return False
+        added, duplicates = self._append_paths_to_queue(files, listbox, candidates)
+        if added:
+            message = f"Added {added} dropped file(s)."
+            if duplicates:
+                message += f" Skipped {duplicates} duplicate(s)."
+            self._set_drop_feedback(message)
+        else:
+            self._set_drop_feedback("All dropped files were already in the queue.")
+        return True
+
+    def _add_dropped_mixed_paths(self, items: list[Path], listbox: tk.Listbox, dropped_paths: list[Path]) -> bool:
+        candidates = [path for path in self._dedupe_paths(dropped_paths) if path.exists()]
+        if not candidates:
+            self._set_drop_feedback("No valid files or folders were found in the dropped selection.")
+            return False
+        added, duplicates = self._append_paths_to_queue(items, listbox, candidates)
+        if added:
+            message = f"Added {added} dropped item(s)."
+            if duplicates:
+                message += f" Skipped {duplicates} duplicate(s)."
+            self._set_drop_feedback(message)
+        else:
+            self._set_drop_feedback("All dropped items were already in the queue.")
+        return True
+
 
 class SuitePlanTab(ModuleTab):
     tab_name = "Suite Plan"
@@ -3633,6 +3802,14 @@ class ConvertTab(ModuleTab):
             "video_preset": self.video_preset.get(),
             "video_crf": self.video_crf.get(),
         }
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        candidates = self._collect_drop_files(paths, expand_directories=True)
+        if not candidates:
+            self._set_drop_feedback("No valid files were found in the dropped selection.")
+            return False
+        self._enqueue_candidates(candidates)
+        return True
 
     def _normalize_source_suffix(self, value: Path | str) -> str:
         raw = value.suffix if isinstance(value, Path) else str(value)
@@ -4077,6 +4254,9 @@ class CompressTab(ModuleTab):
         if "zip_level" in payload:
             self.zip_level_var.set(int(payload["zip_level"]))
 
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_dropped_file_paths(self.files, self.listbox, paths, expand_directories=True)
+
     def run_compress(self) -> None:
         if not self.files:
             messagebox.showwarning(APP_TITLE, "Add files before compressing.")
@@ -4207,6 +4387,9 @@ class ExtractTab(ModuleTab):
         if "subtitle_index" in payload:
             self.subtitle_index_var.set(int(payload["subtitle_index"]))
 
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_dropped_file_paths(self.files, self.listbox, paths, expand_directories=True)
+
     def run_extract(self) -> None:
         if not self.files:
             messagebox.showwarning(APP_TITLE, "Add files before extracting.")
@@ -4284,6 +4467,15 @@ class MetadataTab(ModuleTab):
         raw = filedialog.askopenfilename(title="Select file")
         if raw:
             self.file_var.set(raw)
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        files = self._collect_drop_files(paths, expand_directories=False)
+        if not files:
+            self._set_drop_feedback("Drop a file onto Metadata to inspect or edit it.")
+            return False
+        self.file_var.set(str(files[0]))
+        self._set_drop_feedback(f"Metadata file set to {files[0].name}.")
+        return True
 
     def inspect_metadata(self) -> None:
         raw = self.file_var.get().strip()
@@ -4402,6 +4594,9 @@ class DocumentsTab(ModuleTab):
             self.app.call_ui(lambda: self.status_var.set(f"Converted {total} document(s)."))
 
         self.run_async(work, done_message=f"Document conversion finished for {total} file(s).")
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_dropped_file_paths(self.files, self.listbox, paths, expand_directories=True)
 
 
 class RoadmapModuleTab(ModuleTab):
@@ -4562,6 +4757,9 @@ class ArchivesTab(ModuleTab):
             if path not in self.inputs:
                 self.inputs.append(path)
                 self.listbox.insert(END, str(path))
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_dropped_mixed_paths(self.inputs, self.listbox, paths)
 
     def pick_output_archive(self) -> None:
         fmt = self.archive_format.get()
@@ -4753,6 +4951,9 @@ class RenameOrganizeTab(ModuleTab):
         for row in self.preview_tree.get_children():
             self.preview_tree.delete(row)
         self.preview_rows.clear()
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_dropped_file_paths(self.files, self.listbox, paths, expand_directories=True)
 
 
 class DuplicateFinderTab(ModuleTab):
@@ -4966,6 +5167,16 @@ class DuplicateFinderTab(ModuleTab):
                 self.app.call_ui(lambda: self._set_scan_running(False))
 
         self.run_async(work, done_message="Duplicate scan complete.")
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        for path in self._dedupe_paths(paths):
+            target = path if path.is_dir() else path.parent
+            if target.exists():
+                self.folder_var.set(str(target))
+                self._set_drop_feedback(f"Duplicate scan folder set to {target}.")
+                return True
+        self._set_drop_feedback("Drop a folder or a file whose parent folder should be scanned.")
+        return False
 
 
 class StorageAnalyzerTab(ModuleTab):
@@ -5501,6 +5712,16 @@ class StorageAnalyzerTab(ModuleTab):
 
         self.run_async(work, done_message="Storage analysis complete.")
 
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        for path in self._dedupe_paths(paths):
+            target = path if path.is_dir() else path.parent
+            if target.exists():
+                self.folder_var.set(str(target))
+                self._set_drop_feedback(f"Storage analysis folder set to {target}.")
+                return True
+        self._set_drop_feedback("Drop a folder or a file whose parent folder should be analyzed.")
+        return False
+
 
 class ChecksumsTab(ModuleTab):
     tab_name = "Checksums / Integrity"
@@ -5624,6 +5845,9 @@ class ChecksumsTab(ModuleTab):
             messagebox.showinfo(APP_TITLE, f"Verification OK for {checked} file(s).")
             self.status_var.set(f"Verification passed for {checked} file(s).")
 
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_dropped_file_paths(self.files, self.listbox, paths, expand_directories=True)
+
 
 class SubtitlesTab(ModuleTab):
     tab_name = "Subtitles"
@@ -5711,6 +5935,9 @@ class SubtitlesTab(ModuleTab):
             self.app.call_ui(lambda: self.status_var.set(f"Converted {total} subtitle file(s)."))
 
         self.run_async(work, done_message=f"Subtitle conversion finished for {total} file(s).")
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_dropped_file_paths(self.files, self.listbox, paths, expand_directories=True)
 
 
 class PresetsBatchTab(ModuleTab):
@@ -5879,19 +6106,46 @@ class PresetsBatchTab(ModuleTab):
         files = filedialog.askopenfilenames(title="Choose files for batch queue")
         if not files:
             return
+        self._add_job_paths([Path(raw) for raw in files])
+
+    def _add_job_paths(self, paths: list[Path]) -> bool:
+        preset_name = self.queue_preset_var.get().strip()
+        if not preset_name or preset_name not in self.presets:
+            messagebox.showwarning(APP_TITLE, "Select a valid preset before adding jobs.")
+            return False
         output_dir = self.queue_output_var.get().strip()
-        for raw in files:
-            preset = self.presets[preset_name]
+        candidates = self._collect_drop_files(paths, expand_directories=True)
+        if not candidates:
+            self._set_drop_feedback("No valid files were found for the batch queue.")
+            return False
+        preset = self.presets[preset_name]
+        existing = {(job["module"], job["preset"], job["input"], job["output"]) for job in self.jobs}
+        added = 0
+        duplicates = 0
+        for path in candidates:
             module_name = str(preset.get("module", "Convert"))
+            job_key = (module_name, preset_name, str(path), output_dir)
+            if job_key in existing:
+                duplicates += 1
+                continue
             job = {
                 "module": module_name,
                 "preset": preset_name,
-                "input": raw,
+                "input": str(path),
                 "output": output_dir,
             }
             self.jobs.append(job)
-            self.job_tree.insert("", "end", values=(module_name, preset_name, raw, output_dir))
-        self.status_var.set(f"Queue now has {len(self.jobs)} job(s).")
+            self.job_tree.insert("", "end", values=(module_name, preset_name, str(path), output_dir))
+            existing.add(job_key)
+            added += 1
+        if added:
+            message = f"Queue now has {len(self.jobs)} job(s). Added {added} file(s)."
+            if duplicates:
+                message += f" Skipped {duplicates} duplicate job(s)."
+            self.status_var.set(message)
+        else:
+            self.status_var.set("All dropped files were already present in the batch queue.")
+        return True
 
     def remove_job(self) -> None:
         selected = self.job_tree.selection()
@@ -5905,6 +6159,9 @@ class PresetsBatchTab(ModuleTab):
                     self.jobs.pop(index)
                     break
         self.status_var.set(f"Queue now has {len(self.jobs)} job(s).")
+
+    def handle_external_drop(self, paths: list[Path]) -> bool:
+        return self._add_job_paths(paths)
 
     def clear_jobs(self) -> None:
         self.jobs.clear()

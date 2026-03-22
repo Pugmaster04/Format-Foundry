@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$RepoRoot = "",
     [string]$Reason = "manual",
     [switch]$IncludeBuildOutputs
@@ -83,10 +83,13 @@ if ($IncludeBuildOutputs.IsPresent) {
 
     # Capture current artifact names and keep legacy fallback support for older builds.
     Copy-ExistingArtifacts -ArtifactRoot $artifactRoot -RelativePaths @(
+        "dist\UniversalConversionHub_UCH.exe",
         "dist\UniversalConversionHub_HCB.exe",
         "dist\UniversalFileUtilitySuite.exe",
+        "dist\UniversalConversionHub_UCH_Updater.exe",
         "dist\UniversalConversionHub_HCB_Updater.exe",
         "dist\UniversalFileUtilitySuite_Updater.exe",
+        "installer_output\UniversalConversionHub_UCH_Setup.exe",
         "installer_output\UniversalConversionHub_HCB_Setup.exe",
         "installer_output\UniversalFileUtilitySuite_Setup.exe"
     )
@@ -109,3 +112,4 @@ $metaPath = Join-Path $snapshotRoot "snapshot.json"
 $snapshotMeta | ConvertTo-Json -Depth 4 | Set-Content -Path $metaPath -Encoding UTF8
 
 Write-Host ("Historical snapshot created: {0}" -f $snapshotRoot)
+

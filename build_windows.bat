@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal
 cd /d "%~dp0"
 
@@ -11,7 +11,8 @@ if errorlevel 1 (
 
 echo.
 echo Build complete.
-echo App EXE:      dist\UniversalConversionHub_HCB.exe
-echo Updater EXE:  dist\UniversalConversionHub_HCB_Updater.exe
-echo Installer:    installer_output\UniversalConversionHub_HCB_Setup.exe
+echo App EXE:      dist\UniversalConversionHub_UCH.exe
+echo Updater EXE:  dist\UniversalConversionHub_UCH_Updater.exe
+echo Installer:    installer_output\UniversalConversionHub_UCH_Setup.exe
 pause
+

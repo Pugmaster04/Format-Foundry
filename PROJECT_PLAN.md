@@ -1,4 +1,4 @@
-# Universal Conversion Hub (HCB) - Project Plan
+﻿# Universal Conversion Hub (UCH) - Project Plan
 
 ## Vision
 Build one desktop app with modular tools instead of a single tangled interface.  
@@ -39,9 +39,9 @@ Each module should be independently testable, replaceable, and extensible.
 - App entrypoint: `modular_file_utility_suite.py`
 - Updater entrypoint: `suite_updater.py`
 - Release builds:
-  - `UniversalConversionHub_HCB.exe`
-  - `UniversalConversionHub_HCB_Updater.exe`
-  - `UniversalConversionHub_HCB_Setup.exe`
+  - `UniversalConversionHub_UCH.exe`
+  - `UniversalConversionHub_UCH_Updater.exe`
+  - `UniversalConversionHub_UCH_Setup.exe`
 - Includes all requested module tabs:
   - Convert
   - Compress
@@ -70,3 +70,4 @@ Each module should be independently testable, replaceable, and extensible.
    - Linux release packaging
    - code signing
    - automated release publishing
+

@@ -17,19 +17,25 @@ import tkinter as tk
 from tkinter import BooleanVar, StringVar, filedialog, messagebox, ttk
 
 
-APP_TITLE = "Universal Conversion Hub (HCB) Updater"
+APP_TITLE = "Universal Conversion Hub (UCH) Updater"
 CURRENT_VERSION = "0.5"
-APP_SLUG = "UniversalConversionHubHCB"
-LEGACY_APP_SLUGS = ("UniversalFileUtilitySuite",)
+APP_SLUG = "UniversalConversionHubUCH"
+LEGACY_APP_SLUGS = ("UniversalConversionHubHCB", "UniversalFileUtilitySuite")
 SINGLE_INSTANCE_MUTEX_NAMES = (
+    "Local\\UniversalConversionHubUCHUpdater_SingleInstanceMutex",
     "Local\\UniversalConversionHubHCBUpdater_SingleInstanceMutex",
     "Local\\UniversalFileUtilitySuiteUpdater_SingleInstanceMutex",
 )
-SINGLE_INSTANCE_LOCKFILE_NAME = "universal_conversion_hub_hcb_updater.lock"
+SINGLE_INSTANCE_LOCKFILE_NAME = "universal_conversion_hub_uch_updater.lock"
 DEFAULT_GITHUB_REPO = "Pugmaster04/Universal-File-Conversion"
 DEFAULT_GITHUB_REPO_URL = f"https://github.com/{DEFAULT_GITHUB_REPO}"
-UPDATER_USER_AGENT = "UniversalConversionHubHCB-Updater/1.0"
-DEFAULT_UPDATE_DOWNLOAD_PREFIX = "UniversalConversionHub_HCB_Update"
+UPDATER_USER_AGENT = "UniversalConversionHubUCH-Updater/1.0"
+DEFAULT_UPDATE_DOWNLOAD_PREFIX = "UniversalConversionHub_UCH_Update"
+LEGACY_WINDOW_TITLES = (
+    APP_TITLE,
+    "Universal Conversion Hub (HCB) Updater",
+    "Universal File Utility Suite Updater",
+)
 
 
 def looks_like_sha256(value: str) -> bool:
@@ -52,11 +58,12 @@ def _focus_existing_window() -> bool:
         return False
     try:
         user32 = ctypes.windll.user32
-        hwnd = user32.FindWindowW(None, APP_TITLE)
-        if hwnd:
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            user32.SetForegroundWindow(hwnd)
-            return True
+        for title in LEGACY_WINDOW_TITLES:
+            hwnd = user32.FindWindowW(None, title)
+            if hwnd:
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+                return True
     except Exception:
         return False
     return False

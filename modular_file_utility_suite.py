@@ -1,4 +1,5 @@
 import ctypes
+import colorsys
 import csv
 import glob
 import hashlib
@@ -44,13 +45,19 @@ except Exception:
     imageio_ffmpeg = None
 
 
-APP_TITLE = "Universal Conversion Hub (HCB)"
-APP_SLUG = "UniversalConversionHubHCB"
-LEGACY_APP_SLUGS = ("UniversalFileUtilitySuite",)
+APP_TITLE = "Universal Conversion Hub (UCH)"
+APP_SLUG = "UniversalConversionHubUCH"
+LEGACY_APP_SLUGS = ("UniversalConversionHubHCB", "UniversalFileUtilitySuite")
 APP_VERSION = "0.5"
 DEFAULT_UPDATE_MANIFEST_URL = ""
-APP_EXE_BASENAME = "UniversalConversionHub_HCB"
-UPDATER_EXE_BASENAME = "UniversalConversionHub_HCB_Updater"
+APP_EXE_BASENAME = "UniversalConversionHub_UCH"
+UPDATER_EXE_BASENAME = "UniversalConversionHub_UCH_Updater"
+LEGACY_UPDATER_EXE_BASENAMES = ("UniversalConversionHub_HCB_Updater", "UniversalFileUtilitySuite_Updater")
+LEGACY_WINDOW_TITLES = (
+    APP_TITLE,
+    "Universal Conversion Hub (HCB)",
+    "Universal File Utility Suite - Modular Starter",
+)
 GUIDE_FILENAMES = (
     "README.md",
     "HOW_TO_Universal_File_Utility_Suite.txt",
@@ -178,10 +185,11 @@ BACKEND_DESCRIPTIONS: dict[str, str] = {
 }
 
 SINGLE_INSTANCE_MUTEX_NAMES = (
+    "Local\\UniversalConversionHubUCH_SingleInstanceMutex",
     "Local\\UniversalConversionHubHCB_SingleInstanceMutex",
     "Local\\UniversalFileUtilitySuite_SingleInstanceMutex",
 )
-SINGLE_INSTANCE_LOCKFILE_NAME = "universal_conversion_hub_hcb.lock"
+SINGLE_INSTANCE_LOCKFILE_NAME = "universal_conversion_hub_uch.lock"
 
 
 def ensure_dir(path: Path) -> None:
@@ -242,6 +250,14 @@ class OperationCanceledError(RuntimeError):
     """Raised when a user cancels a long-running task."""
 
 
+@dataclass
+class StorageViewEntry:
+    label: str
+    path: Path | None
+    size: int
+    kind: str
+
+
 def _show_startup_warning(message: str) -> None:
     if os.name == "nt":
         try:
@@ -257,10 +273,12 @@ def _focus_existing_window() -> None:
         return
     try:
         user32 = ctypes.windll.user32
-        hwnd = user32.FindWindowW(None, APP_TITLE)
-        if hwnd:
-            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            user32.SetForegroundWindow(hwnd)
+        for title in LEGACY_WINDOW_TITLES:
+            hwnd = user32.FindWindowW(None, title)
+            if hwnd:
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+                break
     except Exception:
         return
 
@@ -1063,8 +1081,9 @@ class SuiteApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
-        self.root.geometry("1380x920")
-        self.root.minsize(1180, 780)
+        min_width, min_height = self._preferred_min_window_size()
+        self.root.minsize(min_width, min_height)
+        self.root.geometry(self._calculate_display_matched_geometry())
         self.root.protocol("WM_DELETE_WINDOW", self._request_close)
 
         self.main_thread = threading.current_thread()
@@ -1208,7 +1227,7 @@ class SuiteApp:
         outer = ttk.Frame(wizard, padding=14)
         outer.pack(fill="both", expand=True)
 
-        ttk.Label(outer, text="Welcome to Universal Conversion Hub (HCB)", font=("Segoe UI Semibold", 14)).pack(anchor="w")
+        ttk.Label(outer, text="Welcome to Universal Conversion Hub (UCH)", font=("Segoe UI Semibold", 14)).pack(anchor="w")
         ttk.Label(
             outer,
             text="Set your defaults now. You can change them later from File -> Settings.",
@@ -2680,10 +2699,18 @@ class SuiteApp:
             self.runtime_dir / f"{UPDATER_EXE_BASENAME}.exe",
             self.script_dir / f"{UPDATER_EXE_BASENAME}.exe",
             self.script_dir / "dist" / f"{UPDATER_EXE_BASENAME}.exe",
-            self.runtime_dir / "UniversalFileUtilitySuite_Updater.exe",
-            self.script_dir / "UniversalFileUtilitySuite_Updater.exe",
-            self.script_dir / "dist" / "UniversalFileUtilitySuite_Updater.exe",
         ]
+        for legacy_name in LEGACY_UPDATER_EXE_BASENAMES:
+            candidates.extend(
+                [
+                    self.runtime_dir / legacy_name,
+                    self.script_dir / legacy_name,
+                    self.script_dir / "dist" / legacy_name,
+                    self.runtime_dir / f"{legacy_name}.exe",
+                    self.script_dir / f"{legacy_name}.exe",
+                    self.script_dir / "dist" / f"{legacy_name}.exe",
+                ]
+            )
         for candidate in candidates:
             if candidate.exists():
                 return [str(candidate)]
@@ -2901,6 +2928,47 @@ class SuiteApp:
         except Exception:
             return
 
+    def _preferred_min_window_size(self) -> tuple[int, int]:
+        try:
+            screen_width = max(1, int(self.root.winfo_screenwidth()))
+            screen_height = max(1, int(self.root.winfo_screenheight()))
+        except Exception:
+            return (1180, 780)
+        min_width = min(1180, max(920, screen_width - 140))
+        min_height = min(780, max(660, screen_height - 180))
+        return (min_width, min_height)
+
+    def _calculate_display_matched_geometry(self) -> str:
+        try:
+            self.root.update_idletasks()
+            screen_width = max(1, int(self.root.winfo_screenwidth()))
+            screen_height = max(1, int(self.root.winfo_screenheight()))
+            min_width, min_height = self._preferred_min_window_size()
+            aspect_ratio = screen_width / max(1, screen_height)
+            target_width = min(screen_width - max(96, int(screen_width * 0.08)), max(min_width, int(screen_width * 0.84)))
+            target_height = min(screen_height - max(108, int(screen_height * 0.10)), max(min_height, int(screen_height * 0.84)))
+
+            width = max(min_width, target_width)
+            height = int(round(width / aspect_ratio))
+            if height > target_height:
+                height = max(min_height, target_height)
+                width = int(round(height * aspect_ratio))
+
+            if width > screen_width:
+                width = screen_width
+                height = int(round(width / aspect_ratio))
+            if height > screen_height:
+                height = screen_height
+                width = int(round(height * aspect_ratio))
+
+            width = max(720, min(screen_width, width))
+            height = max(520, min(screen_height, height))
+            x = max(0, (screen_width - width) // 2)
+            y = max(0, (screen_height - height) // 2)
+            return f"{width}x{height}+{x}+{y}"
+        except Exception:
+            return "1380x920"
+
     def _schedule_startup_tasks_once(self) -> None:
         if self._startup_tasks_scheduled:
             return
@@ -2914,6 +2982,7 @@ class SuiteApp:
             return
         self._startup_window_shown = True
         if not bool(self.fullscreen_var.get()) and not bool(self.borderless_max_var.get()):
+            self.root.geometry(self._calculate_display_matched_geometry())
             self._center_window_on_screen(self.root)
             self._normal_geometry = self.root.geometry()
             self._normal_zoomed = False
@@ -4907,6 +4976,24 @@ class StorageAnalyzerTab(ModuleTab):
         self.folder_var = StringVar(value=str(Path.home()))
         self.top_n_var = IntVar(value=30)
         self.status_var = StringVar(value="Ready.")
+        self.progress_percent_var = StringVar(value="0%")
+        self.cancel_scan_event = threading.Event()
+        self.analyze_button: ttk.Button | None = None
+        self.cancel_button: ttk.Button | None = None
+        self.progress: ttk.Progressbar | None = None
+        self.view_notebook: ttk.Notebook | None = None
+        self.graph_canvases: dict[str, tk.Canvas] = {}
+        self.graph_hint_vars: dict[str, StringVar] = {}
+        self.tree_views: dict[str, ttk.Treeview] = {}
+        self.tree_entries: dict[str, dict[str, StorageViewEntry]] = {}
+        self.graph_entries: dict[str, list[StorageViewEntry]] = {}
+        self._render_after_ids: dict[str, str] = {}
+        self.root_total_size = 0
+        self.view_descriptions = {
+            "top_level": "Pie chart of the largest direct children in the selected folder.",
+            "largest_files": "Pie chart of the largest individual files within the selected folder tree.",
+            "largest_folders": "Pie chart comparing the largest cumulative folders within the selected folder tree.",
+        }
         self._build()
 
     def _build(self) -> None:
@@ -4920,53 +5007,412 @@ class StorageAnalyzerTab(ModuleTab):
         ttk.Button(top, text="Browse", command=lambda: self.choose_output_dir(self.folder_var, "Choose folder to analyze")).pack(side="left")
         ttk.Label(top, text="Top N").pack(side="left", padx=(14, 6))
         ttk.Spinbox(top, from_=5, to=200, textvariable=self.top_n_var, width=8).pack(side="left")
-        ttk.Button(top, text="Analyze", command=self.analyze).pack(side="right")
+        self.cancel_button = ttk.Button(top, text="Cancel", command=self.cancel_analysis, state="disabled")
+        self.cancel_button.pack(side="right")
+        self.analyze_button = ttk.Button(top, text="Analyze", command=self.analyze)
+        self.analyze_button.pack(side="right", padx=(0, 8))
 
-        split = ttk.Panedwindow(outer, orient="vertical")
-        split.pack(fill="both", expand=True, pady=(8, 0))
+        progress_row = ttk.Frame(outer)
+        progress_row.pack(fill="x", pady=(8, 0))
+        self.progress = ttk.Progressbar(progress_row, mode="determinate", maximum=100, value=0)
+        self.progress.pack(side="left", fill="x", expand=True)
+        ttk.Label(progress_row, textvariable=self.progress_percent_var, width=6, anchor="e").pack(side="left", padx=(8, 0))
 
-        file_box = ttk.Labelframe(split, text="Largest Files")
-        folder_box = ttk.Labelframe(split, text="Largest Folders")
-        split.add(file_box, weight=1)
-        split.add(folder_box, weight=1)
+        ttk.Label(
+            outer,
+            text="Toggle tabs to switch between pie-chart views for top-level items, largest files, and largest folders.",
+            wraplength=1180,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 0))
 
-        self.file_tree = ttk.Treeview(file_box, columns=("size", "path"), show="headings")
-        self.file_tree.heading("size", text="Size")
-        self.file_tree.heading("path", text="File path")
-        self.file_tree.column("size", width=120)
-        self.file_tree.column("path", width=1020)
-        self.file_tree.pack(fill="both", expand=True, padx=8, pady=8)
-
-        self.folder_tree = ttk.Treeview(folder_box, columns=("size", "path"), show="headings")
-        self.folder_tree.heading("size", text="Size")
-        self.folder_tree.heading("path", text="Folder path")
-        self.folder_tree.column("size", width=120)
-        self.folder_tree.column("path", width=1020)
-        self.folder_tree.pack(fill="both", expand=True, padx=8, pady=8)
+        self.view_notebook = ttk.Notebook(outer, style="App.TNotebook")
+        self.view_notebook.pack(fill="both", expand=True, pady=(8, 0))
+        self.view_notebook.enable_traversal()
+        self._build_view_tab("top_level", "Top-Level")
+        self._build_view_tab("largest_files", "Largest Files")
+        self._build_view_tab("largest_folders", "Largest Folders")
 
         ttk.Label(outer, textvariable=self.status_var).pack(anchor="w", pady=(6, 0))
 
+    def _build_view_tab(self, view_key: str, title: str) -> None:
+        assert self.view_notebook is not None
+        frame = ttk.Frame(self.view_notebook, padding=8)
+        self.view_notebook.add(frame, text=title)
+
+        split = ttk.Panedwindow(frame, orient="vertical")
+        split.pack(fill="both", expand=True)
+
+        graph_box = ttk.Labelframe(split, text=f"{title} Pie Chart")
+        table_box = ttk.Labelframe(split, text=f"{title} Table")
+        split.add(graph_box, weight=2)
+        split.add(table_box, weight=1)
+
+        canvas = tk.Canvas(graph_box, height=290, highlightthickness=1, cursor="hand2")
+        canvas.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+        canvas.bind("<Configure>", lambda _event, view=view_key: self._schedule_chart_render(view))
+        self.graph_canvases[view_key] = canvas
+
+        hint_var = StringVar(value=self.view_descriptions[view_key])
+        self.graph_hint_vars[view_key] = hint_var
+        ttk.Label(graph_box, textvariable=hint_var, wraplength=1180, justify="left").pack(anchor="w", padx=8, pady=(0, 8))
+
+        tree_frame = ttk.Frame(table_box)
+        tree_frame.pack(fill="both", expand=True, padx=8, pady=8)
+        tree = ttk.Treeview(tree_frame, columns=("size", "share", "path"), show="headings")
+        tree.heading("size", text="Size")
+        tree.heading("share", text="Share")
+        tree.heading("path", text="Path")
+        tree.column("size", width=130, anchor="e")
+        tree.column("share", width=90, anchor="e")
+        tree.column("path", width=980, anchor="w")
+        tree.pack(side="left", fill="both", expand=True)
+        tree.bind("<Double-1>", lambda _event, view=view_key: self._open_selected_storage_item(view))
+        self.tree_views[view_key] = tree
+
+        y_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        y_scroll.pack(side="right", fill="y")
+        x_scroll = ttk.Scrollbar(table_box, orient="horizontal", command=tree.xview)
+        x_scroll.pack(fill="x", padx=8, pady=(0, 8))
+        tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
+
+    def _set_scan_running(self, running: bool) -> None:
+        if self.analyze_button is not None:
+            self.analyze_button.configure(state="disabled" if running else "normal")
+        if self.cancel_button is not None:
+            self.cancel_button.configure(state="normal" if running else "disabled")
+
+    def _check_cancel_scan(self) -> None:
+        if self.cancel_scan_event.is_set():
+            raise OperationCanceledError("Storage analysis canceled by user.")
+
+    def cancel_analysis(self) -> None:
+        if self.worker and self.worker.is_alive():
+            self.cancel_scan_event.set()
+            self.status_var.set("Cancel requested... stopping current storage analysis.")
+            self.log("Cancellation requested for storage analyzer.")
+
+    def _set_progress_percent(self, percent: int) -> None:
+        clamped = max(0, min(100, int(percent)))
+        if self.progress is not None:
+            self.progress.configure(mode="determinate", maximum=100, value=clamped)
+        self.progress_percent_var.set(f"{clamped}%")
+
+    def _make_storage_entry(self, path: Path, size: int, kind: str | None = None) -> StorageViewEntry:
+        entry_kind = kind or ("folder" if path.is_dir() else "file")
+        label = path.name or str(path)
+        return StorageViewEntry(label=label, path=path, size=size, kind=entry_kind)
+
+    @staticmethod
+    def _percentage_text(size: int, total: int) -> str:
+        if total <= 0:
+            return "0.0%"
+        return f"{(size / total) * 100:.1f}%"
+
+    def _view_total_size(self, view_key: str) -> int:
+        return sum(entry.size for entry in self.graph_entries.get(view_key, []) if entry.size > 0)
+
+    def _share_text(self, size: int) -> str:
+        return self._percentage_text(size, self.root_total_size)
+
+    def _chart_share_text(self, view_key: str, size: int) -> str:
+        return self._percentage_text(size, self._view_total_size(view_key))
+
+    def _set_view_hint(self, view_key: str, entry: StorageViewEntry | None = None) -> None:
+        if entry is None:
+            self.graph_hint_vars[view_key].set(self.view_descriptions[view_key])
+            return
+        location = str(entry.path) if entry.path else entry.label
+        extra = " Double-click to open." if entry.path else ""
+        chart_share = self._chart_share_text(view_key, entry.size)
+        root_share = self._share_text(entry.size)
+        share_text = f"{chart_share} of chart"
+        if chart_share != root_share:
+            share_text = f"{share_text} - {root_share} of scanned data"
+        self.graph_hint_vars[view_key].set(
+            f"{entry.label} - {human_size(entry.size)} - {share_text} - {location}.{extra}"
+        )
+
+    def _schedule_chart_render(self, view_key: str) -> None:
+        if view_key in self._render_after_ids:
+            try:
+                self.after_cancel(self._render_after_ids[view_key])
+            except Exception:
+                pass
+        self._render_after_ids[view_key] = self.after(40, lambda view=view_key: self._render_pie_chart(view))
+
+    def _entry_fill_color(self, entry: StorageViewEntry) -> str:
+        key = str(entry.path) if entry.path else entry.label
+        digest = hashlib.md5(key.encode("utf-8", errors="ignore")).digest()
+        if entry.kind == "folder":
+            base_hue = 0.58
+        elif entry.kind == "file":
+            base_hue = 0.08
+        else:
+            base_hue = 0.0
+        hue = (base_hue + ((digest[0] / 255.0) - 0.5) * 0.10) % 1.0
+        saturation = 0.42 + (digest[1] / 255.0) * 0.20
+        value = 0.72 + (digest[2] / 255.0) * 0.18
+        red, green, blue = colorsys.hsv_to_rgb(hue, saturation, value)
+        return f"#{int(red * 255):02x}{int(green * 255):02x}{int(blue * 255):02x}"
+
+    @staticmethod
+    def _darken_color(color: str, factor: float = 0.74) -> str:
+        red = int(color[1:3], 16)
+        green = int(color[3:5], 16)
+        blue = int(color[5:7], 16)
+        return f"#{int(red * factor):02x}{int(green * factor):02x}{int(blue * factor):02x}"
+
+    @staticmethod
+    def _contrast_text_color(color: str) -> str:
+        red = int(color[1:3], 16)
+        green = int(color[3:5], 16)
+        blue = int(color[5:7], 16)
+        luminance = (0.299 * red) + (0.587 * green) + (0.114 * blue)
+        return "#101722" if luminance > 165 else "#F7FAFF"
+
+    @staticmethod
+    def _truncate_label(text: str, limit: int) -> str:
+        if len(text) <= limit:
+            return text
+        if limit <= 3:
+            return text[:limit]
+        return text[: limit - 3] + "..."
+
+    def _build_pie_label(self, view_key: str, entry: StorageViewEntry, angle_span: float) -> str:
+        if angle_span < 10:
+            return ""
+        if angle_span < 20:
+            return self._truncate_label(entry.label, 14)
+        lines = [self._truncate_label(entry.label, 18)]
+        if angle_span >= 26:
+            lines.append(self._chart_share_text(view_key, entry.size))
+        if angle_span >= 42:
+            lines.append(human_size(entry.size))
+        return "\n".join(lines)
+
+    def _select_entry_in_view(self, view_key: str, entry: StorageViewEntry) -> None:
+        self._set_view_hint(view_key, entry)
+        if not entry.path:
+            return
+        tree = self.tree_views[view_key]
+        row_map = self.tree_entries.get(view_key, {})
+        for item_id, row_entry in row_map.items():
+            if row_entry.path == entry.path:
+                tree.selection_set(item_id)
+                tree.focus(item_id)
+                tree.see(item_id)
+                return
+
+    def _open_storage_entry(self, entry: StorageViewEntry) -> None:
+        if not entry.path:
+            return
+        try:
+            if entry.kind == "file":
+                self.app._open_file_location(entry.path)
+            else:
+                self.app._open_path(entry.path)
+        except Exception as exc:
+            messagebox.showerror(APP_TITLE, f"Failed to open item:\n{exc}")
+
+    def _open_selected_storage_item(self, view_key: str) -> None:
+        tree = self.tree_views[view_key]
+        selected = tree.selection()
+        if not selected:
+            return
+        entry = self.tree_entries.get(view_key, {}).get(selected[0])
+        if entry:
+            self._open_storage_entry(entry)
+
+    def _populate_view(
+        self, view_key: str, table_entries: list[StorageViewEntry], graph_entries: list[StorageViewEntry]
+    ) -> None:
+        tree = self.tree_views[view_key]
+        for row in tree.get_children():
+            tree.delete(row)
+        row_lookup: dict[str, StorageViewEntry] = {}
+        for entry in table_entries:
+            item_id = tree.insert(
+                "",
+                "end",
+                values=(human_size(entry.size), self._share_text(entry.size), str(entry.path) if entry.path else entry.label),
+            )
+            row_lookup[item_id] = entry
+        self.tree_entries[view_key] = row_lookup
+        self.graph_entries[view_key] = [entry for entry in graph_entries if entry.size > 0]
+        self._set_view_hint(view_key, None)
+        self._schedule_chart_render(view_key)
+
+    def _render_pie_chart(self, view_key: str) -> None:
+        canvas = self.graph_canvases[view_key]
+        palette = self.app._theme_palette(bool(self.app.dark_mode_var.get()))
+        canvas.configure(bg=palette["log_bg"], highlightbackground=palette["card_border"], highlightcolor=palette["card_border"])
+        canvas.delete("all")
+        entries = self.graph_entries.get(view_key, [])
+        width = max(1, canvas.winfo_width())
+        height = max(1, canvas.winfo_height())
+        if width < 40 or height < 40:
+            return
+        if not entries:
+            canvas.create_text(
+                width / 2,
+                height / 2,
+                text="Run an analysis to draw the pie chart.",
+                fill=palette["subtitle_fg"],
+                font=("Segoe UI", 11),
+            )
+            return
+
+        chart_total = sum(entry.size for entry in entries if entry.size > 0)
+        if chart_total <= 0:
+            canvas.create_text(
+                width / 2,
+                height / 2,
+                text="Nothing to chart in this view.",
+                fill=palette["subtitle_fg"],
+                font=("Segoe UI", 11),
+            )
+            return
+
+        diameter = max(80, min(width - 24, height - 24))
+        radius = diameter / 2
+        center_x = width / 2
+        center_y = height / 2
+        x1 = center_x - radius
+        y1 = center_y - radius
+        x2 = center_x + radius
+        y2 = center_y + radius
+
+        accumulated = 0.0
+        for index, entry in enumerate(entries):
+            start_angle = 90.0 - accumulated
+            if index == len(entries) - 1:
+                extent = max(0.0, 360.0 - accumulated)
+            else:
+                extent = (entry.size / chart_total) * 360.0
+            accumulated += extent
+            fill_color = self._entry_fill_color(entry)
+            border_color = self._darken_color(fill_color)
+            text_color = self._contrast_text_color(fill_color)
+            tag = f"{view_key}_node_{index}"
+            arc_tag = f"{tag}_arc"
+            canvas.create_arc(
+                x1,
+                y1,
+                x2,
+                y2,
+                start=start_angle,
+                extent=-extent,
+                fill=fill_color,
+                outline=border_color,
+                width=2,
+                style=tk.PIESLICE,
+                tags=(tag, arc_tag),
+            )
+            label = self._build_pie_label(view_key, entry, extent)
+            if label:
+                mid_angle = math.radians(start_angle - (extent / 2.0))
+                label_radius = radius * (0.55 if extent >= 30 else 0.68)
+                label_x = center_x + math.cos(mid_angle) * label_radius
+                label_y = center_y - math.sin(mid_angle) * label_radius
+                font_name = ("Segoe UI Semibold", 9) if extent >= 26 else ("Segoe UI", 8)
+                canvas.create_text(
+                    label_x,
+                    label_y,
+                    anchor="center",
+                    text=label,
+                    fill=text_color,
+                    width=max(70, radius * 0.55),
+                    font=font_name,
+                    tags=(tag,),
+                )
+            canvas.tag_bind(
+                tag,
+                "<Enter>",
+                lambda _event, view=view_key, item=entry, node=arc_tag: (
+                    canvas.itemconfigure(node, width=3),
+                    self._set_view_hint(view, item),
+                ),
+            )
+            canvas.tag_bind(
+                tag,
+                "<Leave>",
+                lambda _event, view=view_key, node=arc_tag: (
+                    canvas.itemconfigure(node, width=2),
+                    self._set_view_hint(view, None),
+                ),
+            )
+            canvas.tag_bind(tag, "<Button-1>", lambda _event, view=view_key, item=entry: self._select_entry_in_view(view, item))
+            canvas.tag_bind(tag, "<Double-Button-1>", lambda _event, item=entry: self._open_storage_entry(item))
+
     def analyze(self) -> None:
         root = Path(self.folder_var.get().strip())
-        if not root.exists():
+        if not root.exists() or not root.is_dir():
             messagebox.showerror(APP_TITLE, "Analysis folder does not exist.")
             return
-        top_n = int(self.top_n_var.get())
+        try:
+            top_n = max(5, min(200, int(self.top_n_var.get())))
+        except Exception:
+            messagebox.showerror(APP_TITLE, "Top N must be a whole number between 5 and 200.")
+            return
+        self.top_n_var.set(top_n)
+        self.cancel_scan_event.clear()
+        self._set_scan_running(True)
 
         def work() -> None:
-            file_sizes: list[tuple[Path, int]] = []
-            folder_sizes: dict[Path, int] = {}
-            scanned_files = 0
-            for current_root, _, files in os.walk(root):
-                root_path = Path(current_root)
-                for name in files:
-                    path = root_path / name
+            try:
+                self.app.call_ui(
+                    lambda: (
+                        self._set_progress_percent(0),
+                        self.status_var.set("Indexing files..."),
+                    )
+                )
+                discovered_files: list[Path] = []
+                scanned_directories = 0
+                for current_root, _, files in os.walk(root):
+                    self._check_cancel_scan()
+                    scanned_directories += 1
+                    root_path = Path(current_root)
+                    for name in files:
+                        discovered_files.append(root_path / name)
+                    if scanned_directories % 50 == 0:
+                        self.app.call_ui(
+                            lambda found=len(discovered_files): self.status_var.set(f"Indexing files... {found} found")
+                        )
+
+                total_files = len(discovered_files)
+                self.app.call_ui(
+                    lambda total=total_files: (
+                        self._set_progress_percent(0 if total > 0 else 100),
+                        self.status_var.set(
+                            "No files found. Preparing empty views." if total == 0 else f"Analyzing file sizes... 0/{total}"
+                        ),
+                    )
+                )
+
+                file_sizes: list[tuple[Path, int]] = []
+                folder_sizes: dict[Path, int] = {}
+                top_level_sizes: dict[Path, int] = {}
+                scanned_files = 0
+                skipped_errors = 0
+
+                for index, path in enumerate(discovered_files, start=1):
+                    self._check_cancel_scan()
                     try:
                         size = path.stat().st_size
                     except Exception:
+                        skipped_errors += 1
                         continue
                     scanned_files += 1
                     file_sizes.append((path, size))
+
+                    try:
+                        relative_parts = path.relative_to(root).parts
+                        if relative_parts:
+                            top_level_path = root / relative_parts[0]
+                            top_level_sizes[top_level_path] = top_level_sizes.get(top_level_path, 0) + size
+                    except ValueError:
+                        pass
+
                     cursor = path.parent
                     while True:
                         folder_sizes[cursor] = folder_sizes.get(cursor, 0) + size
@@ -4976,23 +5422,82 @@ class StorageAnalyzerTab(ModuleTab):
                             break
                         cursor = cursor.parent
 
-            largest_files = sorted(file_sizes, key=lambda row: row[1], reverse=True)[:top_n]
-            largest_folders = sorted(folder_sizes.items(), key=lambda row: row[1], reverse=True)[:top_n]
+                    if index % 200 == 0 or index == total_files:
+                        percent = int((index / max(1, total_files)) * 100)
+                        self.app.call_ui(
+                            lambda done=index, total=total_files, pct=percent: (
+                                self._set_progress_percent(pct),
+                                self.status_var.set(f"Analyzing file sizes... {done}/{total}"),
+                            )
+                        )
 
-            def render() -> None:
-                for row in self.file_tree.get_children():
-                    self.file_tree.delete(row)
-                for row in self.folder_tree.get_children():
-                    self.folder_tree.delete(row)
-                for file_path, size in largest_files:
-                    self.file_tree.insert("", "end", values=(human_size(size), str(file_path)))
-                for folder_path, size in largest_folders:
-                    self.folder_tree.insert("", "end", values=(human_size(size), str(folder_path)))
-                self.status_var.set(
-                    f"Scanned {scanned_files} files. Showing top {top_n} largest files and folders."
+                root_total = folder_sizes.get(root, sum(size for _, size in file_sizes))
+                largest_file_rows = sorted(file_sizes, key=lambda row: row[1], reverse=True)
+                largest_folder_rows = sorted(
+                    [(folder_path, size) for folder_path, size in folder_sizes.items() if folder_path != root and size > 0],
+                    key=lambda row: row[1],
+                    reverse=True,
                 )
+                top_level_rows = sorted(top_level_sizes.items(), key=lambda row: row[1], reverse=True)
 
-            self.app.call_ui(render)
+                top_level_table_entries = [self._make_storage_entry(path, size) for path, size in top_level_rows[:top_n]]
+                top_level_graph_entries = list(top_level_table_entries)
+                if len(top_level_rows) > top_n:
+                    remaining_size = sum(size for _, size in top_level_rows[top_n:])
+                    if remaining_size > 0:
+                        top_level_graph_entries.append(
+                            StorageViewEntry(
+                                label=f"Other ({len(top_level_rows) - top_n} more)",
+                                path=None,
+                                size=remaining_size,
+                                kind="other",
+                            )
+                        )
+
+                largest_file_table_entries = [
+                    StorageViewEntry(label=path.name or str(path), path=path, size=size, kind="file")
+                    for path, size in largest_file_rows[:top_n]
+                ]
+                largest_file_graph_entries = list(largest_file_table_entries)
+                remaining_file_size = max(0, root_total - sum(entry.size for entry in largest_file_table_entries))
+                if remaining_file_size > 0:
+                    largest_file_graph_entries.append(
+                        StorageViewEntry(
+                            label=f"Other ({max(0, len(largest_file_rows) - top_n)} more)",
+                            path=None,
+                            size=remaining_file_size,
+                            kind="other",
+                        )
+                    )
+
+                largest_folder_table_entries = [self._make_storage_entry(path, size, kind="folder") for path, size in largest_folder_rows[:top_n]]
+                largest_folder_graph_entries = list(largest_folder_table_entries)
+
+                def render() -> None:
+                    self.root_total_size = root_total
+                    self._populate_view("top_level", top_level_table_entries, top_level_graph_entries)
+                    self._populate_view("largest_files", largest_file_table_entries, largest_file_graph_entries)
+                    self._populate_view("largest_folders", largest_folder_table_entries, largest_folder_graph_entries)
+                    self._set_progress_percent(100 if total_files > 0 else 0)
+                    if scanned_files == 0:
+                        self.status_var.set("No files were found in the selected folder.")
+                    else:
+                        self.status_var.set(
+                            f"Scanned {scanned_files} files totaling {human_size(root_total)}. "
+                            f"Showing top {top_n} entries per view. Skipped {skipped_errors} unreadable file(s)."
+                        )
+
+                self.app.call_ui(render)
+            except OperationCanceledError:
+                self.app.call_ui(
+                    lambda: (
+                        self._set_progress_percent(0),
+                        self.status_var.set("Storage analysis canceled."),
+                    )
+                )
+                raise
+            finally:
+                self.app.call_ui(lambda: self._set_scan_running(False))
 
         self.run_async(work, done_message="Storage analysis complete.")
 

@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to this project are documented in this file.
 
@@ -15,12 +15,12 @@ This changelog includes:
   - repo manifest fallback (`update_manifest.json` / `update_manifest.example.json`)
   - latest tag fallback
 - Updater now persists source and output folder in updater settings.
-- Product rename to **Universal Conversion Hub (HCB)** across app UI, updater UI, installer metadata, and build artifacts.
+- Product rename to **Universal Conversion Hub (UCH)** across app UI, updater UI, installer metadata, and build artifacts.
 - New artifact names:
-  - `UniversalConversionHub_HCB.exe`
-  - `UniversalConversionHub_HCB_Updater.exe`
-  - `UniversalConversionHub_HCB_Setup.exe`
-- Backward-compatible settings resolution for existing `%LOCALAPPDATA%\UniversalFileUtilitySuite` users.
+  - `UniversalConversionHub_UCH.exe`
+  - `UniversalConversionHub_UCH_Updater.exe`
+  - `UniversalConversionHub_UCH_Setup.exe`
+- Backward-compatible settings resolution for existing `%LOCALAPPDATA%\UniversalConversionHubHCB` and `%LOCALAPPDATA%\UniversalFileUtilitySuite` users.
 - Linux build script scaffold: `build_linux.sh`.
 
 ### Changed
@@ -28,7 +28,8 @@ This changelog includes:
 - Updater "Open Download Link" now opens release page fallback when no direct asset URL is available.
 - Single-instance control now has POSIX lock-file fallback for Linux/non-Windows runs.
 - Dark mode readability improved with higher-contrast text, stronger typography, and broader widget theming coverage.
-- Historical snapshot artifact capture now follows the renamed `UniversalConversionHub_HCB*` outputs while retaining legacy fallback support for older snapshots.
+- Historical snapshot artifact capture now follows the renamed `UniversalConversionHub_UCH*` outputs while retaining legacy fallback support for older snapshots.
+- Release cleanup and installer mutex handling now remove or recognize both prior `HCB` artifacts and older `UniversalFileUtilitySuite` artifacts during builds and upgrades.
 - Repository line-ending policy is now explicit by file type to reduce noisy diffs across Windows and cross-platform scripts.
 - Canonical build config filenames now match the shipped product name, and `build_windows.bat` now delegates to the maintained release pipeline.
 
@@ -44,7 +45,7 @@ This changelog includes:
   - Rename / Organize, Duplicate Finder, Storage Analyzer
   - Checksums / Integrity, Subtitles, Presets / Batch Jobs
 - First-run setup wizard for initial configuration.
-- Standalone updater executable (now shipped as `UniversalConversionHub_HCB_Updater.exe`; the legacy name existed earlier in the 0.5 cycle).
+- Standalone updater executable (now shipped as `UniversalConversionHub_UCH_Updater.exe`; the legacy name existed earlier in the 0.5 cycle).
 - Installer build output plus stable `release_bins` staging folder for app + updater + setup binaries.
 - Custom app icon and branded startup logo animation.
 - Dark mode toggle, fullscreen toggle, and borderless/window-mode controls.
@@ -157,3 +158,4 @@ This changelog includes:
 - Rapid binary iteration cycle in Downloads workspace while core UI/packaging foundations were being established.
 - Artifacts from this stage were later archived and superseded by the canonical `v0.5` source/build process in:
   - `C:\Users\Pugma\Documents\Universal File Utility Suite Output\Universal-File-Conversion`
+

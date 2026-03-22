@@ -1,4 +1,4 @@
-# Universal Conversion Hub (HCB)
+﻿# Universal Conversion Hub (UCH)
 
 Version: `0.5`
 
@@ -36,7 +36,7 @@ Runtime behavior:
 
 ## 1) What The App Does
 
-Universal Conversion Hub (HCB) is designed as one desktop app with separate tools, instead of a single tangled converter view.
+Universal Conversion Hub (UCH) is designed as one desktop app with separate tools, instead of a single tangled converter view.
 
 Core behavior:
 - Queue-based processing for batch workflows
@@ -109,7 +109,7 @@ Backends panel behavior:
 ## 6) Update Sources
 
 Use `Settings -> Update manifest URL` for app update checks.
-You can also use the standalone updater executable (`UniversalConversionHub_HCB_Updater.exe`), which supports:
+You can also use the standalone updater executable (`UniversalConversionHub_UCH_Updater.exe`), which supports:
 - Manifest URL
 - Local manifest JSON file
 - GitHub repo URL (checks latest release metadata/tags)
@@ -127,7 +127,7 @@ Example:
 ```json
 {
   "latest_version": "0.5",
-  "download_url": "https://example.com/UniversalConversionHub_HCB.exe",
+  "download_url": "https://example.com/UniversalConversionHub_UCH.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "notes": "Release notes here"
 }
@@ -151,12 +151,12 @@ build_suite_release.bat
 ```
 
 Outputs:
-- `dist\UniversalConversionHub_HCB.exe`
-- `dist\UniversalConversionHub_HCB_Updater.exe`
-- `installer_output\UniversalConversionHub_HCB_Setup.exe`
-- `release_bins\UniversalConversionHub_HCB.exe`
-- `release_bins\UniversalConversionHub_HCB_Updater.exe`
-- `release_bins\UniversalConversionHub_HCB_Setup.exe`
+- `dist\UniversalConversionHub_UCH.exe`
+- `dist\UniversalConversionHub_UCH_Updater.exe`
+- `installer_output\UniversalConversionHub_UCH_Setup.exe`
+- `release_bins\UniversalConversionHub_UCH.exe`
+- `release_bins\UniversalConversionHub_UCH_Updater.exe`
+- `release_bins\UniversalConversionHub_UCH_Setup.exe`
 
 `release_bins` is the stable folder that always keeps the latest runnable app, updater, and installer binaries together.
 
@@ -168,10 +168,10 @@ chmod +x build_linux.sh
 ```
 
 Linux outputs:
-- `dist/UniversalConversionHub_HCB`
-- `dist/UniversalConversionHub_HCB_Updater`
-- `release_bins/UniversalConversionHub_HCB`
-- `release_bins/UniversalConversionHub_HCB_Updater`
+- `dist/UniversalConversionHub_UCH`
+- `dist/UniversalConversionHub_UCH_Updater`
+- `release_bins/UniversalConversionHub_UCH`
+- `release_bins/UniversalConversionHub_UCH_Updater`
 
 ### Basic dependencies
 
@@ -238,9 +238,11 @@ git config core.hooksPath .githooks
 ## 12) Important Paths
 
 Settings file:
-- `%LOCALAPPDATA%\UniversalConversionHubHCB\settings.json`
+- `%LOCALAPPDATA%\UniversalConversionHubUCH\settings.json`
+- Legacy fallback: `%LOCALAPPDATA%\UniversalConversionHubHCB\settings.json`
 - Legacy fallback: `%LOCALAPPDATA%\UniversalFileUtilitySuite\settings.json`
-- Updater settings: `%LOCALAPPDATA%\UniversalConversionHubHCB\updater_settings.json`
+- Updater settings: `%LOCALAPPDATA%\UniversalConversionHubUCH\updater_settings.json`
+- Updater legacy fallback: `%LOCALAPPDATA%\UniversalConversionHubHCB\updater_settings.json`
 - Updater legacy fallback: `%LOCALAPPDATA%\UniversalFileUtilitySuite\updater_settings.json`
 
 Default output root:
@@ -251,4 +253,5 @@ Default output root:
 - Use lawful personal workflows.
 - Test on a small sample before large batch jobs.
 - Keep backups for destructive operations.
+
 

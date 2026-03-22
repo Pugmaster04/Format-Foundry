@@ -2,19 +2,16 @@
 setlocal
 cd /d "%~dp0"
 
-echo Installing requirements...
-py -m pip install --upgrade pip
-py -m pip install -r requirements.txt
-
-echo Building Windows EXE...
-py -m PyInstaller ^
-  --noconsole ^
-  --onefile ^
-  --name UniversalFileConverterHub ^
-  --collect-all imageio_ffmpeg ^
-  universal_converter_hub.py
+echo Delegating to the canonical Windows release build...
+call build_suite_release.bat
+if errorlevel 1 (
+  echo Windows release build failed.
+  exit /b 1
+)
 
 echo.
 echo Build complete.
-echo EXE path: dist\UniversalFileConverterHub.exe
+echo App EXE:      dist\UniversalConversionHub_HCB.exe
+echo Updater EXE:  dist\UniversalConversionHub_HCB_Updater.exe
+echo Installer:    installer_output\UniversalConversionHub_HCB_Setup.exe
 pause

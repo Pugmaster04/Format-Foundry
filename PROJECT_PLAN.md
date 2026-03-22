@@ -1,4 +1,4 @@
-# Universal File Utility Suite - Project Plan
+# Universal Conversion Hub (HCB) - Project Plan
 
 ## Vision
 Build one desktop app with modular tools instead of a single tangled interface.  
@@ -36,7 +36,12 @@ Each module should be independently testable, replaceable, and extensible.
   - `Video`
 
 ## Current Deliverables
-- Script: `modular_file_utility_suite.py`
+- App entrypoint: `modular_file_utility_suite.py`
+- Updater entrypoint: `suite_updater.py`
+- Release builds:
+  - `UniversalConversionHub_HCB.exe`
+  - `UniversalConversionHub_HCB_Updater.exe`
+  - `UniversalConversionHub_HCB_Setup.exe`
 - Includes all requested module tabs:
   - Convert
   - Compress
@@ -61,4 +66,7 @@ Each module should be independently testable, replaceable, and extensible.
    - unit tests for conversion engines
    - smoke tests per module
    - backend integration tests
-4. Add packaging profile for Windows executable output.
+4. Add expanded packaging and distribution profiles:
+   - Linux release packaging
+   - code signing
+   - automated release publishing

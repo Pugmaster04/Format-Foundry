@@ -54,6 +54,19 @@ function Copy-SafeTree {
     }
 }
 
+function Copy-ExistingArtifacts {
+    param(
+        [string]$ArtifactRoot,
+        [string[]]$RelativePaths
+    )
+    foreach ($relativePath in $RelativePaths) {
+        $candidate = Join-Path $RepoRoot $relativePath
+        if (Test-Path $candidate) {
+            Copy-Item -Path $candidate -Destination (Join-Path $ArtifactRoot ([System.IO.Path]::GetFileName($candidate))) -Force
+        }
+    }
+}
+
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $safeReason = ($Reason -replace '[^A-Za-z0-9._-]', "_")
 $version = Get-AppVersion
@@ -68,20 +81,15 @@ if ($IncludeBuildOutputs.IsPresent) {
     $artifactRoot = Join-Path $snapshotRoot "artifacts"
     New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 
-    $distExe = Join-Path $RepoRoot "dist\UniversalFileUtilitySuite.exe"
-    if (Test-Path $distExe) {
-        Copy-Item -Path $distExe -Destination (Join-Path $artifactRoot "UniversalFileUtilitySuite.exe") -Force
-    }
-
-    $updaterExe = Join-Path $RepoRoot "dist\UniversalFileUtilitySuite_Updater.exe"
-    if (Test-Path $updaterExe) {
-        Copy-Item -Path $updaterExe -Destination (Join-Path $artifactRoot "UniversalFileUtilitySuite_Updater.exe") -Force
-    }
-
-    $setupExe = Join-Path $RepoRoot "installer_output\UniversalFileUtilitySuite_Setup.exe"
-    if (Test-Path $setupExe) {
-        Copy-Item -Path $setupExe -Destination (Join-Path $artifactRoot "UniversalFileUtilitySuite_Setup.exe") -Force
-    }
+    # Capture current artifact names and keep legacy fallback support for older builds.
+    Copy-ExistingArtifacts -ArtifactRoot $artifactRoot -RelativePaths @(
+        "dist\UniversalConversionHub_HCB.exe",
+        "dist\UniversalFileUtilitySuite.exe",
+        "dist\UniversalConversionHub_HCB_Updater.exe",
+        "dist\UniversalFileUtilitySuite_Updater.exe",
+        "installer_output\UniversalConversionHub_HCB_Setup.exe",
+        "installer_output\UniversalFileUtilitySuite_Setup.exe"
+    )
 
     $stagedDir = Join-Path $RepoRoot "release_bins"
     if (Test-Path $stagedDir) {

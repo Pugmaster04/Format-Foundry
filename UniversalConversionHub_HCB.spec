@@ -2,10 +2,13 @@
 
 
 a = Analysis(
-    ['suite_updater.py'],
+    ['modular_file_utility_suite.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets\\universal_file_utility_suite.ico', 'assets'), ('update_manifest.example.json', '.')],
+    datas=[
+        ('assets\\universal_file_utility_suite.ico', 'assets'),
+        ('README.md', '.'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -22,7 +25,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='UniversalFileUtilitySuite_Updater',
+    name='UniversalConversionHub_HCB',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

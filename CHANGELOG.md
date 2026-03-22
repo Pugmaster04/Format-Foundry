@@ -1,0 +1,159 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+This changelog includes:
+- Legacy `0.4.x` milestones (pre-canonical-repo binary iterations)
+- Full `0.5` feature/fix/security/build history
+- Rapid `0.5` startup-flow revision trail captured in archive snapshots
+
+## [Unreleased]
+
+### Added
+- Updater now supports GitHub repo update checks (repo URL input), with detection flow:
+  - latest GitHub Release metadata (preferred)
+  - repo manifest fallback (`update_manifest.json` / `update_manifest.example.json`)
+  - latest tag fallback
+- Updater now persists source and output folder in updater settings.
+- Product rename to **Universal Conversion Hub (HCB)** across app UI, updater UI, installer metadata, and build artifacts.
+- New artifact names:
+  - `UniversalConversionHub_HCB.exe`
+  - `UniversalConversionHub_HCB_Updater.exe`
+  - `UniversalConversionHub_HCB_Setup.exe`
+- Backward-compatible settings resolution for existing `%LOCALAPPDATA%\UniversalFileUtilitySuite` users.
+- Linux build script scaffold: `build_linux.sh`.
+
+### Changed
+- Updater default source now points to the project GitHub repository.
+- Updater "Open Download Link" now opens release page fallback when no direct asset URL is available.
+- Single-instance control now has POSIX lock-file fallback for Linux/non-Windows runs.
+- Dark mode readability improved with higher-contrast text, stronger typography, and broader widget theming coverage.
+- Historical snapshot artifact capture now follows the renamed `UniversalConversionHub_HCB*` outputs while retaining legacy fallback support for older snapshots.
+- Repository line-ending policy is now explicit by file type to reduce noisy diffs across Windows and cross-platform scripts.
+- Canonical build config filenames now match the shipped product name, and `build_windows.bat` now delegates to the maintained release pipeline.
+
+### Removed
+- Obsolete `UniversalFileConverterHub` prototype build config and source entrypoint from the canonical repo. Historical snapshots remain the fallback for that legacy branch.
+
+## [0.5.0] - 2026-03-21
+
+### Added
+- Modular desktop suite layout with dedicated workflow tabs:
+  - Convert, Compress, Extract, Metadata
+  - PDF / Documents, Images, Audio, Video, Archives
+  - Rename / Organize, Duplicate Finder, Storage Analyzer
+  - Checksums / Integrity, Subtitles, Presets / Batch Jobs
+- First-run setup wizard for initial configuration.
+- Standalone updater executable (now shipped as `UniversalConversionHub_HCB_Updater.exe`; the legacy name existed earlier in the 0.5 cycle).
+- Installer build output plus stable `release_bins` staging folder for app + updater + setup binaries.
+- Custom app icon and branded startup logo animation.
+- Dark mode toggle, fullscreen toggle, and borderless/window-mode controls.
+- Dedicated top-level tabs for:
+  - Workspace
+  - Suite Plan
+  - Backends / Links
+  - Activity Log
+- Backend links panel with interactive behavior:
+  - Detected backend entry opens local file location
+  - Missing backend entry opens install/download link
+- Backend install assistant prompt on startup for optional tools.
+- Backend hover/tool-tip details for missing dependency guidance.
+- Output conflict flow before writes with options to:
+  - Replace
+  - Rename
+  - Change output location
+  - Cancel
+- Help integration for in-app How-To/README content.
+- User settings page for performance/security/runtime defaults.
+- Update security options in updater:
+  - HTTPS requirements
+  - SHA256 enforcement
+  - external link confirmation
+  - accept-all security option
+
+### Changed
+- UI restyled from bare-bones prototype to production-style layout with clearer tab/readability behavior.
+- Queue behavior updated to clear completed items after processing.
+- Conversion target-format dropdown now constrained to valid outputs for the active source type.
+- Queue now enforces a single source file type at a time (prevents mixed-type conversion queue mistakes).
+- Backend row path rendering shortened/truncated for readability with full-path access on interaction.
+- Startup animation duration/pace tuned (longer/slower option support).
+- Main app window default open behavior centered on screen.
+- README and HOW-TO documentation combined into a single maintained source.
+- Build/release flow updated to keep current deliverables in primary folders and historical snapshots in archive folders.
+
+### Fixed
+- Launch crash: unhandled exception (`expected integer but got "UI"`).
+- Backend detection regressions (including 7-Zip detection mismatch and path-link breakages after UI updates).
+- Hidden/off-screen activity log panel issue by moving log into its own top tab.
+- Conversion percent/value visibility issues in settings controls.
+- Progress indicator behavior where the bar appeared hollow/empty and jumped to 100%.
+- Update popup visibility flow so prompts can hide main app while awaiting confirmation.
+- Updater/app multi-instance conflicts and duplicate warning window behavior.
+- Startup sequencing bugs causing too many windows or overlapping startup/update dialogs.
+- Startup/open-mode prompt flow so the main app is not shown prematurely.
+
+### Security
+- Added/expanded controls for:
+  - requiring HTTPS for update manifest URL
+  - requiring HTTPS for update download URL
+  - requiring SHA256 checksum validation
+  - confirming external link opens
+- Added single-instance protections:
+  - app single-instance runtime control
+  - updater single-instance runtime control
+- Installer protections to reduce duplicate installs and improve upgrade behavior:
+  - reuse/replace old install path during upgrade
+  - avoid side-by-side duplicate installs by default
+  - enforce close-running-instance behavior through installer mutex settings
+
+### Build / Release / Archive
+- EXE, updater EXE, and installer generation unified under `build_suite_release.bat`.
+- Added automated pre-build and post-build historical snapshot creation.
+- Added commit-time snapshot automation support (`.githooks/post-commit` + tools scripts).
+- Added archive history structure under:
+  - `archive/history/v0.5/<timestamp>_<reason>/`
+- Added release smoke-test workflow for generated binaries.
+
+### Documentation
+- Added/expanded in-depth user documentation for:
+  - installation
+  - startup/setup
+  - backend usage
+  - update manifest setup
+  - build and release usage
+  - troubleshooting and performance tuning
+- Consolidated duplicate docs into canonical `README.md`.
+
+### Internal Snapshot Trail (v0.5 Rapid Revisions)
+- `2026-03-21 18:03:24` - `duplicate-finder-progress-cancel`
+- `2026-03-21 18:06:58` - `startup-splash-block-center-window`
+- `2026-03-21 18:11:23` - `updater-mutex-and-hidden-update-popup`
+- `2026-03-21 18:13:09` - `update-popup-ok-hidden-main-and-updater-lock-fix`
+- `2026-03-21 18:17:56` - `single-window-startup-sequence`
+- `2026-03-21 18:22:23` - `startup-sequence-and-updater-single-window`
+- `2026-03-21 18:29:14` - `startup-popup-wording-install-updates-open-normally`
+- `2026-03-21 18:45:39` - latest release build snapshot (includes splash-before-open-mode flow refinement)
+
+## [0.4.10] - 2026-03-20
+
+### Legacy Milestone (Pre-v0.5 Refactor)
+- Final `0.4.x` binary before major `0.5` suite hardening.
+- Included early modular app executable and setup executable outputs.
+- Served as migration point for:
+  - archive/release structure cleanup
+  - version bump to `0.5`
+  - automation and snapshot policy introduction
+
+## [0.4.9] - 2026-03-20
+## [0.4.8] - 2026-03-20
+## [0.4.7] - 2026-03-20
+## [0.4.6] - 2026-03-20
+## [0.4.5] - 2026-03-20
+## [0.4.4] - 2026-03-20
+## [0.4.3] - 2026-03-20
+
+### Legacy Patch Line Notes
+- Rapid binary iteration cycle in Downloads workspace while core UI/packaging foundations were being established.
+- Artifacts from this stage were later archived and superseded by the canonical `v0.5` source/build process in:
+  - `C:\Users\Pugma\Documents\Universal File Utility Suite Output\Universal-File-Conversion`

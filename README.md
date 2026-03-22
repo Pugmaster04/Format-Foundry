@@ -1,6 +1,9 @@
-# Universal File Utility Suite (Modular Starter)
+# Universal Conversion Hub (HCB)
 
 Version: `0.5`
+
+Changelog:
+- `CHANGELOG.md` (full project history and release notes)
 
 This is a modular desktop suite for practical file workflows:
 - Convert
@@ -33,7 +36,7 @@ Runtime behavior:
 
 ## 1) What The App Does
 
-Universal File Utility Suite is designed as one desktop app with separate tools, instead of a single tangled converter view.
+Universal Conversion Hub (HCB) is designed as one desktop app with separate tools, instead of a single tangled converter view.
 
 Core behavior:
 - Queue-based processing for batch workflows
@@ -103,10 +106,17 @@ Backends panel behavior:
 - Detected backend path: click to open file location
 - Missing backend: click to open install link
 
-## 6) Update Manifest
+## 6) Update Sources
 
 Use `Settings -> Update manifest URL` for app update checks.
-You can also use the standalone updater executable (`UniversalFileUtilitySuite_Updater.exe`).
+You can also use the standalone updater executable (`UniversalConversionHub_HCB_Updater.exe`), which supports:
+- Manifest URL
+- Local manifest JSON file
+- GitHub repo URL (checks latest release metadata/tags)
+
+Default updater source:
+- `https://github.com/Pugmaster04/Universal-File-Conversion`
+
 Updater security options include:
 - HTTPS-only manifest/download URLs
 - optional confirmation before opening download URLs
@@ -117,7 +127,7 @@ Example:
 ```json
 {
   "latest_version": "0.5",
-  "download_url": "https://example.com/UniversalFileUtilitySuite.exe",
+  "download_url": "https://example.com/UniversalConversionHub_HCB.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "notes": "Release notes here"
 }
@@ -141,14 +151,27 @@ build_suite_release.bat
 ```
 
 Outputs:
-- `dist\UniversalFileUtilitySuite.exe`
-- `dist\UniversalFileUtilitySuite_Updater.exe`
-- `installer_output\UniversalFileUtilitySuite_Setup.exe`
-- `release_bins\UniversalFileUtilitySuite.exe`
-- `release_bins\UniversalFileUtilitySuite_Updater.exe`
-- `release_bins\UniversalFileUtilitySuite_Setup.exe`
+- `dist\UniversalConversionHub_HCB.exe`
+- `dist\UniversalConversionHub_HCB_Updater.exe`
+- `installer_output\UniversalConversionHub_HCB_Setup.exe`
+- `release_bins\UniversalConversionHub_HCB.exe`
+- `release_bins\UniversalConversionHub_HCB_Updater.exe`
+- `release_bins\UniversalConversionHub_HCB_Setup.exe`
 
 `release_bins` is the stable folder that always keeps the latest runnable app, updater, and installer binaries together.
+
+### Linux build (preview)
+
+```bash
+chmod +x build_linux.sh
+./build_linux.sh
+```
+
+Linux outputs:
+- `dist/UniversalConversionHub_HCB`
+- `dist/UniversalConversionHub_HCB_Updater`
+- `release_bins/UniversalConversionHub_HCB`
+- `release_bins/UniversalConversionHub_HCB_Updater`
 
 ### Basic dependencies
 
@@ -189,8 +212,9 @@ Wrong/limited conversion options:
 - Clear queue, add one known test file, then retry
 
 No update results:
-- Check manifest URL
+- Check manifest URL or GitHub repo URL
 - Validate JSON keys and URL accessibility
+- If using GitHub: publish a Release (recommended) or include `update_manifest.json` in the repo
 
 ## 11) Historical Snapshots / Backups
 
@@ -214,10 +238,13 @@ git config core.hooksPath .githooks
 ## 12) Important Paths
 
 Settings file:
-- `%LOCALAPPDATA%\UniversalFileUtilitySuite\settings.json`
+- `%LOCALAPPDATA%\UniversalConversionHubHCB\settings.json`
+- Legacy fallback: `%LOCALAPPDATA%\UniversalFileUtilitySuite\settings.json`
+- Updater settings: `%LOCALAPPDATA%\UniversalConversionHubHCB\updater_settings.json`
+- Updater legacy fallback: `%LOCALAPPDATA%\UniversalFileUtilitySuite\updater_settings.json`
 
 Default output root:
-- `%USERPROFILE%\Documents\Universal File Utility Suite Output`
+- `%USERPROFILE%\Documents\Universal Conversion Hub Output`
 
 ## 13) Legal/Safety Notes
 

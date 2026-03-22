@@ -1,2 +1,25 @@
-# Auto detect text files and perform LF normalization
+# Normalize text files and keep stable line endings by file type.
 * text=auto
+
+# Windows-native scripts and installer config
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+
+# Cross-platform source, docs, and config
+*.py text eol=lf
+*.spec text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary assets and packages
+*.png binary
+*.ico binary
+*.exe binary
+*.zip binary

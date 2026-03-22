@@ -44,10 +44,13 @@ except Exception:
     imageio_ffmpeg = None
 
 
-APP_TITLE = "Universal File Utility Suite - Modular Starter"
-APP_SLUG = "UniversalFileUtilitySuite"
+APP_TITLE = "Universal Conversion Hub (HCB)"
+APP_SLUG = "UniversalConversionHubHCB"
+LEGACY_APP_SLUGS = ("UniversalFileUtilitySuite",)
 APP_VERSION = "0.5"
 DEFAULT_UPDATE_MANIFEST_URL = ""
+APP_EXE_BASENAME = "UniversalConversionHub_HCB"
+UPDATER_EXE_BASENAME = "UniversalConversionHub_HCB_Updater"
 GUIDE_FILENAMES = (
     "README.md",
     "HOW_TO_Universal_File_Utility_Suite.txt",
@@ -174,7 +177,11 @@ BACKEND_DESCRIPTIONS: dict[str, str] = {
     "ImageMagick": "Image processing backend for advanced transform and format workflows.",
 }
 
-SINGLE_INSTANCE_MUTEX_NAME = "Local\\UniversalFileUtilitySuite_SingleInstanceMutex"
+SINGLE_INSTANCE_MUTEX_NAMES = (
+    "Local\\UniversalConversionHubHCB_SingleInstanceMutex",
+    "Local\\UniversalFileUtilitySuite_SingleInstanceMutex",
+)
+SINGLE_INSTANCE_LOCKFILE_NAME = "universal_conversion_hub_hcb.lock"
 
 
 def ensure_dir(path: Path) -> None:
@@ -219,6 +226,22 @@ def hash_file(path: Path, algorithm: str = "sha256") -> str:
     return digest.hexdigest()
 
 
+def quick_file_fingerprint(path: Path, size: int, sample_bytes: int = 1024 * 64) -> str:
+    """Build a fast pre-hash fingerprint from file edges to reduce full-file hashing work."""
+    digest = hashlib.sha1()
+    with path.open("rb") as handle:
+        digest.update(handle.read(sample_bytes))
+        if size > sample_bytes:
+            handle.seek(max(0, size - sample_bytes))
+            digest.update(handle.read(sample_bytes))
+    digest.update(str(size).encode("ascii", errors="ignore"))
+    return digest.hexdigest()
+
+
+class OperationCanceledError(RuntimeError):
+    """Raised when a user cancels a long-running task."""
+
+
 def _show_startup_warning(message: str) -> None:
     if os.name == "nt":
         try:
@@ -242,28 +265,75 @@ def _focus_existing_window() -> None:
         return
 
 
-def _acquire_single_instance_mutex() -> tuple[bool, int | None]:
-    if os.name != "nt":
-        return True, None
-    try:
-        kernel32 = ctypes.windll.kernel32
-        create_mutex = kernel32.CreateMutexW
-        create_mutex.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
-        create_mutex.restype = ctypes.c_void_p
-        handle = create_mutex(None, False, SINGLE_INSTANCE_MUTEX_NAME)
-        if not handle:
+def _acquire_single_instance_mutex() -> tuple[bool, Any | None]:
+    if os.name == "nt":
+        try:
+            kernel32 = ctypes.windll.kernel32
+            create_mutex = kernel32.CreateMutexW
+            create_mutex.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
+            create_mutex.restype = ctypes.c_void_p
+            handles: list[int] = []
+            for mutex_name in SINGLE_INSTANCE_MUTEX_NAMES:
+                handle = create_mutex(None, False, mutex_name)
+                if not handle:
+                    continue
+                handles.append(int(handle))
+                already_exists = kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+                if already_exists:
+                    for owned in handles:
+                        try:
+                            kernel32.CloseHandle(ctypes.c_void_p(owned))
+                        except Exception:
+                            pass
+                    return False, None
+            return True, (handles if handles else None)
+        except Exception:
             return True, None
-        already_exists = kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
-        return (not already_exists), int(handle)
+
+    # POSIX fallback: advisory lock file to keep one instance.
+    try:
+        import fcntl  # type: ignore
+
+        lock_root = Path(os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TMPDIR") or "/tmp")
+        ensure_dir(lock_root)
+        lock_path = lock_root / SINGLE_INSTANCE_LOCKFILE_NAME
+        lock_handle = lock_path.open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            lock_handle.close()
+            return False, None
+        lock_handle.seek(0)
+        lock_handle.truncate(0)
+        lock_handle.write(str(os.getpid()))
+        lock_handle.flush()
+        return True, lock_handle
     except Exception:
         return True, None
 
 
-def _release_single_instance_mutex(handle: int | None) -> None:
-    if os.name != "nt" or not handle:
+def _release_single_instance_mutex(handle: Any | None) -> None:
+    if not handle:
+        return
+    if os.name == "nt":
+        kernel32 = ctypes.windll.kernel32
+        handles = handle if isinstance(handle, (list, tuple)) else [handle]
+        for owned in handles:
+            try:
+                kernel32.CloseHandle(ctypes.c_void_p(int(owned)))
+            except Exception:
+                continue
         return
     try:
-        ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(handle))
+        import fcntl  # type: ignore
+
+        if hasattr(handle, "fileno"):
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except Exception:
+        pass
+    try:
+        if hasattr(handle, "close"):
+            handle.close()
     except Exception:
         return
 
@@ -1002,7 +1072,8 @@ class SuiteApp:
         self.script_dir = Path(__file__).resolve().parent
         self.resource_dir = Path(getattr(sys, "_MEIPASS", self.script_dir))
         self.runtime_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else self.script_dir
-        self.appdata_dir = Path(os.environ.get("LOCALAPPDATA", str(self.runtime_dir))) / APP_SLUG
+        self.local_appdata_root = Path(os.environ.get("LOCALAPPDATA", str(self.runtime_dir)))
+        self.appdata_dir = self._resolve_appdata_dir()
         ensure_dir(self.appdata_dir)
 
         self.settings_path = self.appdata_dir / "settings.json"
@@ -1014,6 +1085,9 @@ class SuiteApp:
         self.dark_mode_var = BooleanVar(value=bool(self.settings.get("dark_mode", False)))
         self.fullscreen_var = BooleanVar(value=bool(self.settings.get("fullscreen", False)))
         self.borderless_max_var = BooleanVar(value=bool(self.settings.get("borderless_maximized", False)))
+        self._startup_window_shown = False
+        self._startup_tasks_scheduled = False
+        self._startup_update_flow_handled = False
         self.tabs: dict[str, ttk.Frame] = {}
         self.backend_hover_cards: list[HoverCard] = []
         self._normal_geometry = self.root.geometry()
@@ -1026,32 +1100,45 @@ class SuiteApp:
         self.backends = BackendRegistry.detect()
         self.engine = TaskEngine(self)
 
+        self.root.withdraw()
         if not self.settings.get("first_run_done", False):
             self._run_first_run_setup_wizard()
 
-        self.root.withdraw()
         self._apply_window_icon()
         self._configure_styles()
         self._build_menu()
         self._build_ui()
         if bool(self.fullscreen_var.get()) and bool(self.borderless_max_var.get()):
             self.borderless_max_var.set(False)
-        self._apply_window_mode_state()
         self._set_backend_summary_status()
         self.root.after(100, self._poll_ui_queue)
-        if bool(self.settings.get("show_startup_animation", True)):
+        show_startup_animation = bool(self.settings.get("show_startup_animation", True))
+        if bool(self.settings.get("check_updates_on_startup", True)):
+            show_startup_animation = True
+        if show_startup_animation:
             try:
-                self._show_startup_logo_animation()
+                self._show_startup_logo_animation(show_main_when_done=False, modal=True)
             except Exception:
-                self.root.deiconify()
-        else:
-            self.root.deiconify()
-        if self.settings.get("check_updates_on_startup", True):
-            self.root.after(1200, lambda: self._check_updates_in_background(interactive=False))
-        self.root.after(1800, self._prompt_install_missing_backends_on_startup)
+                pass
+        self._run_startup_update_flow()
+        self._show_main_window_after_startup()
+
+    def _resolve_appdata_dir(self) -> Path:
+        preferred = self.local_appdata_root / APP_SLUG
+        if preferred.exists():
+            return preferred
+        for legacy_slug in LEGACY_APP_SLUGS:
+            legacy_dir = self.local_appdata_root / legacy_slug
+            if (legacy_dir / "settings.json").exists():
+                return legacy_dir
+        for legacy_slug in LEGACY_APP_SLUGS:
+            legacy_dir = self.local_appdata_root / legacy_slug
+            if legacy_dir.exists():
+                return legacy_dir
+        return preferred
 
     def _default_settings(self) -> dict[str, Any]:
-        default_output = Path.home() / "Documents" / "Universal File Utility Suite Output"
+        default_output = Path.home() / "Documents" / "Universal Conversion Hub Output"
         return {
             "first_run_done": False,
             "dark_mode": False,
@@ -1121,7 +1208,7 @@ class SuiteApp:
         outer = ttk.Frame(wizard, padding=14)
         outer.pack(fill="both", expand=True)
 
-        ttk.Label(outer, text="Welcome to Universal File Utility Suite", font=("Segoe UI Semibold", 14)).pack(anchor="w")
+        ttk.Label(outer, text="Welcome to Universal Conversion Hub (HCB)", font=("Segoe UI Semibold", 14)).pack(anchor="w")
         ttk.Label(
             outer,
             text="Set your defaults now. You can change them later from File -> Settings.",
@@ -1228,7 +1315,7 @@ class SuiteApp:
             self.style.theme_use("clam")
 
         self.style.configure(".", font=("Segoe UI", 10))
-        self.style.configure("App.TButton", padding=(10, 6), font=("Segoe UI Semibold", 9))
+        self.style.configure("App.TButton", padding=(10, 6), font=("Segoe UI Semibold", 10))
         self.style.configure("App.TNotebook", borderwidth=0, tabmargins=(0, 0, 0, 0))
         try:
             self.style.configure("App.TNotebook", tabposition="n")
@@ -1238,7 +1325,7 @@ class SuiteApp:
         self.style.configure(
             "App.TNotebook.Tab",
             padding=(16, 11),
-            font=("Segoe UI Semibold", 10),
+            font=("Segoe UI Semibold", 11),
             background="#DCE5F1",
             foreground="#17304F",
             borderwidth=1,
@@ -1247,7 +1334,7 @@ class SuiteApp:
         self.style.configure(
             "TopTabs.TNotebook.Tab",
             padding=(14, 8),
-            font=("Segoe UI Semibold", 10),
+            font=("Segoe UI Semibold", 11),
             background="#DCE5F1",
             foreground="#17304F",
             borderwidth=1,
@@ -1257,27 +1344,38 @@ class SuiteApp:
     def _theme_palette(self, dark_mode: bool) -> dict[str, str]:
         if dark_mode:
             return {
-                "window_bg": "#1E232A",
-                "card_bg": "#272D35",
-                "card_border": "#3B4450",
-                "title_fg": "#F5F8FF",
-                "subtitle_fg": "#BAC6D8",
-                "meta_fg": "#D3DEEE",
-                "status_bg": "#1B2026",
-                "status_fg": "#C9D6E8",
-                "button_active": "#334055",
-                "button_press": "#2B3548",
-                "notebook_bg": "#1E232A",
-                "tab_bg": "#313A46",
-                "tab_fg": "#CAD6E8",
-                "tab_sel_bg": "#3D4A5E",
+                "window_bg": "#10151C",
+                "card_bg": "#171F29",
+                "card_border": "#2D3A49",
+                "title_fg": "#F2F7FF",
+                "subtitle_fg": "#C7D4E6",
+                "meta_fg": "#E4EEFB",
+                "status_bg": "#0C1117",
+                "status_fg": "#D6E4F5",
+                "button_bg": "#1D2835",
+                "button_fg": "#E7F0FE",
+                "button_active": "#2A3A4E",
+                "button_press": "#324861",
+                "input_bg": "#111923",
+                "input_fg": "#F1F6FF",
+                "input_border": "#304153",
+                "select_bg": "#355276",
+                "select_fg": "#FFFFFF",
+                "tree_header_bg": "#202D3B",
+                "tree_header_fg": "#EAF3FF",
+                "progress_bg": "#5A95D6",
+                "progress_trough": "#0E151E",
+                "notebook_bg": "#10151C",
+                "tab_bg": "#1C2734",
+                "tab_fg": "#DCE7F7",
+                "tab_sel_bg": "#2A3C52",
                 "tab_sel_fg": "#FFFFFF",
-                "tab_active_bg": "#3A4555",
+                "tab_active_bg": "#243447",
                 "tab_active_fg": "#FFFFFF",
-                "log_bg": "#12161B",
-                "log_fg": "#E6EEF9",
-                "log_border": "#3A4350",
-                "backend_detected_fg": "#79BFFF",
+                "log_bg": "#0D131A",
+                "log_fg": "#F0F6FF",
+                "log_border": "#314252",
+                "backend_detected_fg": "#A8D5FF",
                 "backend_missing_fg": "#FFB178",
             }
         return {
@@ -1289,8 +1387,19 @@ class SuiteApp:
             "meta_fg": "#1A3555",
             "status_bg": "#DCE4EF",
             "status_fg": "#163150",
+            "button_bg": "#F8FBFF",
+            "button_fg": "#17304F",
             "button_active": "#E8EEF8",
             "button_press": "#DDE6F4",
+            "input_bg": "#FFFFFF",
+            "input_fg": "#10253F",
+            "input_border": "#B8C7DC",
+            "select_bg": "#2D69A8",
+            "select_fg": "#FFFFFF",
+            "tree_header_bg": "#E7EEF8",
+            "tree_header_fg": "#17304F",
+            "progress_bg": "#3A76B6",
+            "progress_trough": "#E4ECF7",
             "notebook_bg": "#EEF2F8",
             "tab_bg": "#DCE5F1",
             "tab_fg": "#17304F",
@@ -1308,30 +1417,121 @@ class SuiteApp:
     def _apply_theme(self, dark_mode: bool) -> None:
         palette = self._theme_palette(dark_mode)
         self.root.configure(bg=palette["window_bg"])
+        self.root.option_add("*TCombobox*Listbox.background", palette["input_bg"])
+        self.root.option_add("*TCombobox*Listbox.foreground", palette["input_fg"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", palette["select_bg"])
+        self.root.option_add("*TCombobox*Listbox.selectForeground", palette["select_fg"])
+
+        self.style.configure(".", font=("Segoe UI", 10), background=palette["window_bg"], foreground=palette["meta_fg"])
+        self.style.configure("TFrame", background=palette["window_bg"])
+        self.style.configure("TLabel", background=palette["window_bg"], foreground=palette["meta_fg"])
+        self.style.configure("TLabelframe", background=palette["card_bg"], borderwidth=1, relief="solid")
+        self.style.configure("TLabelframe.Label", background=palette["card_bg"], foreground=palette["meta_fg"], font=("Segoe UI Semibold", 11))
+        self.style.configure("TButton", background=palette["button_bg"], foreground=palette["button_fg"], borderwidth=1)
+        self.style.map(
+            "TButton",
+            background=[("active", palette["button_active"]), ("pressed", palette["button_press"]), ("disabled", palette["window_bg"])],
+            foreground=[("disabled", palette["subtitle_fg"])],
+        )
+        self.style.configure(
+            "TEntry",
+            fieldbackground=palette["input_bg"],
+            foreground=palette["input_fg"],
+            bordercolor=palette["input_border"],
+        )
+        self.style.map(
+            "TEntry",
+            fieldbackground=[("disabled", palette["window_bg"])],
+            foreground=[("disabled", palette["subtitle_fg"])],
+        )
+        self.style.configure(
+            "TCombobox",
+            fieldbackground=palette["input_bg"],
+            foreground=palette["input_fg"],
+            background=palette["button_bg"],
+            bordercolor=palette["input_border"],
+            arrowcolor=palette["meta_fg"],
+        )
+        self.style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", palette["input_bg"]), ("disabled", palette["window_bg"])],
+            foreground=[("readonly", palette["input_fg"]), ("disabled", palette["subtitle_fg"])],
+            selectbackground=[("readonly", palette["select_bg"])],
+            selectforeground=[("readonly", palette["select_fg"])],
+            background=[("active", palette["button_active"])],
+        )
+        self.style.configure(
+            "TSpinbox",
+            fieldbackground=palette["input_bg"],
+            foreground=palette["input_fg"],
+            background=palette["button_bg"],
+            bordercolor=palette["input_border"],
+            arrowcolor=palette["meta_fg"],
+        )
+        self.style.configure("TScrollbar", background=palette["button_bg"], troughcolor=palette["window_bg"], arrowcolor=palette["meta_fg"])
+        self.style.map("TScrollbar", background=[("active", palette["button_active"])])
+        self.style.configure(
+            "Treeview",
+            background=palette["input_bg"],
+            fieldbackground=palette["input_bg"],
+            foreground=palette["input_fg"],
+            bordercolor=palette["input_border"],
+            rowheight=24,
+            font=("Segoe UI", 10),
+        )
+        self.style.map("Treeview", background=[("selected", palette["select_bg"])], foreground=[("selected", palette["select_fg"])])
+        self.style.configure(
+            "Treeview.Heading",
+            background=palette["tree_header_bg"],
+            foreground=palette["tree_header_fg"],
+            relief="flat",
+            font=("Segoe UI Semibold", 10),
+        )
+        self.style.map(
+            "Treeview.Heading",
+            background=[("active", palette["tab_active_bg"])],
+            foreground=[("active", palette["tab_active_fg"])],
+        )
+        self.style.configure(
+            "Horizontal.TProgressbar",
+            troughcolor=palette["progress_trough"],
+            background=palette["progress_bg"],
+            bordercolor=palette["input_border"],
+            lightcolor=palette["progress_bg"],
+            darkcolor=palette["progress_bg"],
+        )
+        self.style.configure("Horizontal.TScale", background=palette["window_bg"], troughcolor=palette["progress_trough"])
+        self.style.configure("TScale", background=palette["window_bg"], troughcolor=palette["progress_trough"])
+
         self.style.configure("App.TFrame", background=palette["window_bg"])
         self.style.configure("Card.TFrame", background=palette["card_bg"])
         self.style.configure("HeaderCard.TFrame", background=palette["card_bg"])
         self.style.configure("Card.TLabelframe", background=palette["card_bg"], borderwidth=1, relief="solid")
-        self.style.configure("Card.TLabelframe.Label", background=palette["card_bg"], foreground=palette["meta_fg"], font=("Segoe UI Semibold", 10))
+        self.style.configure("Card.TLabelframe.Label", background=palette["card_bg"], foreground=palette["meta_fg"], font=("Segoe UI Semibold", 11))
         self.style.configure("HeaderTitle.TLabel", background=palette["card_bg"], foreground=palette["title_fg"], font=("Segoe UI Semibold", 20))
-        self.style.configure("HeaderSubtitle.TLabel", background=palette["card_bg"], foreground=palette["subtitle_fg"], font=("Segoe UI", 10))
-        self.style.configure("HeaderMeta.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=("Segoe UI Semibold", 9))
+        self.style.configure("HeaderSubtitle.TLabel", background=palette["card_bg"], foreground=palette["subtitle_fg"], font=("Segoe UI", 11))
+        self.style.configure("HeaderMeta.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=("Segoe UI Semibold", 10))
         self.style.configure(
             "BackendDetectedLink.TLabel",
             background=palette["card_bg"],
             foreground=palette["backend_detected_fg"],
-            font=("Segoe UI", 9, "underline"),
+            font=("Segoe UI Semibold", 10, "underline"),
         )
         self.style.configure(
             "BackendMissingLink.TLabel",
             background=palette["card_bg"],
             foreground=palette["backend_missing_fg"],
-            font=("Segoe UI", 9, "underline"),
+            font=("Segoe UI Semibold", 10, "underline"),
         )
         self.style.configure("StatusBar.TFrame", background=palette["status_bg"])
-        self.style.configure("StatusLeft.TLabel", background=palette["status_bg"], foreground=palette["status_fg"], font=("Segoe UI", 9))
-        self.style.configure("StatusRight.TLabel", background=palette["status_bg"], foreground=palette["status_fg"], font=("Segoe UI", 9))
-        self.style.map("App.TButton", background=[("active", palette["button_active"]), ("pressed", palette["button_press"])])
+        self.style.configure("StatusLeft.TLabel", background=palette["status_bg"], foreground=palette["status_fg"], font=("Segoe UI", 10))
+        self.style.configure("StatusRight.TLabel", background=palette["status_bg"], foreground=palette["status_fg"], font=("Segoe UI", 10))
+        self.style.configure("App.TButton", background=palette["button_bg"], foreground=palette["button_fg"], borderwidth=1)
+        self.style.map(
+            "App.TButton",
+            background=[("active", palette["button_active"]), ("pressed", palette["button_press"]), ("disabled", palette["window_bg"])],
+            foreground=[("disabled", palette["subtitle_fg"])],
+        )
         self.style.configure("App.TNotebook", background=palette["notebook_bg"])
         self.style.configure("App.TNotebook.Tab", background=palette["tab_bg"], foreground=palette["tab_fg"])
         self.style.map(
@@ -1354,6 +1554,92 @@ class SuiteApp:
                 highlightbackground=palette["log_border"],
                 highlightcolor=palette["log_border"],
             )
+        self._apply_theme_to_widget_tree(self.root, palette)
+
+    def _apply_theme_to_widget_tree(self, widget: tk.Misc, palette: dict[str, str]) -> None:
+        try:
+            children = widget.winfo_children()
+        except Exception:
+            return
+        for child in children:
+            self._apply_theme_to_tk_widget(child, palette)
+            self._apply_theme_to_widget_tree(child, palette)
+
+    def _apply_theme_to_tk_widget(self, widget: tk.Misc, palette: dict[str, str]) -> None:
+        try:
+            if isinstance(widget, tk.Listbox):
+                widget.configure(
+                    bg=palette["input_bg"],
+                    fg=palette["input_fg"],
+                    selectbackground=palette["select_bg"],
+                    selectforeground=palette["select_fg"],
+                    highlightbackground=palette["input_border"],
+                    highlightcolor=palette["input_border"],
+                    disabledforeground=palette["subtitle_fg"],
+                    activestyle="none",
+                )
+                return
+            if isinstance(widget, tk.Text):
+                widget.configure(
+                    bg=palette["log_bg"],
+                    fg=palette["log_fg"],
+                    insertbackground=palette["log_fg"],
+                    selectbackground=palette["select_bg"],
+                    selectforeground=palette["select_fg"],
+                    highlightbackground=palette["log_border"],
+                    highlightcolor=palette["log_border"],
+                )
+                return
+            if isinstance(widget, tk.Entry):
+                widget.configure(
+                    bg=palette["input_bg"],
+                    fg=palette["input_fg"],
+                    insertbackground=palette["input_fg"],
+                    disabledbackground=palette["window_bg"],
+                    disabledforeground=palette["subtitle_fg"],
+                    highlightbackground=palette["input_border"],
+                    highlightcolor=palette["input_border"],
+                    readonlybackground=palette["input_bg"],
+                )
+                return
+            if isinstance(widget, tk.Spinbox):
+                widget.configure(
+                    bg=palette["input_bg"],
+                    fg=palette["input_fg"],
+                    insertbackground=palette["input_fg"],
+                    buttonbackground=palette["button_bg"],
+                    disabledbackground=palette["window_bg"],
+                    disabledforeground=palette["subtitle_fg"],
+                    highlightbackground=palette["input_border"],
+                    highlightcolor=palette["input_border"],
+                    readonlybackground=palette["input_bg"],
+                )
+                return
+            if isinstance(widget, tk.Scale):
+                widget.configure(
+                    bg=palette["window_bg"],
+                    fg=palette["meta_fg"],
+                    troughcolor=palette["progress_trough"],
+                    activebackground=palette["button_active"],
+                    highlightbackground=palette["window_bg"],
+                    highlightcolor=palette["window_bg"],
+                )
+                return
+            if isinstance(widget, tk.Canvas):
+                widget.configure(
+                    bg=palette["window_bg"],
+                    highlightbackground=palette["card_border"],
+                    highlightcolor=palette["card_border"],
+                )
+                return
+            if isinstance(widget, tk.Frame):
+                widget.configure(bg=palette["window_bg"])
+                return
+            if isinstance(widget, tk.Label):
+                widget.configure(bg=palette["window_bg"], fg=palette["meta_fg"])
+                return
+        except Exception:
+            return
 
     def _on_dark_mode_changed(self) -> None:
         value = bool(self.dark_mode_var.get())
@@ -2386,7 +2672,140 @@ class SuiteApp:
                 return
         self.root.destroy()
 
-    def _show_startup_logo_animation(self) -> None:
+    def _resolve_updater_launch_command(self) -> list[str] | None:
+        candidates = [
+            self.runtime_dir / UPDATER_EXE_BASENAME,
+            self.script_dir / UPDATER_EXE_BASENAME,
+            self.script_dir / "dist" / UPDATER_EXE_BASENAME,
+            self.runtime_dir / f"{UPDATER_EXE_BASENAME}.exe",
+            self.script_dir / f"{UPDATER_EXE_BASENAME}.exe",
+            self.script_dir / "dist" / f"{UPDATER_EXE_BASENAME}.exe",
+            self.runtime_dir / "UniversalFileUtilitySuite_Updater.exe",
+            self.script_dir / "UniversalFileUtilitySuite_Updater.exe",
+            self.script_dir / "dist" / "UniversalFileUtilitySuite_Updater.exe",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return [str(candidate)]
+        script_candidate = self.script_dir / "suite_updater.py"
+        if script_candidate.exists():
+            return [sys.executable, str(script_candidate)]
+        return None
+
+    def _show_startup_choice_popup(self, latest_version: str = "") -> str:
+        # Keep root hidden during startup-choice flow so only one window is visible.
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
+        dialog = tk.Toplevel(self.root)
+        dialog.title("How do you want to open this app?")
+        dialog.resizable(False, False)
+        try:
+            dialog.transient(self.root)
+        except Exception:
+            pass
+        dialog.grab_set()
+        self._apply_window_icon_to(dialog)
+
+        choice = {"value": "open"}
+        version_note = latest_version.strip() if latest_version else "a newer version"
+
+        outer = ttk.Frame(dialog, padding=14)
+        outer.pack(fill="both", expand=True)
+        ttk.Label(outer, text="How do you want to open this app?", font=("Segoe UI Semibold", 13)).pack(anchor="w")
+        ttk.Label(
+            outer,
+            text=(
+                f"Update {version_note} is available.\n\n"
+                "Open Normally: launch the app.\n"
+                "Install Updates: run updater first, then continue to the app."
+            ),
+            justify="left",
+            wraplength=460,
+        ).pack(anchor="w", pady=(8, 14))
+
+        buttons = ttk.Frame(outer)
+        buttons.pack(fill="x")
+
+        def choose(value: str) -> None:
+            choice["value"] = value
+            dialog.destroy()
+
+        ttk.Button(buttons, text="Install Updates", command=lambda: choose("update")).pack(side="left")
+        ttk.Button(buttons, text="Open Normally", command=lambda: choose("open")).pack(side="right")
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: choose("open"))
+        dialog.update_idletasks()
+        self._center_window_on_screen(dialog)
+        self.root.wait_window(dialog)
+        return str(choice["value"])
+
+    def _resolve_update_manifest_source(self) -> str:
+        manifest_url = str(self.settings.get("update_manifest_url", "")).strip()
+        if manifest_url:
+            return manifest_url
+        local_candidates = [
+            self.runtime_dir / "update_manifest.json",
+            self.runtime_dir / "update_manifest.example.json",
+            self.script_dir / "update_manifest.json",
+            self.script_dir / "update_manifest.example.json",
+        ]
+        found = next((candidate for candidate in local_candidates if candidate.exists()), None)
+        return found.as_uri() if found else ""
+
+    def _run_startup_update_flow(self) -> None:
+        if not bool(self.settings.get("check_updates_on_startup", True)):
+            return
+        self._startup_update_flow_handled = True
+        self.settings["last_update_check"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self._save_settings()
+
+        manifest_url = self._resolve_update_manifest_source()
+        if not manifest_url:
+            return
+
+        allowed_source, source_reason = self._validate_manifest_source_policy(manifest_url)
+        if not allowed_source:
+            self.log(f"Startup update check blocked: {source_reason} Source: {manifest_url}")
+            return
+
+        try:
+            with urllib.request.urlopen(manifest_url, timeout=12) as response:
+                payload = response.read().decode("utf-8", errors="replace")
+            data = json.loads(payload)
+            if not isinstance(data, dict):
+                self.log(f"Startup update check skipped: manifest is not an object ({manifest_url})")
+                return
+            latest = str(data.get("latest_version") or data.get("version") or "").strip()
+        except Exception as exc:
+            self.log(f"Startup update check failed: {exc}")
+            return
+
+        if not latest or not is_version_newer(latest, APP_VERSION):
+            return
+
+        choice = self._show_startup_choice_popup(latest)
+        if choice != "update":
+            return
+
+        command = self._resolve_updater_launch_command()
+        if not command:
+            messagebox.showwarning(
+                APP_TITLE,
+                "Updater was not found in this installation.\n\nContinuing with normal app startup.",
+            )
+            return
+        try:
+            process = subprocess.Popen(command, cwd=str(self.runtime_dir))
+            process.wait()
+        except Exception as exc:
+            messagebox.showerror(
+                APP_TITLE,
+                f"Failed to open updater:\n{exc}\n\nContinuing with normal app startup.",
+            )
+
+    def _show_startup_logo_animation(self, show_main_when_done: bool = True, modal: bool = False) -> None:
         splash = tk.Toplevel(self.root)
         splash.overrideredirect(True)
         splash.attributes("-topmost", True)
@@ -2411,7 +2830,7 @@ class SuiteApp:
 
         tk.Label(
             container,
-            text="Universal File Utility Suite",
+            text=APP_TITLE,
             bg="#0E1726",
             fg="#EAF4FF",
             font=("Segoe UI Semibold", 15),
@@ -2455,11 +2874,54 @@ class SuiteApp:
                 splash.after(16, tick)
                 return
             splash.destroy()
-            self.root.deiconify()
-            self.root.lift()
-            self.root.focus_force()
+            if show_main_when_done:
+                self._show_main_window_after_startup()
 
         splash.after(20, tick)
+        if modal:
+            self.root.wait_window(splash)
+
+    def _center_window_on_screen(self, window: tk.Misc) -> None:
+        try:
+            window.update_idletasks()
+            width = int(window.winfo_width())
+            height = int(window.winfo_height())
+            if width <= 1 or height <= 1:
+                geometry = str(window.geometry())
+                size_part = geometry.split("+", 1)[0]
+                if "x" in size_part:
+                    raw_w, raw_h = size_part.split("x", 1)
+                    width = int(raw_w)
+                    height = int(raw_h)
+            if width <= 1 or height <= 1:
+                return
+            x = max(0, (window.winfo_screenwidth() - width) // 2)
+            y = max(0, (window.winfo_screenheight() - height) // 2)
+            window.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            return
+
+    def _schedule_startup_tasks_once(self) -> None:
+        if self._startup_tasks_scheduled:
+            return
+        self._startup_tasks_scheduled = True
+        if self.settings.get("check_updates_on_startup", True) and not self._startup_update_flow_handled:
+            self.root.after(1200, lambda: self._check_updates_in_background(interactive=False))
+        self.root.after(1800, self._prompt_install_missing_backends_on_startup)
+
+    def _show_main_window_after_startup(self) -> None:
+        if self._startup_window_shown:
+            return
+        self._startup_window_shown = True
+        if not bool(self.fullscreen_var.get()) and not bool(self.borderless_max_var.get()):
+            self._center_window_on_screen(self.root)
+            self._normal_geometry = self.root.geometry()
+            self._normal_zoomed = False
+        self._apply_window_mode_state()
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+        self._schedule_startup_tasks_once()
 
     def _set_backend_summary_status(self) -> None:
         available = sum(1 for _, value in self.backends.as_rows() if value != "Not found")
@@ -2473,25 +2935,15 @@ class SuiteApp:
             return
 
         def worker() -> None:
-            manifest_url = str(self.settings.get("update_manifest_url", "")).strip()
+            manifest_url = self._resolve_update_manifest_source()
             self.settings["last_update_check"] = time.strftime("%Y-%m-%d %H:%M:%S")
             self._save_settings()
 
             if not manifest_url:
-                local_candidates = [
-                    self.runtime_dir / "update_manifest.json",
-                    self.runtime_dir / "update_manifest.example.json",
-                    self.script_dir / "update_manifest.json",
-                    self.script_dir / "update_manifest.example.json",
-                ]
-                found = next((candidate for candidate in local_candidates if candidate.exists()), None)
-                if found:
-                    manifest_url = found.as_uri()
-                elif interactive:
+                if interactive:
                     self.call_ui(self._prompt_configure_updates)
                     return
-                else:
-                    return
+                return
 
             try:
                 allowed_source, source_reason = self._validate_manifest_source_policy(manifest_url)
@@ -2534,10 +2986,19 @@ class SuiteApp:
         self._update_thread.start()
 
     def _prompt_configure_updates(self) -> None:
-        answer = messagebox.askyesno(
-            APP_TITLE,
-            "No update manifest is configured.\n\nOpen setup wizard now to configure update settings?",
-        )
+        was_visible = str(self.root.state()) != "withdrawn"
+        if was_visible:
+            self.root.withdraw()
+        try:
+            answer = messagebox.askyesno(
+                APP_TITLE,
+                "No update manifest is configured.\n\nOpen setup wizard now to configure update settings?",
+            )
+        finally:
+            if was_visible:
+                self.root.deiconify()
+                self.root.lift()
+                self.root.focus_force()
         if answer:
             self._rerun_setup_wizard()
 
@@ -2545,13 +3006,24 @@ class SuiteApp:
         details = notes if notes else "No release notes provided."
         if blocked_reason:
             details = f"{details}\n\n{blocked_reason}"
-        prompt = (
+        info_prompt = (
             f"Update available.\n\nCurrent version: {APP_VERSION}\nLatest version: {latest}\n\n"
-            f"{details}\n\nOpen download page now?"
+            f"{details}\n\nClick OK to continue."
         )
-        if download_url and messagebox.askyesno(APP_TITLE, prompt):
-            self._open_external_url(download_url, purpose=f"update download for version {latest}")
-        elif not download_url:
+        was_visible = str(self.root.state()) != "withdrawn"
+        if was_visible:
+            self.root.withdraw()
+        try:
+            messagebox.showinfo(APP_TITLE, info_prompt)
+        finally:
+            if was_visible:
+                self.root.deiconify()
+                self.root.lift()
+                self.root.focus_force()
+        if download_url:
+            if messagebox.askyesno(APP_TITLE, "Open download page now?"):
+                self._open_external_url(download_url, purpose=f"update download for version {latest}")
+        else:
             suffix = f"\n\n{blocked_reason}" if blocked_reason else ""
             messagebox.showinfo(APP_TITLE, f"Update {latest} is available, but no download URL was provided.{suffix}")
 
@@ -2701,6 +3173,8 @@ class ModuleTab(ttk.Frame):
                 action()
                 if done_message:
                     self.app.info(done_message)
+            except OperationCanceledError as exc:
+                self.log(str(exc))
             except Exception as exc:
                 self.log(f"Error: {exc}")
                 self.app.error(f"{self.tab_name} failed:\n{exc}")
@@ -4220,6 +4694,9 @@ class DuplicateFinderTab(ModuleTab):
         self.folder_var = StringVar(value=str(Path.home()))
         self.min_size_mb = IntVar(value=1)
         self.status_var = StringVar(value="Ready.")
+        self.cancel_scan_event = threading.Event()
+        self.scan_button: ttk.Button | None = None
+        self.cancel_button: ttk.Button | None = None
         self._build()
 
     def _build(self) -> None:
@@ -4233,7 +4710,10 @@ class DuplicateFinderTab(ModuleTab):
         ttk.Button(top, text="Browse", command=lambda: self.choose_output_dir(self.folder_var, "Choose folder to scan")).pack(side="left")
         ttk.Label(top, text="Min size (MB)").pack(side="left", padx=(14, 6))
         ttk.Spinbox(top, from_=0, to=2048, textvariable=self.min_size_mb, width=8).pack(side="left")
-        ttk.Button(top, text="Scan Duplicates", command=self.scan).pack(side="right")
+        self.cancel_button = ttk.Button(top, text="Cancel Scan", command=self.cancel_scan, state="disabled")
+        self.cancel_button.pack(side="right")
+        self.scan_button = ttk.Button(top, text="Scan Duplicates", command=self.scan)
+        self.scan_button.pack(side="right", padx=(0, 8))
 
         self.tree = ttk.Treeview(outer, columns=("hash", "size", "path"), show="headings")
         self.tree.heading("hash", text="SHA256")
@@ -4243,56 +4723,178 @@ class DuplicateFinderTab(ModuleTab):
         self.tree.column("size", width=120)
         self.tree.column("path", width=900)
         self.tree.pack(fill="both", expand=True, pady=(8, 0))
+        self.progress = ttk.Progressbar(outer, mode="determinate", maximum=100, value=0)
+        self.progress.pack(fill="x", pady=(8, 0))
         ttk.Label(outer, textvariable=self.status_var).pack(anchor="w", pady=(6, 0))
 
+    def _set_scan_running(self, running: bool) -> None:
+        if self.scan_button is not None:
+            self.scan_button.configure(state="disabled" if running else "normal")
+        if self.cancel_button is not None:
+            self.cancel_button.configure(state="normal" if running else "disabled")
+
+    def _check_cancel_scan(self) -> None:
+        if self.cancel_scan_event.is_set():
+            raise OperationCanceledError("Duplicate scan canceled by user.")
+
+    def cancel_scan(self) -> None:
+        if self.worker and self.worker.is_alive():
+            self.cancel_scan_event.set()
+            self.status_var.set("Cancel requested... stopping current scan.")
+            self.log("Cancellation requested for duplicate scan.")
+
     def scan(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showwarning(APP_TITLE, f"{self.tab_name} is already running.")
+            return
         root = Path(self.folder_var.get().strip())
         if not root.exists():
             messagebox.showerror(APP_TITLE, "Scan folder does not exist.")
             return
         min_bytes = self.min_size_mb.get() * 1024 * 1024
+        self.cancel_scan_event.clear()
+        self._set_scan_running(True)
 
         def work() -> None:
-            candidates: dict[int, list[Path]] = {}
-            total_seen = 0
-            for current_root, _, files in os.walk(root):
-                for name in files:
-                    path = Path(current_root) / name
-                    try:
-                        size = path.stat().st_size
-                    except Exception:
-                        continue
-                    total_seen += 1
-                    if size < min_bytes:
-                        continue
-                    candidates.setdefault(size, []).append(path)
+            try:
+                self.app.call_ui(
+                    lambda: (
+                        self.progress.stop(),
+                        self.progress.configure(mode="indeterminate", value=0),
+                        self.progress.start(12),
+                        self.status_var.set("Scanning files..."),
+                    )
+                )
+                candidates: dict[int, list[Path]] = {}
+                total_seen = 0
+                skipped_errors = 0
+                for current_root, _, files in os.walk(root):
+                    self._check_cancel_scan()
+                    for name in files:
+                        self._check_cancel_scan()
+                        path = Path(current_root) / name
+                        try:
+                            size = path.stat().st_size
+                        except Exception:
+                            skipped_errors += 1
+                            continue
+                        total_seen += 1
+                        if total_seen % 400 == 0:
+                            self.app.call_ui(
+                                lambda seen=total_seen: self.status_var.set(f"Scanning files... {seen} inspected")
+                            )
+                        if size < min_bytes:
+                            continue
+                        candidates.setdefault(size, []).append(path)
 
-            duplicates: list[tuple[str, int, Path]] = []
-            for size, group in candidates.items():
-                if len(group) < 2:
-                    continue
-                by_hash: dict[str, list[Path]] = {}
-                for item in group:
-                    try:
-                        digest = hash_file(item, "sha256")
-                    except Exception:
-                        continue
-                    by_hash.setdefault(digest, []).append(item)
-                for digest, hashed_group in by_hash.items():
-                    if len(hashed_group) > 1:
-                        for file_path in hashed_group:
-                            duplicates.append((digest, size, file_path))
-
-            def render() -> None:
-                for row in self.tree.get_children():
-                    self.tree.delete(row)
-                for digest, size, path in duplicates:
-                    self.tree.insert("", "end", values=(digest, human_size(size), str(path)))
-                self.status_var.set(
-                    f"Scanned {total_seen} files. Found {len(duplicates)} duplicate entries across matching hashes."
+                size_collision_groups = [(size, group) for size, group in candidates.items() if len(group) > 1]
+                fingerprint_total = sum(len(group) for _, group in size_collision_groups)
+                self.app.call_ui(
+                    lambda total=fingerprint_total: (
+                        self.progress.stop(),
+                        self.progress.configure(mode="determinate", maximum=max(1, total), value=0),
+                        self.status_var.set(
+                            "No same-size collisions found. Finalizing..."
+                            if total == 0
+                            else f"Prefiltering {total} same-size files..."
+                        ),
+                    )
                 )
 
-            self.app.call_ui(render)
+                duplicates: list[tuple[str, int, Path]] = []
+                if fingerprint_total > 0:
+                    possible_duplicate_groups: list[tuple[int, list[Path]]] = []
+                    fingerprints_done = 0
+                    for size, group in size_collision_groups:
+                        self._check_cancel_scan()
+                        by_fingerprint: dict[str, list[Path]] = {}
+                        for item in group:
+                            self._check_cancel_scan()
+                            try:
+                                fingerprint = quick_file_fingerprint(item, size)
+                            except Exception:
+                                continue
+                            by_fingerprint.setdefault(fingerprint, []).append(item)
+                            fingerprints_done += 1
+                            if fingerprints_done % 50 == 0 or fingerprints_done == fingerprint_total:
+                                self.app.call_ui(
+                                    lambda done=fingerprints_done, total=fingerprint_total: (
+                                        self.progress.configure(value=done),
+                                        self.status_var.set(f"Prefiltering candidates... {done}/{total}"),
+                                    )
+                                )
+                        for fingerprint_group in by_fingerprint.values():
+                            if len(fingerprint_group) > 1:
+                                possible_duplicate_groups.append((size, fingerprint_group))
+
+                    full_hash_total = sum(len(group) for _, group in possible_duplicate_groups)
+                    total_work = fingerprint_total + full_hash_total
+                    self.app.call_ui(
+                        lambda work_total=total_work, done=fingerprint_total, hash_total=full_hash_total: (
+                            self.progress.configure(maximum=max(1, work_total), value=done),
+                            self.status_var.set(
+                                "No matching fingerprints found. Finalizing..."
+                                if hash_total == 0
+                                else f"Verifying with SHA256... 0/{hash_total}"
+                            ),
+                        )
+                    )
+
+                    hashed_done = 0
+                    for size, group in possible_duplicate_groups:
+                        self._check_cancel_scan()
+                        by_hash: dict[str, list[Path]] = {}
+                        for item in group:
+                            self._check_cancel_scan()
+                            try:
+                                digest = hash_file(item, "sha256")
+                            except Exception:
+                                continue
+                            by_hash.setdefault(digest, []).append(item)
+                            hashed_done += 1
+                            if hashed_done % 25 == 0 or hashed_done == full_hash_total:
+                                self.app.call_ui(
+                                    lambda done=hashed_done, total=full_hash_total, base=fingerprint_total: (
+                                        self.progress.configure(value=base + done),
+                                        self.status_var.set(f"Verifying with SHA256... {done}/{total}"),
+                                    )
+                                )
+                        for digest, hashed_group in by_hash.items():
+                            if len(hashed_group) > 1:
+                                for file_path in hashed_group:
+                                    duplicates.append((digest, size, file_path))
+                else:
+                    full_hash_total = 0
+                    total_work = 1
+
+                duplicate_entries = sorted(duplicates, key=lambda row: (row[0], str(row[2]).lower()))
+                duplicate_groups = len({f"{digest}:{size}" for digest, size, _ in duplicate_entries})
+
+                def render() -> None:
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate", maximum=max(1, total_work), value=max(1, total_work))
+                    for row in self.tree.get_children():
+                        self.tree.delete(row)
+                    for digest, size, path in duplicate_entries:
+                        self.tree.insert("", "end", values=(digest, human_size(size), str(path)))
+                    self.status_var.set(
+                        "Scanned "
+                        f"{total_seen} files ({skipped_errors} unreadable skipped). "
+                        f"Found {len(duplicate_entries)} duplicate files across {duplicate_groups} groups."
+                    )
+
+                self.app.call_ui(render)
+            except OperationCanceledError:
+                self.app.call_ui(
+                    lambda: (
+                        self.progress.stop(),
+                        self.progress.configure(mode="determinate", maximum=100, value=0),
+                        self.status_var.set("Duplicate scan canceled."),
+                    )
+                )
+                raise
+            finally:
+                self.app.call_ui(lambda: self._set_scan_running(False))
 
         self.run_async(work, done_message="Duplicate scan complete.")
 
@@ -4866,7 +5468,7 @@ def main() -> None:
     acquired, mutex_handle = _acquire_single_instance_mutex()
     if not acquired:
         _focus_existing_window()
-        _show_startup_warning("Universal File Utility Suite is already running.\n\nOnly one instance can be open at a time.")
+        _show_startup_warning(f"{APP_TITLE} is already running.\n\nOnly one instance can be open at a time.")
         return
     root = tk.Tk()
     try:

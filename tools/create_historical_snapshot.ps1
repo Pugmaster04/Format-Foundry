@@ -1,5 +1,6 @@
 ﻿param(
     [string]$RepoRoot = "",
+    [string]$ArchiveRoot = "",
     [string]$Reason = "manual",
     [switch]$IncludeBuildOutputs
 )
@@ -12,6 +13,14 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 }
 $RepoRoot = (Resolve-Path $RepoRoot).Path
 Set-Location $RepoRoot
+
+function Get-DefaultArchiveRoot {
+    param(
+        [string]$RepoRoot
+    )
+    $parent = Split-Path $RepoRoot -Parent
+    return (Join-Path $parent "Universal Conversion Hub Archives")
+}
 
 function Get-AppVersion {
     $mainScript = Join-Path $RepoRoot "modular_file_utility_suite.py"
@@ -71,7 +80,19 @@ $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $safeReason = ($Reason -replace '[^A-Za-z0-9._-]', "_")
 $version = Get-AppVersion
 
-$snapshotRoot = Join-Path $RepoRoot ("archive\history\v{0}\{1}_{2}" -f $version, $timestamp, $safeReason)
+if ([string]::IsNullOrWhiteSpace($ArchiveRoot)) {
+    $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "User")
+    if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) {
+        $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "Process")
+    }
+    $ArchiveRoot = if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) { Get-DefaultArchiveRoot -RepoRoot $RepoRoot } else { $envArchiveRoot }
+}
+if (-not (Test-Path $ArchiveRoot)) {
+    New-Item -ItemType Directory -Path $ArchiveRoot -Force | Out-Null
+}
+$ArchiveRoot = (Resolve-Path $ArchiveRoot).Path
+
+$snapshotRoot = Join-Path $ArchiveRoot ("history\v{0}\{1}_{2}" -f $version, $timestamp, $safeReason)
 $sourceRoot = Join-Path $snapshotRoot "source"
 New-Item -ItemType Directory -Path $sourceRoot -Force | Out-Null
 
@@ -81,7 +102,6 @@ if ($IncludeBuildOutputs.IsPresent) {
     $artifactRoot = Join-Path $snapshotRoot "artifacts"
     New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 
-    # Capture current artifact names and keep legacy fallback support for older builds.
     Copy-ExistingArtifacts -ArtifactRoot $artifactRoot -RelativePaths @(
         "dist\UniversalConversionHub_UCH.exe",
         "dist\UniversalConversionHub_HCB.exe",
@@ -106,10 +126,10 @@ $snapshotMeta = [ordered]@{
     version = $version
     include_build_outputs = [bool]$IncludeBuildOutputs.IsPresent
     repo_root = $RepoRoot
+    archive_root = $ArchiveRoot
 }
 
 $metaPath = Join-Path $snapshotRoot "snapshot.json"
 $snapshotMeta | ConvertTo-Json -Depth 4 | Set-Content -Path $metaPath -Encoding UTF8
 
 Write-Host ("Historical snapshot created: {0}" -f $snapshotRoot)
-

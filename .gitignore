@@ -13,6 +13,7 @@ suite_output/
 release_bins/
 archive/history/
 archive/releases/
+archive/legacy_universal_file_utility_suite/
 
 .pytest_cache/
 .mypy_cache/

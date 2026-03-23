@@ -28,11 +28,12 @@ This changelog includes:
 - Startup splash now respects reduced-motion preference and skips animation when that mode is enabled.
 - Storage Analyzer chart labels and splash content now scale correctly with the selected interface size.
 - Presets / Batch Jobs now recognize `Images`, `Audio`, and `Video` as first-class batchable modules.
+- Historical snapshots and imported legacy archives now default to an external archive root outside the Git repo.
 - `0.6.5` is now the active app, updater, installer, README, and update-manifest version.
 
 ### Archive
-- `0.6.2` history remains preserved under `archive/history/v0.6.2`.
-- Imported legacy versions are now preserved under `archive/legacy_universal_file_utility_suite`.
+- `0.6.2` history remains preserved under the external archive root in `history/v0.6.2`.
+- Imported legacy versions are now preserved under the external archive root in `legacy_universal_file_utility_suite`.
 
 ## [0.6.2] - 2026-03-22
 
@@ -148,7 +149,7 @@ This changelog includes:
 - Added automated pre-build and post-build historical snapshot creation.
 - Added commit-time snapshot automation support (`.githooks/post-commit` + tools scripts).
 - Added archive history structure under:
-  - `archive/history/v0.5/<timestamp>_<reason>/`
+  - external archive root `history/v0.5/<timestamp>_<reason>/`
 - Added release smoke-test workflow for generated binaries.
 
 ### Documentation

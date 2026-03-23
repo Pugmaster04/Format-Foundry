@@ -4,7 +4,7 @@ Version: `0.6.5`
 
 Changelog:
 - `CHANGELOG.md` (full project history and release notes)
-- `archive/ARCHIVE_INDEX.md` (canonical version/archive map)
+- `archive/ARCHIVE_INDEX.md` (archive map and external archive-root policy)
 
 This is a modular desktop suite for practical file workflows:
 - Convert
@@ -227,16 +227,22 @@ No update results:
 
 ## 11) Historical Snapshots / Backups
 
-This repo includes automated historical snapshots:
+This repo uses automated historical snapshots:
 - `tools/create_historical_snapshot.ps1`
 - `.githooks/post-commit`
 
-Snapshot location:
-- `archive/history/v<version>/<timestamp>_<reason>/`
+Default external snapshot location:
+- `%USERPROFILE%\\Documents\\Universal File Utility Suite Output\\Universal Conversion Hub Archives\\history\\v<version>\\<timestamp>_<reason>\\`
 
 Build script also runs snapshots:
 - pre-build source snapshot
 - post-build source + artifacts snapshot
+
+Legacy imported archives are also stored in that external archive root, under:
+- `legacy_universal_file_utility_suite`
+
+Override location:
+- Set environment variable `UCH_ARCHIVE_ROOT`
 
 To enable local hooks in a clone:
 

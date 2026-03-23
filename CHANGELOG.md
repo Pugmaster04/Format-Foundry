@@ -7,6 +7,28 @@ This changelog includes:
 - Full `0.5` and `0.6.x` feature/fix/security/build history
 - Rapid revision trails captured in archive snapshots
 
+## [0.7] - 2026-03-23
+
+### Added
+- Advanced `Images`, `Audio`, and `Video` workspace modules are finalized as first-class tabs instead of roadmap placeholders.
+- Tooltip-toggle coverage now extends beyond Convert/Compress into Storage Analyzer, Duplicate Finder, Backends / Links, and backend status affordances in the shell.
+- Storage Analyzer now includes categorized workspace placement, visible numeric progress, and a pie-chart view with tabbed comparisons for top-level items, largest files, and largest folders.
+
+### Changed
+- Workspace categorization is finalized under `Conversion`, `Advanced`, and `Misc`, with `Subtitles` now placed under `Misc`.
+- Main shell layout was tightened for readability: compact header, reduced action-panel height, simplified top controls, and backend status condensed into a corner entry instead of a full-width shell panel.
+- Window/help controls were moved into Settings so the top shell stays focused on core workspace actions.
+- Startup window flow was cleaned up to avoid the pre-splash flash before the loading popup.
+- Advanced media option labels and helper text are clearer, including plain-language guidance for video CRF, video presets, audio bitrate, and ZIP compression level.
+- Drag-and-drop intake remains active across workflow tabs while the Extract workflow now rejects archive misuse cleanly instead of crashing.
+- `0.7` is now the active app, updater, installer, README, and update-manifest version.
+
+### Fixed
+- Image conversion exports now map JPEG and TIFF format names correctly in the Convert workflow instead of passing unsupported Pillow format identifiers.
+
+### Archive
+- `0.6.5`, `0.6.2`, `0.6`, `0.5`, and the imported legacy `0.4.x` line remain preserved under the external archive root.
+
 ## [0.6.5] - 2026-03-22
 
 ### Added
@@ -29,7 +51,7 @@ This changelog includes:
 - Storage Analyzer chart labels and splash content now scale correctly with the selected interface size.
 - Presets / Batch Jobs now recognize `Images`, `Audio`, and `Video` as first-class batchable modules.
 - Historical snapshots and imported legacy archives now default to an external archive root outside the Git repo.
-- `0.6.5` is now the active app, updater, installer, README, and update-manifest version.
+- Workspace navigation now groups modules into `Conversion`, `Advanced`, and `Misc` tabs beneath the main `Workspace` tab.
 
 ### Archive
 - `0.6.2` history remains preserved under the external archive root in `history/v0.6.2`.

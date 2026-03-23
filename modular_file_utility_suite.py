@@ -55,7 +55,7 @@ except Exception:
 APP_TITLE = "Universal Conversion Hub (UCH)"
 APP_SLUG = "UniversalConversionHubUCH"
 LEGACY_APP_SLUGS = ("UniversalConversionHubHCB", "UniversalFileUtilitySuite")
-APP_VERSION = "0.6.5"
+APP_VERSION = "0.7"
 DEFAULT_UPDATE_MANIFEST_URL = ""
 APP_EXE_BASENAME = "UniversalConversionHub_UCH"
 UPDATER_EXE_BASENAME = "UniversalConversionHub_UCH_Updater"
@@ -1053,7 +1053,11 @@ class TaskEngine:
                     save_kwargs["optimize"] = True
                 if target_format == "png":
                     save_kwargs["optimize"] = True
-                image.save(out_path, format=target_format.upper(), **save_kwargs)
+                format_name = {"jpg": "JPEG", "jpeg": "JPEG", "tif": "TIFF", "tiff": "TIFF", "ico": "ICO"}.get(
+                    target_format,
+                    target_format.upper(),
+                )
+                image.save(out_path, format=format_name, **save_kwargs)
             return out_path
 
         if suffix in DATA_EXTS and target_format in DATA_FORMATS:
@@ -1431,6 +1435,9 @@ class SuiteApp:
         self.tabs: dict[str, ttk.Frame] = {}
         self.top_notebook: ttk.Notebook | None = None
         self.notebook: ttk.Notebook | None = None
+        self.workspace_category_notebook: ttk.Notebook | None = None
+        self.workspace_module_notebooks: dict[str, ttk.Notebook] = {}
+        self.module_categories: dict[str, str] = {}
         self.workspace_tab: ttk.Frame | None = None
         self.backend_corner_button: ttk.Button | None = None
         self.drag_drop_enabled = False
@@ -1597,7 +1604,7 @@ class SuiteApp:
 
         ttk.Label(
             outer,
-            text='Manifest example: {"latest_version":"0.6.5","download_url":"https://example.com/app.exe","notes":"Release notes"}',
+            text='Manifest example: {"latest_version":"0.7","download_url":"https://example.com/app.exe","notes":"Release notes"}',
             foreground="#57687F",
             wraplength=590,
             justify="left",
@@ -2410,34 +2417,65 @@ class SuiteApp:
         workspace_shell = ttk.Frame(workspace_tab, style="Surface.TFrame", padding=(0, 10, 0, 0))
         workspace_shell.pack(fill="both", expand=True)
 
-        self.notebook = ttk.Notebook(workspace_shell, style="App.TNotebook")
-        self.notebook.pack(fill="both", expand=True)
-        self.notebook.enable_traversal()
+        self.workspace_category_notebook = ttk.Notebook(workspace_shell, style="App.TNotebook")
+        self.workspace_category_notebook.pack(fill="both", expand=True)
+        self.workspace_category_notebook.enable_traversal()
+        self.workspace_module_notebooks.clear()
+        self.module_categories.clear()
 
-        tab_specs = [
-            ("Convert", ConvertTab),
-            ("Compress", CompressTab),
-            ("Extract", ExtractTab),
-            ("Metadata", MetadataTab),
-            ("PDF / Documents", DocumentsTab),
-            ("Images", ImagesTab),
-            ("Audio", AudioTab),
-            ("Video", VideoTab),
-            ("Archives", ArchivesTab),
-            ("Rename / Organize", RenameOrganizeTab),
-            ("Duplicate Finder", DuplicateFinderTab),
-            ("Storage Analyzer", StorageAnalyzerTab),
-            ("Checksums / Integrity", ChecksumsTab),
-            ("Subtitles", SubtitlesTab),
-            ("Presets / Batch Jobs", PresetsBatchTab),
+        categorized_specs = [
+            (
+                "Conversion",
+                [
+                    ("Convert", ConvertTab),
+                    ("Compress", CompressTab),
+                    ("Extract", ExtractTab),
+                    ("PDF / Documents", DocumentsTab),
+                    ("Archives", ArchivesTab),
+                ],
+            ),
+            (
+                "Advanced",
+                [
+                    ("Images", ImagesTab),
+                    ("Audio", AudioTab),
+                    ("Video", VideoTab),
+                    ("Metadata", MetadataTab),
+                ],
+            ),
+            (
+                "Misc",
+                [
+                    ("Rename / Organize", RenameOrganizeTab),
+                    ("Duplicate Finder", DuplicateFinderTab),
+                    ("Storage Analyzer", StorageAnalyzerTab),
+                    ("Checksums / Integrity", ChecksumsTab),
+                    ("Subtitles", SubtitlesTab),
+                    ("Presets / Batch Jobs", PresetsBatchTab),
+                ],
+            ),
         ]
 
-        for name, tab_class in tab_specs:
-            tab = tab_class(self.notebook, self)
-            self.tabs[name] = tab
-            self.notebook.add(tab, text=name)
+        first_module_notebook: ttk.Notebook | None = None
+        for category_name, tab_specs in categorized_specs:
+            category_frame = ttk.Frame(self.workspace_category_notebook, style="Surface.TFrame", padding=(0, 8, 0, 0))
+            self.workspace_category_notebook.add(category_frame, text=category_name)
+            module_notebook = ttk.Notebook(category_frame, style="App.TNotebook")
+            module_notebook.pack(fill="both", expand=True)
+            module_notebook.enable_traversal()
+            module_notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+            self.workspace_module_notebooks[category_name] = module_notebook
+            if first_module_notebook is None:
+                first_module_notebook = module_notebook
 
-        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+            for name, tab_class in tab_specs:
+                tab = tab_class(module_notebook, self)
+                self.tabs[name] = tab
+                self.module_categories[name] = category_name
+                module_notebook.add(tab, text=name)
+
+        self.notebook = first_module_notebook
+        self.workspace_category_notebook.bind("<<NotebookTabChanged>>", self._on_workspace_category_changed)
         top_notebook.bind("<<NotebookTabChanged>>", self._on_top_tab_changed)
 
         log_frame = ttk.LabelFrame(activity_log_tab, text="Recent Operations", style="Card.TLabelframe")
@@ -2517,8 +2555,11 @@ class SuiteApp:
             if not selected_top:
                 return None
             top_widget = self.root.nametowidget(selected_top)
-            if self.workspace_tab is not None and top_widget == self.workspace_tab and self.notebook is not None:
-                selected_inner = self.notebook.select()
+            if self.workspace_tab is not None and top_widget == self.workspace_tab:
+                inner_notebook = self._active_workspace_module_notebook()
+                if inner_notebook is None:
+                    return None
+                selected_inner = inner_notebook.select()
                 if not selected_inner:
                     return None
                 return self.root.nametowidget(selected_inner)
@@ -3073,7 +3114,7 @@ class SuiteApp:
         ttk.Entry(general_tab, textvariable=update_url_var).pack(fill="x", pady=(4, 0))
         ttk.Label(
             general_tab,
-            text='Example JSON: {"latest_version":"0.6.5","download_url":"https://example.com/app.exe","notes":"Release notes"}',
+            text='Example JSON: {"latest_version":"0.7","download_url":"https://example.com/app.exe","notes":"Release notes"}',
             foreground="#57687F",
             wraplength=760,
         ).pack(anchor="w", pady=(4, 0))
@@ -3780,9 +3821,48 @@ class SuiteApp:
             suffix = f"\n\n{blocked_reason}" if blocked_reason else ""
             messagebox.showinfo(APP_TITLE, f"Update {latest} is available, but no download URL was provided.{suffix}")
 
+    def _current_workspace_category_name(self) -> str | None:
+        if self.workspace_category_notebook is None:
+            return None
+        selected = self.workspace_category_notebook.select()
+        if not selected:
+            return None
+        try:
+            return str(self.workspace_category_notebook.tab(selected, "text"))
+        except Exception:
+            return None
+
+    def _active_workspace_module_notebook(self) -> ttk.Notebook | None:
+        category_name = self._current_workspace_category_name()
+        if not category_name:
+            return None
+        return self.workspace_module_notebooks.get(category_name)
+
+    def _current_workspace_module_name(self) -> str | None:
+        notebook = self._active_workspace_module_notebook()
+        if notebook is None:
+            return None
+        selected = notebook.select()
+        if not selected:
+            return None
+        try:
+            return str(notebook.tab(selected, "text"))
+        except Exception:
+            return None
+
     def _on_tab_changed(self, _event=None) -> None:
-        current = self.notebook.tab(self.notebook.select(), "text")
-        self.status_left_var.set(f"Module: {current}")
+        current = self._current_workspace_module_name()
+        category = self._current_workspace_category_name()
+        if current and category:
+            self.status_left_var.set(f"Module: {current} [{category}]")
+            return
+        if current:
+            self.status_left_var.set(f"Module: {current}")
+            return
+        self.status_left_var.set("Workspace")
+
+    def _on_workspace_category_changed(self, _event=None) -> None:
+        self._on_tab_changed()
 
     def _on_top_tab_changed(self, _event=None) -> None:
         current_top = self.top_notebook.tab(self.top_notebook.select(), "text")
@@ -3800,13 +3880,22 @@ class SuiteApp:
             if self.top_notebook.tab(top_id, "text") == "Workspace":
                 workspace_index = top_index
                 break
-        for index, tab_id in enumerate(self.notebook.tabs()):
-            if self.notebook.tab(tab_id, "text") == name:
-                if workspace_index is not None:
-                    self.top_notebook.select(workspace_index)
-                self.notebook.select(index)
-                self.status_left_var.set(f"Module: {name}")
-                return
+        category_name = self.module_categories.get(name)
+        if category_name:
+            module_notebook = self.workspace_module_notebooks.get(category_name)
+            if workspace_index is not None:
+                self.top_notebook.select(workspace_index)
+            if self.workspace_category_notebook is not None:
+                for category_index, category_id in enumerate(self.workspace_category_notebook.tabs()):
+                    if self.workspace_category_notebook.tab(category_id, "text") == category_name:
+                        self.workspace_category_notebook.select(category_index)
+                        break
+            if module_notebook is not None:
+                for index, tab_id in enumerate(module_notebook.tabs()):
+                    if module_notebook.tab(tab_id, "text") == name:
+                        module_notebook.select(index)
+                        self.status_left_var.set(f"Module: {name} [{category_name}]")
+                        return
         for top_index, top_id in enumerate(self.top_notebook.tabs()):
             if self.top_notebook.tab(top_id, "text") == name:
                 self.top_notebook.select(top_index)

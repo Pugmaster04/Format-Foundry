@@ -1,6 +1,6 @@
 ﻿# Universal Conversion Hub (UCH)
 
-Version: `0.6.5`
+Version: `0.7`
 
 Changelog:
 - `CHANGELOG.md` (full project history and release notes)
@@ -59,7 +59,12 @@ Top tabs:
 - Backends / Links
 - Activity Log
 
-Workspace contains module tabs for each workflow category.
+Workspace now has a second navigation layer:
+- Conversion
+- Advanced
+- Misc
+
+Each of those category tabs contains the relevant module tabs for the current feature set.
 
 ## 3) First Run + Settings
 
@@ -135,7 +140,7 @@ Example:
 
 ```json
 {
-  "latest_version": "0.6.5",
+  "latest_version": "0.7",
   "download_url": "https://example.com/UniversalConversionHub_UCH.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "notes": "Release notes here"

@@ -197,6 +197,12 @@ Linux release packaging:
 - `build_linux.sh` now stages raw Linux binaries and creates a release tarball named `UniversalConversionHub_UCH_linux_<arch>.tar.gz`
 - The updater branch logic prefers Linux `.AppImage` or `.tar.gz` assets on Linux instead of Windows `.exe` assets
 
+GitHub Actions Linux workflow:
+- `.github/workflows/linux-build-release.yml`
+- Builds Linux artifacts on `ubuntu-latest`
+- Uploads workflow artifacts for branch builds
+- Uploads `UniversalConversionHub_UCH_linux_<arch>.tar.gz` to tagged GitHub Releases
+
 ### Basic dependencies
 
 Install Python dependencies:

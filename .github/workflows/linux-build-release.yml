@@ -1,0 +1,56 @@
+name: Linux Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/linux-port
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-venv python3-pip python3-tk tk-dev
+
+      - name: Create build virtual environment
+        run: |
+          python3 -m venv .venv-linux-build
+
+      - name: Build Linux artifacts
+        shell: bash
+        run: |
+          source .venv-linux-build/bin/activate
+          chmod +x build_linux.sh
+          ./build_linux.sh
+
+      - name: Upload Linux build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build-artifacts
+          if-no-files-found: error
+          path: |
+            release_bins/UniversalConversionHub_UCH
+            release_bins/UniversalConversionHub_UCH_Updater
+            release_bins/UniversalConversionHub_UCH_linux_*.tar.gz
+
+      - name: Publish Linux release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          gh release view "$TAG_NAME" >/dev/null 2>&1 || gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Linux build artifact added by GitHub Actions."
+          gh release upload "$TAG_NAME" release_bins/UniversalConversionHub_UCH_linux_*.tar.gz --clobber

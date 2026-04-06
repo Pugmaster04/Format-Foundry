@@ -1813,6 +1813,7 @@ class SuiteApp:
         self.workspace_tab: ttk.Frame | None = None
         self.backend_corner_button: ttk.Button | None = None
         self.drag_drop_enabled = False
+        self.drag_drop_status_var = StringVar(value="")
         self._last_drop_signature: tuple[tuple[str, ...], float] | None = None
         self.backend_hover_cards: list[HoverCard] = []
         self._normal_geometry = self.root.geometry()
@@ -2711,6 +2712,14 @@ class SuiteApp:
             wraplength=980,
             justify="left",
         ).pack(anchor="w", pady=(4, 0))
+        self.drag_drop_note_label = ttk.Label(
+            intro_col,
+            textvariable=self.drag_drop_status_var,
+            style="CardMuted.TLabel",
+            wraplength=980,
+            justify="left",
+        )
+        self.drag_drop_note_label.pack(anchor="w", pady=(6, 0))
 
         meta_col = ttk.Frame(hero_row, style="HeaderCard.TFrame")
         meta_col.grid(row=0, column=1, sticky="ne")
@@ -2862,16 +2871,30 @@ class SuiteApp:
         for index, (label, command, style_name) in enumerate(actions):
             ttk.Button(body, text=label, style=style_name, command=command).pack(side="left", padx=(0 if index == 0 else 6, 0))
 
+    def _drag_drop_availability_message(self) -> str:
+        if self.drag_drop_enabled:
+            return ""
+        if os.name == "nt":
+            if windnd is None:
+                return "Drag and drop is unavailable in this build. Use Add Files or Add Folder instead."
+            return "Drag and drop could not be initialized. Use Add Files or Add Folder instead."
+        system_name = platform.system() or "this platform"
+        return f"Drag and drop is not enabled on {system_name} yet. Use Add Files or Add Folder instead."
+
     def _setup_drag_and_drop(self) -> None:
         if os.name != "nt" or windnd is None:
             self.drag_drop_enabled = False
+            self.drag_drop_status_var.set(self._drag_drop_availability_message())
+            self.log(self.drag_drop_status_var.get())
             return
         try:
             self._hook_drag_drop_widget_tree(self.root)
             self.drag_drop_enabled = True
+            self.drag_drop_status_var.set(self._drag_drop_availability_message())
             self.log("Drag and drop enabled.")
         except Exception as exc:
             self.drag_drop_enabled = False
+            self.drag_drop_status_var.set(self._drag_drop_availability_message())
             self.log(f"Drag and drop unavailable: {exc}")
 
     def _hook_drag_drop_widget_tree(self, widget: tk.Misc) -> None:
@@ -3456,6 +3479,13 @@ class SuiteApp:
             foreground="#57687F",
             wraplength=760,
         ).pack(anchor="w", pady=(2, 0))
+        ttk.Label(
+            general_tab,
+            textvariable=self.drag_drop_status_var,
+            foreground="#57687F",
+            wraplength=760,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 0))
 
         ttk.Label(general_tab, text="Window controls for this session:").pack(anchor="w", pady=(12, 0))
         session_window_row = ttk.Frame(general_tab, style="App.TFrame")

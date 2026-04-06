@@ -71,6 +71,9 @@ Workspace now has a second navigation layer:
 
 Each of those category tabs contains the relevant module tabs for the current feature set.
 
+Linux note:
+- If drag-and-drop is not available on a Linux build, the app now shows an explicit fallback message and the supported path remains `Add Files` / `Add Folder`.
+
 ## 3) First Run + Settings
 
 First launch opens setup wizard so you can configure:

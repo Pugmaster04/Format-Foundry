@@ -16,6 +16,7 @@ This changelog includes:
 - Linux build packaging now creates a release tarball named `UniversalConversionHub_UCH_linux_<arch>.tar.gz`.
 - Updater release-asset selection now prefers Linux `.AppImage` or `.tar.gz` assets on Linux instead of selecting Windows `.exe` downloads.
 - GitHub Actions now includes a Linux build/release workflow that can upload Linux tarball assets to tagged releases.
+- Linux builds now show an explicit in-app fallback message when drag-and-drop is unavailable, directing users to the existing Add Files / Add Folder controls.
 
 ## [0.7.3] - 2026-04-05
 

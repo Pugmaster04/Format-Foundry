@@ -73,6 +73,7 @@ Each of those category tabs contains the relevant module tabs for the current fe
 
 Linux note:
 - If drag-and-drop is not available on a Linux build, the app now shows an explicit fallback message and the supported path remains `Add Files` / `Add Folder`.
+- Linux CI now runs the built app and updater in headless `--smoke-test` mode after packaging, so the branch validates frozen runtime startup paths and settings-path resolution in addition to the raw build.
 
 ## 3) First Run + Settings
 

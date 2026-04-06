@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import json
 import os
@@ -1104,7 +1105,42 @@ class UpdaterApp:
         threading.Thread(target=worker, daemon=True).start()
 
 
+def _run_cli_mode() -> int | None:
+    parser = argparse.ArgumentParser(add_help=True, prog=APP_SLUG)
+    parser.add_argument("--version", action="store_true", help="Print updater version and exit.")
+    parser.add_argument("--smoke-test", action="store_true", help="Run a headless updater probe and exit.")
+    args, unknown = parser.parse_known_args()
+    if unknown:
+        parser.error(f"unrecognized arguments: {' '.join(unknown)}")
+    if args.version:
+        print(f"{APP_TITLE} {CURRENT_VERSION}")
+        return 0
+    if args.smoke_test:
+        script_dir = Path(__file__).resolve().parent
+        resource_dir = Path(getattr(sys, "_MEIPASS", script_dir))
+        runtime_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else script_dir
+        settings_root = platform_settings_root()
+        appdata_dir = resolve_settings_dir(settings_root, "updater_settings.json")
+        payload = {
+            "mode": "smoke-test",
+            "app": APP_TITLE,
+            "version": CURRENT_VERSION,
+            "platform": platform.system(),
+            "python": platform.python_version(),
+            "script_dir_exists": script_dir.exists(),
+            "resource_dir_exists": resource_dir.exists(),
+            "runtime_dir_exists": runtime_dir.exists(),
+            "settings_dir": str(appdata_dir),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    return None
+
+
 def main() -> None:
+    cli_status = _run_cli_mode()
+    if cli_status is not None:
+        raise SystemExit(cli_status)
     acquired, mutex_handle = _acquire_single_instance_mutex()
     if not acquired:
         _focus_existing_window()

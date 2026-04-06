@@ -35,6 +35,15 @@ jobs:
           chmod +x build_linux.sh
           ./build_linux.sh
 
+      - name: Smoke test Linux binaries
+        shell: bash
+        run: |
+          chmod +x release_bins/UniversalConversionHub_UCH release_bins/UniversalConversionHub_UCH_Updater
+          ./release_bins/UniversalConversionHub_UCH --version
+          ./release_bins/UniversalConversionHub_UCH --smoke-test
+          ./release_bins/UniversalConversionHub_UCH_Updater --version
+          ./release_bins/UniversalConversionHub_UCH_Updater --smoke-test
+
       - name: Upload Linux build artifacts
         uses: actions/upload-artifact@v6
         with:

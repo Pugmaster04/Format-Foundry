@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('assets\\universal_file_utility_suite.ico', 'assets'),
+        ('assets/universal_file_utility_suite.ico', 'assets'),
         ('README.md', '.'),
     ],
     hiddenimports=[],
@@ -38,6 +38,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets\\universal_file_utility_suite.ico'],
+    icon=['assets/universal_file_utility_suite.ico'],
 )
-

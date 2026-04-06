@@ -5,7 +5,7 @@ a = Analysis(
     ['suite_updater.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets\\universal_file_utility_suite.ico', 'assets'), ('update_manifest.example.json', '.')],
+    datas=[('assets/universal_file_utility_suite.ico', 'assets'), ('update_manifest.example.json', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,6 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets\\universal_file_utility_suite.ico'],
+    icon=['assets/universal_file_utility_suite.ico'],
 )
-

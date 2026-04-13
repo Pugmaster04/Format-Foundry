@@ -1943,8 +1943,8 @@ class SuiteApp:
         update_url_var = StringVar(value=str(self.settings.get("update_manifest_url", "")))
         finished = {"done": False}
 
-        outer = ttk.Frame(wizard, padding=14)
-        outer.pack(fill="both", expand=True)
+        self._apply_window_icon_to(wizard)
+        outer = self._build_draggable_dialog_shell(wizard, drag_label="Drag Setup Wizard")
 
         ttk.Label(outer, text="Welcome to Universal Conversion Hub (UCH)", font=self._font(14, semibold=True)).pack(anchor="w")
         ttk.Label(
@@ -2044,6 +2044,113 @@ class SuiteApp:
 
     def _apply_window_icon(self) -> None:
         self._apply_window_icon_to(self.root)
+
+    def _bind_drag_handlers_to_window(self, window: tk.Misc, widget: tk.Misc, offset_holder: dict[str, tuple[int, int] | None]) -> None:
+        try:
+            widget.configure(cursor="fleur")
+        except Exception:
+            pass
+
+        def begin_drag(event) -> str:
+            offset_holder["value"] = (event.x_root - window.winfo_x(), event.y_root - window.winfo_y())
+            return "break"
+
+        def drag_motion(event) -> str | None:
+            offset = offset_holder.get("value")
+            if not offset:
+                return None
+            offset_x, offset_y = offset
+            try:
+                window.geometry(f"+{event.x_root - offset_x}+{event.y_root - offset_y}")
+            except Exception:
+                return None
+            return "break"
+
+        def end_drag(_event=None) -> None:
+            offset_holder["value"] = None
+
+        widget.bind("<ButtonPress-1>", begin_drag, add="+")
+        widget.bind("<B1-Motion>", drag_motion, add="+")
+        widget.bind("<ButtonRelease-1>", end_drag, add="+")
+
+    def _build_draggable_dialog_shell(
+        self,
+        window: tk.Misc,
+        *,
+        padding: tuple[int, int, int, int] = (14, 14, 14, 14),
+        drag_label: str = "Drag Window",
+    ) -> ttk.Frame:
+        host = ttk.Frame(window, style="App.TFrame", padding=padding)
+        host.pack(fill="both", expand=True)
+        strip = ttk.Frame(host, style="DragStrip.TFrame", height=self._scaled(18))
+        strip.pack(fill="x", pady=(0, 10))
+        strip.pack_propagate(False)
+        label = ttk.Label(strip, text=drag_label, style="DragStrip.TLabel", anchor="center")
+        label.pack(fill="both", expand=True)
+        offset_holder: dict[str, tuple[int, int] | None] = {"value": None}
+        self._bind_drag_handlers_to_window(window, strip, offset_holder)
+        self._bind_drag_handlers_to_window(window, label, offset_holder)
+        body = ttk.Frame(host, style="App.TFrame")
+        body.pack(fill="both", expand=True)
+        return body
+
+    def _show_app_modal_dialog(
+        self,
+        title: str,
+        message: str,
+        buttons: list[tuple[str, str]],
+        *,
+        default_choice: str,
+        width: int = 620,
+    ) -> str:
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.resizable(False, False)
+        self._apply_window_icon_to(dialog)
+        if str(self.root.state()) != "withdrawn":
+            try:
+                dialog.transient(self.root)
+            except Exception:
+                pass
+        dialog.grab_set()
+
+        result = {"choice": default_choice}
+        outer = self._build_draggable_dialog_shell(dialog, drag_label="Drag Popup")
+        ttk.Label(outer, text=title, font=self._font(13, semibold=True)).pack(anchor="w")
+        ttk.Label(outer, text=message, justify="left", wraplength=width - 60).pack(anchor="w", pady=(8, 12))
+
+        button_row = ttk.Frame(outer, style="App.TFrame")
+        button_row.pack(fill="x")
+
+        def choose(choice: str) -> None:
+            result["choice"] = choice
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            dialog.destroy()
+
+        for index, (label, value) in enumerate(buttons):
+            ttk.Button(button_row, text=label, style="App.TButton", command=lambda c=value: choose(c)).pack(
+                side="right",
+                padx=(8 if index else 0, 0),
+            )
+
+        dialog.protocol("WM_DELETE_WINDOW", lambda: choose(default_choice))
+        dialog.update_idletasks()
+        dialog_width = max(width, dialog.winfo_width())
+        dialog_height = dialog.winfo_height()
+        if str(self.root.state()) != "withdrawn":
+            x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - dialog_width) // 2)
+            y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - dialog_height) // 2)
+        else:
+            screen_w = dialog.winfo_screenwidth()
+            screen_h = dialog.winfo_screenheight()
+            x = max(0, (screen_w - dialog_width) // 2)
+            y = max(0, (screen_h - dialog_height) // 2)
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        self.root.wait_window(dialog)
+        return str(result["choice"])
 
     def _ui_scale_factor(self) -> float:
         try:
@@ -3498,8 +3605,7 @@ class SuiteApp:
         security_https_manifest_var = BooleanVar(value=bool(self.settings.get("security_require_https_for_update_manifest", True)))
         security_allow_local_manifest_var = BooleanVar(value=bool(self.settings.get("security_allow_local_update_manifests", True)))
 
-        outer = ttk.Frame(dialog, padding=14)
-        outer.pack(fill="both", expand=True)
+        outer = self._build_draggable_dialog_shell(dialog, drag_label="Drag Settings")
 
         ttk.Label(outer, text="Settings", font=self._font(14, semibold=True)).pack(anchor="w")
         ttk.Label(
@@ -4209,7 +4315,13 @@ class SuiteApp:
     def _check_updates_in_background(self, interactive: bool) -> None:
         if hasattr(self, "_update_thread") and self._update_thread and self._update_thread.is_alive():
             if interactive:
-                messagebox.showinfo(APP_TITLE, "Update check is already running.")
+                self._show_app_modal_dialog(
+                    APP_TITLE,
+                    "Update check is already running.",
+                    [("OK", "ok")],
+                    default_choice="ok",
+                    width=420,
+                )
             return
 
         def worker() -> None:
@@ -4268,9 +4380,15 @@ class SuiteApp:
         if was_visible:
             self.root.withdraw()
         try:
-            answer = messagebox.askyesno(
-                APP_TITLE,
-                "No update manifest is configured.\n\nOpen setup wizard now to configure update settings?",
+            answer = (
+                self._show_app_modal_dialog(
+                    APP_TITLE,
+                    "No update manifest is configured.\n\nOpen setup wizard now to configure update settings?",
+                    [("No", "no"), ("Yes", "yes")],
+                    default_choice="no",
+                    width=520,
+                )
+                == "yes"
             )
         finally:
             if was_visible:
@@ -4292,18 +4410,39 @@ class SuiteApp:
         if was_visible:
             self.root.withdraw()
         try:
-            messagebox.showinfo(APP_TITLE, info_prompt)
+            self._show_app_modal_dialog(
+                APP_TITLE,
+                info_prompt,
+                [("OK", "ok")],
+                default_choice="ok",
+                width=620,
+            )
         finally:
             if was_visible:
                 self.root.deiconify()
                 self.root.lift()
                 self.root.focus_force()
         if download_url:
-            if messagebox.askyesno(APP_TITLE, "Open download page now?"):
+            if (
+                self._show_app_modal_dialog(
+                    APP_TITLE,
+                    "Open download page now?",
+                    [("No", "no"), ("Yes", "yes")],
+                    default_choice="no",
+                    width=420,
+                )
+                == "yes"
+            ):
                 self._open_external_url(download_url, purpose=f"update download for version {latest}")
         else:
             suffix = f"\n\n{blocked_reason}" if blocked_reason else ""
-            messagebox.showinfo(APP_TITLE, f"Update {latest} is available, but no download URL was provided.{suffix}")
+            self._show_app_modal_dialog(
+                APP_TITLE,
+                f"Update {latest} is available, but no download URL was provided.{suffix}",
+                [("OK", "ok")],
+                default_choice="ok",
+                width=620,
+            )
 
     def _current_workspace_category_name(self) -> str | None:
         if self.workspace_category_notebook is None:

@@ -1823,6 +1823,11 @@ class SuiteApp:
         self.module_categories: dict[str, str] = {}
         self.workspace_tab: ttk.Frame | None = None
         self.backend_corner_button: ttk.Button | None = None
+        self._root_frame: ttk.Frame | None = None
+        self._header_card: ttk.Frame | None = None
+        self.window_drag_strip: ttk.Frame | None = None
+        self.window_drag_label: ttk.Label | None = None
+        self._window_drag_offset: tuple[int, int] | None = None
         self.drag_drop_enabled = False
         self.drag_drop_status_var = StringVar(value="")
         self._last_drop_signature: tuple[tuple[str, ...], float] | None = None
@@ -1830,6 +1835,7 @@ class SuiteApp:
         self._normal_geometry = self.root.geometry()
         self._normal_zoomed = False
         self._window_mode_state = "normal"
+        self.root.bind("<Configure>", self._on_root_window_configured, add="+")
         self.root.bind("<F11>", self._on_f11_toggle)
         self.root.bind("<F10>", self._on_f10_toggle_borderless)
         self.root.bind("<Escape>", self._on_escape_exit_fullscreen)
@@ -2361,6 +2367,7 @@ class SuiteApp:
         self.style.configure("SurfaceInset.TFrame", background=palette["surface_alt_bg"])
         self.style.configure("Card.TFrame", background=palette["card_bg"])
         self.style.configure("HeaderCard.TFrame", background=palette["card_bg"])
+        self.style.configure("DragStrip.TFrame", background=palette["accent_soft_bg"], borderwidth=1, relief="solid")
         self.style.configure("Card.TLabelframe", background=palette["card_bg"], borderwidth=1, relief="solid", bordercolor=palette["card_border"])
         self.style.configure("Card.TLabelframe.Label", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10, semibold=True))
         self.style.configure("QuickGroup.TLabelframe", background=palette["card_bg"], borderwidth=1, relief="solid", bordercolor=palette["card_border"])
@@ -2370,6 +2377,7 @@ class SuiteApp:
         self.style.configure("HeaderMeta.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10, semibold=True))
         self.style.configure("CardBody.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10))
         self.style.configure("CardMuted.TLabel", background=palette["card_bg"], foreground=palette["muted_fg"], font=self._font(9))
+        self.style.configure("DragStrip.TLabel", background=palette["accent_soft_bg"], foreground=palette["muted_fg"], font=self._font(8, semibold=True))
         self.style.configure("Badge.TLabel", background=palette["accent_soft_bg"], foreground=palette["tab_sel_fg"], font=self._font(9, semibold=True), padding=(self._scaled(8), self._scaled(4)))
         self.style.configure(
             "BackendDetectedLink.TLabel",
@@ -2558,6 +2566,62 @@ class SuiteApp:
         except Exception:
             pass
 
+    def _bind_window_drag_widget(self, widget: tk.Misc | None) -> None:
+        if widget is None:
+            return
+        try:
+            widget.configure(cursor="fleur")
+        except Exception:
+            pass
+        widget.bind("<ButtonPress-1>", self._begin_window_drag, add="+")
+        widget.bind("<B1-Motion>", self._perform_window_drag, add="+")
+        widget.bind("<ButtonRelease-1>", self._end_window_drag, add="+")
+
+    def _window_drag_strip_enabled(self) -> bool:
+        if self._window_mode_state != "normal":
+            return False
+        try:
+            return str(self.root.state()) == "normal"
+        except Exception:
+            return True
+
+    def _update_window_drag_strip_visibility(self) -> None:
+        if self.window_drag_strip is None:
+            return
+        if self._window_drag_strip_enabled():
+            if not self.window_drag_strip.winfo_manager():
+                pack_kwargs: dict[str, Any] = {"fill": "x", "pady": (0, 8)}
+                if self._header_card is not None:
+                    pack_kwargs["before"] = self._header_card
+                self.window_drag_strip.pack(**pack_kwargs)
+        elif self.window_drag_strip.winfo_manager():
+            self.window_drag_strip.pack_forget()
+
+    def _begin_window_drag(self, event) -> str | None:
+        if not self._window_drag_strip_enabled():
+            self._window_drag_offset = None
+            return None
+        self._window_drag_offset = (event.x_root - self.root.winfo_x(), event.y_root - self.root.winfo_y())
+        return "break"
+
+    def _perform_window_drag(self, event) -> str | None:
+        if not self._window_drag_offset or not self._window_drag_strip_enabled():
+            return None
+        offset_x, offset_y = self._window_drag_offset
+        self.root.geometry(f"+{event.x_root - offset_x}+{event.y_root - offset_y}")
+        return "break"
+
+    def _end_window_drag(self, _event=None) -> str | None:
+        self._window_drag_offset = None
+        return None
+
+    def _on_root_window_configured(self, event=None) -> None:
+        if event is not None and getattr(event, "widget", None) is not self.root:
+            return
+        if self._window_mode_state == "normal":
+            self._capture_normal_window_state()
+        self._update_window_drag_strip_visibility()
+
     def _apply_window_mode_state(self) -> None:
         fullscreen = bool(self.fullscreen_var.get())
         borderless = bool(self.borderless_max_var.get())
@@ -2576,6 +2640,7 @@ class SuiteApp:
             except Exception:
                 pass
             self._window_mode_state = "fullscreen"
+            self._update_window_drag_strip_visibility()
             return
 
         try:
@@ -2599,6 +2664,7 @@ class SuiteApp:
             self.root.geometry(f"{width}x{height}+0+0")
             self.root.lift()
             self._window_mode_state = "borderless"
+            self._update_window_drag_strip_visibility()
             return
 
         try:
@@ -2615,6 +2681,7 @@ class SuiteApp:
         except Exception:
             pass
         self._window_mode_state = "normal"
+        self._update_window_drag_strip_visibility()
 
     def _persist_window_mode_settings(self) -> None:
         self.settings["fullscreen"] = bool(self.fullscreen_var.get())
@@ -2705,9 +2772,19 @@ class SuiteApp:
     def _build_ui(self) -> None:
         root_frame = ttk.Frame(self.root, style="App.TFrame", padding=(16, 14, 16, 12))
         root_frame.pack(fill="both", expand=True)
+        self._root_frame = root_frame
+
+        self.window_drag_strip = ttk.Frame(root_frame, style="DragStrip.TFrame", height=self._scaled(18))
+        self.window_drag_strip.pack(fill="x", pady=(0, 8))
+        self.window_drag_strip.pack_propagate(False)
+        self.window_drag_label = ttk.Label(self.window_drag_strip, text="Drag Window", style="DragStrip.TLabel", anchor="center")
+        self.window_drag_label.pack(fill="both", expand=True)
+        self._bind_window_drag_widget(self.window_drag_strip)
+        self._bind_window_drag_widget(self.window_drag_label)
 
         header_card = ttk.Frame(root_frame, style="HeaderCard.TFrame", padding=(14, 10))
         header_card.pack(fill="x")
+        self._header_card = header_card
 
         hero_row = ttk.Frame(header_card, style="HeaderCard.TFrame")
         hero_row.pack(fill="x")
@@ -2866,6 +2943,7 @@ class SuiteApp:
         self.log_box.pack(fill="both", expand=True, padx=10, pady=10)
 
         self._apply_theme(bool(self.dark_mode_var.get()))
+        self._update_window_drag_strip_visibility()
 
         status_bar = ttk.Frame(root_frame, style="StatusBar.TFrame")
         status_bar.pack(fill="x", pady=(10, 0))

@@ -227,6 +227,7 @@ class UpdaterApp:
         self.last_download_block_reason = ""
         self.checking = False
         self.downloading = False
+        self._window_drag_offset: tuple[int, int] | None = None
 
         self._build_ui()
         self._bind_setting_traces()
@@ -259,6 +260,33 @@ class UpdaterApp:
                     return
                 except Exception:
                     continue
+
+    def _bind_window_drag_widget(self, widget: tk.Misc) -> None:
+        try:
+            widget.configure(cursor="fleur")
+        except Exception:
+            pass
+
+        widget.bind("<ButtonPress-1>", self._begin_window_drag, add="+")
+        widget.bind("<B1-Motion>", self._perform_window_drag, add="+")
+        widget.bind("<ButtonRelease-1>", self._end_window_drag, add="+")
+
+    def _begin_window_drag(self, event) -> str:
+        self._window_drag_offset = (event.x_root - self.root.winfo_x(), event.y_root - self.root.winfo_y())
+        return "break"
+
+    def _perform_window_drag(self, event) -> str | None:
+        if not self._window_drag_offset:
+            return None
+        offset_x, offset_y = self._window_drag_offset
+        try:
+            self.root.geometry(f"+{event.x_root - offset_x}+{event.y_root - offset_y}")
+        except Exception:
+            return None
+        return "break"
+
+    def _end_window_drag(self, _event=None) -> None:
+        self._window_drag_offset = None
 
     def _default_settings(self) -> dict[str, Any]:
         return {
@@ -695,6 +723,14 @@ class UpdaterApp:
     def _build_ui(self) -> None:
         outer = ttk.Frame(self.root, padding=12)
         outer.pack(fill="both", expand=True)
+
+        drag_strip = ttk.Frame(outer, height=18)
+        drag_strip.pack(fill="x", pady=(0, 8))
+        drag_strip.pack_propagate(False)
+        drag_label = ttk.Label(drag_strip, text="Drag Window", anchor="center")
+        drag_label.pack(fill="both", expand=True)
+        self._bind_window_drag_widget(drag_strip)
+        self._bind_window_drag_widget(drag_label)
 
         ttk.Label(outer, text=APP_TITLE, font=("Segoe UI Semibold", 14)).pack(anchor="w")
         ttk.Label(

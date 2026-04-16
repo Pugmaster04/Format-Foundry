@@ -22,6 +22,7 @@ This changelog includes:
 - GitHub Actions now includes a Linux build/release workflow that can upload Linux tarball assets to tagged releases.
 - Linux builds now show an explicit in-app fallback message when drag-and-drop is unavailable, directing users to the existing Add Files / Add Folder controls.
 - App and updater entrypoints now expose `--version` and `--smoke-test` CLI modes so Linux CI can validate the frozen binaries headlessly after build.
+- The `Torrents` tab now shows a persistent safety disclaimer warning users to only download trusted content and clarifying that the app does not accept responsibility for damage caused by torrent sources or downloaded data.
 
 ## [0.7.3] - 2026-04-05
 

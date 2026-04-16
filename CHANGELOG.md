@@ -23,9 +23,12 @@ This changelog includes:
 - `Torrents` now lives under the dedicated `Aria2` workspace category instead of `Misc`.
 - Linux build packaging now creates a release tarball named `UniversalConversionHub_UCH_linux_<arch>.tar.gz`.
 - Linux build packaging now also creates a Debian package named `universal-conversion-hub-uch_<version>_<deb-arch>.deb` for lower-friction installs on Debian-family systems.
+- Linux build packaging now also creates `UniversalConversionHub_UCH_linux_<arch>.AppImage` so Ubuntu users can run the app without unpacking the source tree or the raw PyInstaller bundle.
 - Updater release-asset selection now prefers Linux `.deb` assets on Debian-family systems, then `.AppImage` or `.tar.gz`, instead of selecting Windows `.exe` downloads.
 - GitHub Actions now includes a Linux build/release workflow that can upload Linux tarball assets to tagged releases.
-- GitHub Actions Linux builds now validate the generated Debian package layout and upload `.deb` assets alongside the tarball on tagged releases.
+- GitHub Actions Linux builds now validate the generated Debian package layout, smoke-test the AppImage, and upload `.deb` and `.AppImage` assets alongside the tarball on tagged releases.
+- Linux singleton lock files now use user-scoped XDG runtime/cache paths instead of a shared `/tmp` fallback path, reducing false “already running” conflicts and silent startup failures.
+- Linux packaged windows now have PNG icon fallback wiring, and packaged update-manifest discovery now also checks bundled resources so self-contained Linux builds do not depend on the source tree.
 - Linux builds now show an explicit in-app fallback message when drag-and-drop is unavailable, directing users to the existing Add Files / Add Folder controls.
 - App and updater entrypoints now expose `--version` and `--smoke-test` CLI modes so Linux CI can validate the frozen binaries headlessly after build.
 - The `Torrents` tab now shows a persistent safety disclaimer warning users to only download trusted content and clarifying that the app does not accept responsibility for damage caused by torrent sources or downloaded data.

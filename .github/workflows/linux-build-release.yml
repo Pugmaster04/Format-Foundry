@@ -22,7 +22,7 @@ jobs:
       - name: Install Linux build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-venv python3-pip python3-tk tk-dev
+          sudo apt-get install -y python3 python3-venv python3-pip python3-tk tk-dev dpkg-dev curl
 
       - name: Create build virtual environment
         run: |
@@ -43,6 +43,10 @@ jobs:
           ./release_bins/UniversalConversionHub_UCH --smoke-test
           ./release_bins/UniversalConversionHub_UCH_Updater --version
           ./release_bins/UniversalConversionHub_UCH_Updater --smoke-test
+          APPIMAGE_PACKAGE="$(ls release_bins/*.AppImage)"
+          chmod +x "$APPIMAGE_PACKAGE"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --version
+          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --smoke-test
 
       - name: Validate Debian package layout
         shell: bash
@@ -69,6 +73,7 @@ jobs:
             release_bins/UniversalConversionHub_UCH_Updater
             release_bins/UniversalConversionHub_UCH_linux_*.tar.gz
             release_bins/*.deb
+            release_bins/*.AppImage
 
       - name: Publish Linux release asset
         if: startsWith(github.ref, 'refs/tags/v')
@@ -78,4 +83,4 @@ jobs:
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
           gh release view "$TAG_NAME" >/dev/null 2>&1 || gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Linux build artifact added by GitHub Actions."
-          gh release upload "$TAG_NAME" release_bins/UniversalConversionHub_UCH_linux_*.tar.gz release_bins/*.deb --clobber
+          gh release upload "$TAG_NAME" release_bins/UniversalConversionHub_UCH_linux_*.tar.gz release_bins/*.deb release_bins/*.AppImage --clobber

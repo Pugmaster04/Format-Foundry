@@ -218,18 +218,49 @@ Linux outputs:
 - `release_bins/UniversalConversionHub_UCH_Updater`
 - `release_bins/UniversalConversionHub_UCH_linux_<arch>.tar.gz`
 - `release_bins/universal-conversion-hub-uch_<version>_<deb-arch>.deb`
+- `release_bins/UniversalConversionHub_UCH_linux_<arch>.AppImage`
 
 Linux release packaging:
-- `build_linux.sh` now stages raw Linux binaries, creates a release tarball named `UniversalConversionHub_UCH_linux_<arch>.tar.gz`, and builds a Debian package named `universal-conversion-hub-uch_<version>_<deb-arch>.deb`
+- `build_linux.sh` now stages raw Linux binaries, creates a release tarball named `UniversalConversionHub_UCH_linux_<arch>.tar.gz`, builds a Debian package named `universal-conversion-hub-uch_<version>_<deb-arch>.deb`, and builds an AppImage named `UniversalConversionHub_UCH_linux_<arch>.AppImage`
 - Debian package installs to `/opt/universal-conversion-hub-uch` and exposes launchers:
   - `universal-conversion-hub-uch`
   - `universal-conversion-hub-uch-updater`
-- The updater branch logic now prefers Linux `.deb` assets on Debian-family systems, then falls back to `.AppImage` or `.tar.gz`
+- The AppImage contains the app, bundled updater binary, desktop metadata, and icon resources so it can launch without the source tree.
+- The updater branch logic now prefers Linux `.deb` assets on Debian-family systems, then `.AppImage`, then `.tar.gz`
 
-Debian install:
+Ubuntu 24.04 install from `.deb`:
 
 ```bash
 sudo apt install ./universal-conversion-hub-uch_<version>_<deb-arch>.deb
+```
+
+Launch after `.deb` install:
+
+```bash
+universal-conversion-hub-uch
+```
+
+Ubuntu 24.04 install from AppImage:
+
+```bash
+chmod +x UniversalConversionHub_UCH_linux_<arch>.AppImage
+./UniversalConversionHub_UCH_linux_<arch>.AppImage
+```
+
+Optional AppImage launcher install:
+
+```bash
+mkdir -p ~/Applications
+cp UniversalConversionHub_UCH_linux_<arch>.AppImage ~/Applications/
+chmod +x ~/Applications/UniversalConversionHub_UCH_linux_<arch>.AppImage
+~/Applications/UniversalConversionHub_UCH_linux_<arch>.AppImage
+```
+
+Source build prerequisites on Ubuntu 24.04:
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip python3-tk tk-dev dpkg-dev curl
 ```
 
 GitHub Actions Linux workflow:
@@ -237,7 +268,8 @@ GitHub Actions Linux workflow:
 - Builds Linux artifacts on `ubuntu-latest`
 - Uploads workflow artifacts for branch builds
 - Validates the generated `.deb` layout in CI
-- Uploads both `UniversalConversionHub_UCH_linux_<arch>.tar.gz` and `universal-conversion-hub-uch_<version>_<deb-arch>.deb` to tagged GitHub Releases
+- Smoke-tests the built AppImage in CI
+- Uploads `UniversalConversionHub_UCH_linux_<arch>.tar.gz`, `universal-conversion-hub-uch_<version>_<deb-arch>.deb`, and `UniversalConversionHub_UCH_linux_<arch>.AppImage` to tagged GitHub Releases
 
 ### Basic dependencies
 

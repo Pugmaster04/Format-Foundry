@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Universal Conversion Hub (UCH)
+GenericName=Universal conversion and file utility suite
+Comment=Conversion, extraction, archives, media workflows, storage analysis, and aria2 downloads
+Exec=__EXEC__
+Icon=universal-conversion-hub-uch
+Terminal=false
+Categories=Utility;AudioVideo;Graphics;Office;
+StartupNotify=true
+Keywords=convert;media;archive;ffmpeg;images;audio;video;pdf;torrent;aria2;

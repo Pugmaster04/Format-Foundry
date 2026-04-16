@@ -132,6 +132,18 @@ def platform_settings_root() -> Path:
     return Path.home() / ".config"
 
 
+def platform_lock_root_path(app_slug: str) -> Path:
+    if current_platform_key() == "windows":
+        return Path(os.environ.get("TEMP", str(Path.home() / "AppData" / "Local" / "Temp")))
+    xdg_runtime = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if xdg_runtime:
+        return Path(xdg_runtime).expanduser()
+    xdg_cache = os.environ.get("XDG_CACHE_HOME", "").strip()
+    if xdg_cache:
+        return Path(xdg_cache).expanduser() / app_slug
+    return Path.home() / ".cache" / app_slug
+
+
 def default_output_root_path() -> Path:
     documents = Path.home() / "Documents"
     if documents.exists() and documents.is_dir():
@@ -627,6 +639,15 @@ def _show_startup_warning(message: str) -> None:
             return
         except Exception:
             pass
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showwarning(APP_TITLE, message, parent=root)
+            root.destroy()
+            return
+        except Exception:
+            pass
     print(message, file=sys.stderr)
 
 
@@ -703,7 +724,7 @@ def _acquire_single_instance_mutex() -> tuple[bool, Any | None]:
     try:
         import fcntl  # type: ignore
 
-        lock_root = Path(os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TMPDIR") or "/tmp")
+        lock_root = platform_lock_root_path(APP_SLUG)
         ensure_dir(lock_root)
         lock_path = lock_root / SINGLE_INSTANCE_LOCKFILE_NAME
         lock_handle = lock_path.open("a+", encoding="utf-8")
@@ -1987,6 +2008,7 @@ class SuiteApp:
 
         self.main_thread = threading.current_thread()
         self.ui_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self._window_icon_photo = None
         self.script_dir = Path(__file__).resolve().parent
         self.resource_dir = Path(getattr(sys, "_MEIPASS", self.script_dir))
         self.runtime_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else self.script_dir
@@ -2235,6 +2257,20 @@ class SuiteApp:
             if candidate.exists():
                 try:
                     window.iconbitmap(default=str(candidate))
+                    return
+                except Exception:
+                    continue
+        png_candidates = [
+            self.resource_dir / "assets" / "universal_file_utility_suite_preview.png",
+            self.runtime_dir / "assets" / "universal_file_utility_suite_preview.png",
+            self.script_dir / "assets" / "universal_file_utility_suite_preview.png",
+        ]
+        for candidate in png_candidates:
+            if candidate.exists():
+                try:
+                    icon_image = tk.PhotoImage(file=str(candidate))
+                    self._window_icon_photo = icon_image
+                    window.iconphoto(True, icon_image)
                     return
                 except Exception:
                     continue
@@ -4353,6 +4389,8 @@ class SuiteApp:
             self.runtime_dir / "update_manifest.example.json",
             self.script_dir / "update_manifest.json",
             self.script_dir / "update_manifest.example.json",
+            self.resource_dir / "update_manifest.json",
+            self.resource_dir / "update_manifest.example.json",
         ]
         found = next((candidate for candidate in local_candidates if candidate.exists()), None)
         return found.as_uri() if found else ""

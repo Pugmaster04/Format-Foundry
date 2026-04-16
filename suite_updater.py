@@ -108,6 +108,18 @@ def platform_settings_root() -> Path:
     return Path.home() / ".config"
 
 
+def platform_lock_root_path(app_slug: str) -> Path:
+    if current_platform_key() == "windows":
+        return Path(os.environ.get("TEMP", str(Path.home() / "AppData" / "Local" / "Temp")))
+    xdg_runtime = os.environ.get("XDG_RUNTIME_DIR", "").strip()
+    if xdg_runtime:
+        return Path(xdg_runtime).expanduser()
+    xdg_cache = os.environ.get("XDG_CACHE_HOME", "").strip()
+    if xdg_cache:
+        return Path(xdg_cache).expanduser() / app_slug
+    return Path.home() / ".cache" / app_slug
+
+
 def resolve_settings_dir(root: Path, settings_filename: str) -> Path:
     preferred = root / APP_SLUG
     if preferred.exists():
@@ -181,6 +193,15 @@ def _show_startup_warning(message: str) -> None:
             return
         except Exception:
             pass
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showwarning(APP_TITLE, message, parent=root)
+            root.destroy()
+            return
+        except Exception:
+            pass
     print(message, file=sys.stderr)
 
 
@@ -228,7 +249,7 @@ def _acquire_single_instance_mutex() -> tuple[bool, Any | None]:
     try:
         import fcntl  # type: ignore
 
-        lock_root = Path(os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TMPDIR") or "/tmp")
+        lock_root = platform_lock_root_path(APP_SLUG)
         lock_root.mkdir(parents=True, exist_ok=True)
         lock_path = lock_root / SINGLE_INSTANCE_LOCKFILE_NAME
         lock_handle = lock_path.open("a+", encoding="utf-8")
@@ -302,6 +323,7 @@ class UpdaterApp:
         self.resource_dir = Path(getattr(sys, "_MEIPASS", self.script_dir))
         self.runtime_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else self.script_dir
         self.settings_root = platform_settings_root()
+        self._window_icon_photo = None
         self.appdata_dir = self._resolve_appdata_dir()
         self.settings_path = self.appdata_dir / "updater_settings.json"
         self.settings = self._load_settings()
@@ -359,6 +381,20 @@ class UpdaterApp:
             if candidate.exists():
                 try:
                     self.root.iconbitmap(default=str(candidate))
+                    return
+                except Exception:
+                    continue
+        png_candidates = [
+            self.resource_dir / "assets" / "universal_file_utility_suite_preview.png",
+            self.runtime_dir / "assets" / "universal_file_utility_suite_preview.png",
+            self.script_dir / "assets" / "universal_file_utility_suite_preview.png",
+        ]
+        for candidate in png_candidates:
+            if candidate.exists():
+                try:
+                    icon_image = tk.PhotoImage(file=str(candidate))
+                    self._window_icon_photo = icon_image
+                    self.root.iconphoto(True, icon_image)
                     return
                 except Exception:
                     continue
@@ -1234,6 +1270,7 @@ def main() -> None:
     acquired, mutex_handle = _acquire_single_instance_mutex()
     if not acquired:
         _focus_existing_window()
+        _show_startup_warning(f"{APP_TITLE} is already running.\n\nOnly one updater instance can be open at a time.")
         return
     root = tk.Tk()
     try:

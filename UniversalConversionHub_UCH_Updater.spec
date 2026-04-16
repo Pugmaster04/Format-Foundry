@@ -5,7 +5,11 @@ a = Analysis(
     ['suite_updater.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets/universal_file_utility_suite.ico', 'assets'), ('update_manifest.example.json', '.')],
+    datas=[
+        ('assets/universal_file_utility_suite.ico', 'assets'),
+        ('assets/universal_file_utility_suite_preview.png', 'assets'),
+        ('update_manifest.example.json', '.'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

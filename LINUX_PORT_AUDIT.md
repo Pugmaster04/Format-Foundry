@@ -82,13 +82,13 @@ Files:
 
 Current state:
 - Linux now builds frozen PyInstaller binaries.
-- Linux now packages both:
+- Linux now packages:
   - `.tar.gz`
   - `.deb`
+  - `.AppImage`
 - GitHub Actions validates and publishes those Linux artifacts.
 
 Linux work needed:
-- Add an AppImage target if portable single-file desktop distribution is still desired.
 - Decide whether `.rpm` is needed in addition to `.deb`.
 - Extend archive/snapshot tooling to include Linux outputs if Linux releases move into the same snapshot policy.
 
@@ -147,3 +147,9 @@ The first Linux milestone should be:
 - GitHub Releases can publish and distinguish Linux artifacts
 
 That is the minimum useful Linux version. Drag/drop can still follow if it slows down the first stable port.
+
+## Additional launch/runtime notes
+
+- The app and updater now use user-scoped XDG runtime/cache lock directories on Linux instead of a shared `/tmp` lock path.
+- If a second Linux launch is blocked by the singleton lock, the app now surfaces an explicit warning instead of only printing to stderr or silently returning.
+- Window icons now fall back to bundled PNG assets on Linux when `.ico` icon loading is unsupported by the local Tk build.

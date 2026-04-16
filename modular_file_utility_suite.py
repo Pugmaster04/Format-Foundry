@@ -8268,6 +8268,20 @@ class TorrentsTab(ModuleTab):
             justify="left",
         ).pack(anchor="w", pady=(0, 8))
 
+        warning_box = ttk.LabelFrame(outer, text="Warning / Disclaimer")
+        warning_box.pack(fill="x", pady=(0, 8))
+        ttk.Label(
+            warning_box,
+            text=(
+                "Use torrent features at your own risk. Universal Conversion Hub does not accept responsibility for "
+                "damage, data loss, malware, or other issues caused by torrent files, magnet links, trackers, or any "
+                "downloaded content. Do not download data from websites or torrent sources unless you fully trust all "
+                "files, metadata, and peers involved."
+            ),
+            wraplength=1200,
+            justify="left",
+        ).pack(anchor="w", padx=10, pady=8)
+
         download_box = ttk.LabelFrame(outer, text="Download / Extract Torrent Contents")
         download_box.pack(fill="both", expand=True, pady=(0, 8))
 

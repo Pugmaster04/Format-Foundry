@@ -14,8 +14,12 @@ This changelog includes:
 - New dedicated `Aria2` workspace category with a `Downloads` tab for direct aria2-managed HTTP(S), FTP, SFTP, BitTorrent, magnet, and Metalink transfers.
 - Torrent sources opened in `Torrents` now expose file-level selection with search, select-all/select-none, toggle controls, and a per-torrent progress view with individual file progress bars.
 - `Aria2 -> Downloads` and `Aria2 -> Torrents` now include inline pause/resume/stop controls plus state badges so active transfer state is visible without adding more modal workflow interruptions.
+- Linux packaging now emits stable “latest” aliases for the Debian package and AppImage so the repo front page can link directly to the current installer assets.
 
 ### Changed
+- The front-page `README.md` is now a shorter GitHub-facing install and overview page, while the detailed instructions moved to `docs/USER_GUIDE.md`.
+- Workspace modules now render with a shared module hero that explains what the tab is for, what stands out, and what the intended workflow is before the controls begin.
+- The shared theme has been reworked around a more deliberate cross-platform palette and clearer visual hierarchy so the app reads less like a utility scaffold and more like a finished desktop tool.
 - Linux port groundwork now uses XDG-style config paths for app and updater settings instead of assuming `%LOCALAPPDATA%`.
 - Backend install guidance now chooses platform-appropriate commands, including Linux package-manager suggestions where supported.
 - Backend detection now checks common Linux binary locations for FFmpeg, Pandoc, LibreOffice, 7-Zip, and ImageMagick.

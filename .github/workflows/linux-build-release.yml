@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - codex/linux-port
     tags:
       - "v*"
@@ -43,7 +44,7 @@ jobs:
           ./release_bins/UniversalConversionHub_UCH --smoke-test
           ./release_bins/UniversalConversionHub_UCH_Updater --version
           ./release_bins/UniversalConversionHub_UCH_Updater --smoke-test
-          APPIMAGE_PACKAGE="$(ls release_bins/*.AppImage)"
+          APPIMAGE_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'UniversalConversionHub_UCH_linux_*.AppImage' ! -name '*latest*' | head -n 1)"
           chmod +x "$APPIMAGE_PACKAGE"
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --version
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --smoke-test
@@ -51,7 +52,7 @@ jobs:
       - name: Validate Debian package layout
         shell: bash
         run: |
-          DEB_PACKAGE="$(ls release_bins/*.deb)"
+          DEB_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'universal-conversion-hub-uch_*.deb' ! -name '*latest*' | head -n 1)"
           dpkg-deb --info "$DEB_PACKAGE"
           rm -rf deb-smoke
           mkdir -p deb-smoke
@@ -62,6 +63,8 @@ jobs:
           test -x deb-smoke/opt/universal-conversion-hub-uch/UniversalConversionHub_UCH_Updater
           test -f deb-smoke/usr/share/applications/io.github.Pugmaster04.UniversalConversionHub.desktop
           test -f deb-smoke/usr/share/pixmaps/universal-conversion-hub-uch.png
+          test -f release_bins/universal-conversion-hub-uch_latest_amd64.deb || test -f release_bins/universal-conversion-hub-uch_latest_arm64.deb
+          test -f release_bins/UniversalConversionHub_UCH_linux_latest_x86_64.AppImage || test -f release_bins/UniversalConversionHub_UCH_linux_latest_arm64.AppImage
 
       - name: Upload Linux build artifacts
         uses: actions/upload-artifact@v6

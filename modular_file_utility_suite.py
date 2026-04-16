@@ -2455,9 +2455,9 @@ class SuiteApp:
             self.style.theme_use("clam")
 
         self.style.configure(".", font=self._font(10))
-        self.style.configure("App.TButton", padding=(self._scaled(12), self._scaled(7)), font=self._font(10, semibold=True))
-        self.style.configure("PrimaryApp.TButton", padding=(self._scaled(12), self._scaled(7)), font=self._font(10, semibold=True))
-        self.style.configure("QuietApp.TButton", padding=(self._scaled(12), self._scaled(7)), font=self._font(10))
+        self.style.configure("App.TButton", padding=(self._scaled(14), self._scaled(8)), font=self._font(10, semibold=True))
+        self.style.configure("PrimaryApp.TButton", padding=(self._scaled(14), self._scaled(8)), font=self._font(10, semibold=True))
+        self.style.configure("QuietApp.TButton", padding=(self._scaled(14), self._scaled(8)), font=self._font(10))
         self.style.configure("App.TNotebook", borderwidth=0, tabmargins=(self._scaled(8), 0, 0, 0))
         try:
             self.style.configure("App.TNotebook", tabposition="n")
@@ -2466,7 +2466,7 @@ class SuiteApp:
             pass
         self.style.configure(
             "App.TNotebook.Tab",
-            padding=(self._scaled(14), self._scaled(10)),
+            padding=(self._scaled(16), self._scaled(11)),
             font=self._font(10, semibold=True),
             background="#DCE5F1",
             foreground="#17304F",
@@ -2475,7 +2475,7 @@ class SuiteApp:
         self.style.configure("TopTabs.TNotebook", borderwidth=0, tabmargins=(self._scaled(6), 0, 0, 0))
         self.style.configure(
             "TopTabs.TNotebook.Tab",
-            padding=(self._scaled(18), self._scaled(10)),
+            padding=(self._scaled(20), self._scaled(11)),
             font=self._font(10, semibold=True),
             background="#DCE5F1",
             foreground="#17304F",
@@ -2486,97 +2486,97 @@ class SuiteApp:
     def _theme_palette(self, dark_mode: bool) -> dict[str, str]:
         if dark_mode:
             palette = {
-                "window_bg": "#10151C",
-                "surface_bg": "#121A23",
-                "surface_alt_bg": "#0D141D",
-                "card_bg": "#171F29",
-                "card_border": "#2D3A49",
-                "title_fg": "#F2F7FF",
-                "subtitle_fg": "#C7D4E6",
-                "meta_fg": "#E4EEFB",
-                "muted_fg": "#9FB1C8",
-                "status_bg": "#0C1117",
-                "status_fg": "#D6E4F5",
-                "button_bg": "#1D2835",
-                "button_fg": "#E7F0FE",
-                "button_active": "#2A3A4E",
-                "button_press": "#324861",
-                "accent_bg": "#3874B6",
-                "accent_fg": "#F8FBFF",
-                "accent_active": "#4A86C9",
-                "accent_press": "#2C629C",
-                "accent_soft_bg": "#203246",
-                "input_bg": "#111923",
-                "input_fg": "#F1F6FF",
-                "input_border": "#304153",
-                "select_bg": "#355276",
+                "window_bg": "#0E1418",
+                "surface_bg": "#10191F",
+                "surface_alt_bg": "#0C1318",
+                "card_bg": "#152028",
+                "card_border": "#2B3B44",
+                "title_fg": "#F3F8F6",
+                "subtitle_fg": "#BFD1CC",
+                "meta_fg": "#E2EEEB",
+                "muted_fg": "#89A29C",
+                "status_bg": "#0B1115",
+                "status_fg": "#DDE7E4",
+                "button_bg": "#1A262D",
+                "button_fg": "#E8F0EE",
+                "button_active": "#23343D",
+                "button_press": "#2C404A",
+                "accent_bg": "#177A6B",
+                "accent_fg": "#F5FFFC",
+                "accent_active": "#229181",
+                "accent_press": "#126458",
+                "accent_soft_bg": "#183A38",
+                "input_bg": "#11191E",
+                "input_fg": "#F0F7F4",
+                "input_border": "#35515A",
+                "select_bg": "#1A7E70",
                 "select_fg": "#FFFFFF",
-                "tree_header_bg": "#202D3B",
-                "tree_header_fg": "#EAF3FF",
-                "progress_bg": "#5A95D6",
-                "progress_trough": "#0E151E",
-                "notebook_bg": "#10151C",
-                "tab_bg": "#1C2734",
-                "tab_fg": "#DCE7F7",
-                "tab_sel_bg": "#2A3C52",
+                "tree_header_bg": "#1C2A31",
+                "tree_header_fg": "#EAF7F3",
+                "progress_bg": "#2A9E8E",
+                "progress_trough": "#0D151A",
+                "notebook_bg": "#0E1418",
+                "tab_bg": "#18252C",
+                "tab_fg": "#D6E6E2",
+                "tab_sel_bg": "#21333B",
                 "tab_sel_fg": "#FFFFFF",
-                "tab_active_bg": "#243447",
+                "tab_active_bg": "#1D2D35",
                 "tab_active_fg": "#FFFFFF",
-                "log_bg": "#0D131A",
-                "log_fg": "#F0F6FF",
-                "log_border": "#314252",
-                "backend_detected_fg": "#A8D5FF",
-                "backend_missing_fg": "#FFB178",
-                "window_bar_bg": "#203246",
-                "window_bar_fg": "#9FB1C8",
-                "window_bar_border": "#182636",
+                "log_bg": "#0D1317",
+                "log_fg": "#F0F7F4",
+                "log_border": "#31464E",
+                "backend_detected_fg": "#8FD8C7",
+                "backend_missing_fg": "#FFBE7D",
+                "window_bar_bg": "#183A38",
+                "window_bar_fg": "#E2EEEB",
+                "window_bar_border": "#12302F",
             }
         else:
             palette = {
-            "window_bg": "#EEF2F8",
-            "surface_bg": "#F5F8FC",
-            "surface_alt_bg": "#E6ECF5",
-            "card_bg": "#FFFFFF",
-            "card_border": "#CFD8E6",
-            "title_fg": "#0B2440",
-            "subtitle_fg": "#405368",
-            "meta_fg": "#1A3555",
-            "muted_fg": "#5A6C84",
-            "status_bg": "#DCE4EF",
-            "status_fg": "#163150",
-            "button_bg": "#F8FBFF",
-            "button_fg": "#17304F",
-            "button_active": "#E8EEF8",
-            "button_press": "#DDE6F4",
-            "accent_bg": "#2D69A8",
+            "window_bg": "#F3F1EC",
+            "surface_bg": "#F7F5F0",
+            "surface_alt_bg": "#EAE6DD",
+            "card_bg": "#FFFEFC",
+            "card_border": "#D9D1C4",
+            "title_fg": "#15242B",
+            "subtitle_fg": "#50636A",
+            "meta_fg": "#20353C",
+            "muted_fg": "#667A81",
+            "status_bg": "#E6E1D8",
+            "status_fg": "#21363D",
+            "button_bg": "#FFFDFC",
+            "button_fg": "#183038",
+            "button_active": "#F0EBE2",
+            "button_press": "#E3DCCD",
+            "accent_bg": "#19786B",
             "accent_fg": "#FFFFFF",
-            "accent_active": "#3D79B8",
-            "accent_press": "#23598E",
-            "accent_soft_bg": "#E7EEF8",
+            "accent_active": "#25887B",
+            "accent_press": "#136257",
+            "accent_soft_bg": "#E3F0EC",
             "input_bg": "#FFFFFF",
-            "input_fg": "#10253F",
-            "input_border": "#B8C7DC",
-            "select_bg": "#2D69A8",
+            "input_fg": "#10272F",
+            "input_border": "#BDB3A6",
+            "select_bg": "#177A6B",
             "select_fg": "#FFFFFF",
-            "tree_header_bg": "#E7EEF8",
-            "tree_header_fg": "#17304F",
-            "progress_bg": "#3A76B6",
-            "progress_trough": "#E4ECF7",
-            "notebook_bg": "#EEF2F8",
-            "tab_bg": "#DCE5F1",
-            "tab_fg": "#17304F",
-            "tab_sel_bg": "#FFFFFF",
-            "tab_sel_fg": "#0B2440",
-            "tab_active_bg": "#E8EEF8",
-            "tab_active_fg": "#163150",
-            "log_bg": "#F8FAFD",
-            "log_fg": "#142840",
-            "log_border": "#CFD8E6",
-            "backend_detected_fg": "#005A9E",
-            "backend_missing_fg": "#B42318",
-            "window_bar_bg": "#E7EEF8",
-            "window_bar_fg": "#5A6C84",
-            "window_bar_border": "#C8D5E8",
+            "tree_header_bg": "#ECE6DA",
+            "tree_header_fg": "#183038",
+            "progress_bg": "#228377",
+            "progress_trough": "#E7E1D7",
+            "notebook_bg": "#F3F1EC",
+            "tab_bg": "#E4DDD1",
+            "tab_fg": "#183038",
+            "tab_sel_bg": "#FFFEFC",
+            "tab_sel_fg": "#15242B",
+            "tab_active_bg": "#EEE8DE",
+            "tab_active_fg": "#173139",
+            "log_bg": "#FFFEFC",
+            "log_fg": "#162930",
+            "log_border": "#D9D1C4",
+            "backend_detected_fg": "#0D665A",
+            "backend_missing_fg": "#B54708",
+            "window_bar_bg": "#E3F0EC",
+            "window_bar_fg": "#305459",
+            "window_bar_border": "#C4DDD6",
         }
         if self.high_contrast_enabled():
             if dark_mode:
@@ -2756,6 +2756,7 @@ class SuiteApp:
         self.style.configure("SurfaceInset.TFrame", background=palette["surface_alt_bg"])
         self.style.configure("Card.TFrame", background=palette["card_bg"])
         self.style.configure("HeaderCard.TFrame", background=palette["card_bg"])
+        self.style.configure("ModuleHero.TFrame", background=palette["card_bg"], borderwidth=1, relief="solid", bordercolor=palette["card_border"])
         self.style.configure("DragStrip.TFrame", background=palette["window_bar_bg"], borderwidth=1, relief="solid", bordercolor=palette["window_bar_border"])
         self.style.configure("Card.TLabelframe", background=palette["card_bg"], borderwidth=1, relief="solid", bordercolor=palette["card_border"])
         self.style.configure("Card.TLabelframe.Label", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10, semibold=True))
@@ -2766,6 +2767,11 @@ class SuiteApp:
         self.style.configure("HeaderMeta.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10, semibold=True))
         self.style.configure("CardBody.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10))
         self.style.configure("CardMuted.TLabel", background=palette["card_bg"], foreground=palette["muted_fg"], font=self._font(9))
+        self.style.configure("ModuleTitle.TLabel", background=palette["card_bg"], foreground=palette["title_fg"], font=self._font(16, semibold=True))
+        self.style.configure("ModuleSummary.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10))
+        self.style.configure("ModuleWorkflow.TLabel", background=palette["card_bg"], foreground=palette["subtitle_fg"], font=self._font(9, semibold=True))
+        self.style.configure("ModuleChip.TLabel", background=palette["surface_alt_bg"], foreground=palette["meta_fg"], font=self._font(9, semibold=True), padding=(self._scaled(8), self._scaled(4)))
+        self.style.configure("ModuleBadge.TLabel", background=palette["accent_soft_bg"], foreground=palette["accent_bg"] if not dark_mode else palette["accent_fg"], font=self._font(9, semibold=True), padding=(self._scaled(8), self._scaled(4)))
         self.style.configure("DragStrip.TLabel", background=palette["window_bar_bg"], foreground=palette["window_bar_fg"], font=self._font(8, semibold=True))
         self.style.configure("Badge.TLabel", background=palette["accent_soft_bg"], foreground=palette["tab_sel_fg"], font=self._font(9, semibold=True), padding=(self._scaled(8), self._scaled(4)))
         badge_specs = {
@@ -3208,7 +3214,7 @@ class SuiteApp:
         ttk.Label(intro_col, text=APP_TITLE, style="HeaderTitle.TLabel").pack(anchor="w")
         ttk.Label(
             intro_col,
-            text="Modular desktop workspace for conversion, extraction, metadata, archives, batch jobs, and analysis.",
+            text="One desktop workspace for conversion, media prep, archives, downloads, file analysis, and repeatable batch jobs.",
             style="HeaderSubtitle.TLabel",
             wraplength=980,
             justify="left",
@@ -3225,7 +3231,7 @@ class SuiteApp:
         meta_col = ttk.Frame(hero_row, style="HeaderCard.TFrame")
         meta_col.grid(row=0, column=1, sticky="ne")
         ttk.Label(meta_col, text=f"v{APP_VERSION}", style="Badge.TLabel").pack(anchor="e")
-        ttk.Label(meta_col, text="Module workflow unchanged", style="CardMuted.TLabel").pack(anchor="e", pady=(4, 0))
+        ttk.Label(meta_col, text="Cross-platform workflow shell", style="CardMuted.TLabel").pack(anchor="e", pady=(4, 0))
 
         quick_shell = ttk.Frame(root_frame, style="App.TFrame")
         quick_shell.pack(fill="x", pady=(8, 0))
@@ -4979,6 +4985,103 @@ class SuiteApp:
 
 class ModuleTab(ttk.Frame):
     tab_name = "Module"
+    MODULE_COPY: ClassVar[dict[str, dict[str, Any]]] = {
+        "Suite Plan": {
+            "summary": "Reference view for the app structure, module scope, and planned expansion areas.",
+            "highlights": ["Architecture map", "Current scope", "Planned growth"],
+            "workflow": "Use this tab to orient yourself before choosing a workspace module.",
+        },
+        "Backends / Links": {
+            "summary": "Check which optional tools are detected, where they came from, and how to install the missing ones.",
+            "highlights": ["Detect backends", "Open official docs", "Copy install commands"],
+            "workflow": "Refresh detection, inspect the selected backend, then install only what the workflow needs.",
+        },
+        "Convert": {
+            "summary": "Convert one source type at a time with format-aware targets, quality controls, and safe output handling.",
+            "highlights": ["Batch queue", "Valid target filtering", "Quality + bitrate controls"],
+            "workflow": "Add files, choose the target format, tune quality if needed, then run the queue.",
+        },
+        "Compress": {
+            "summary": "Reduce file size for images, audio, video, or ZIP batches without leaving the app.",
+            "highlights": ["Image quality", "Video CRF", "ZIP batch mode"],
+            "workflow": "Add inputs, choose the compression mode, confirm the output folder, then run compression.",
+        },
+        "Extract": {
+            "summary": "Pull audio, frames, subtitles, or cover art from supported media sources.",
+            "highlights": ["Media extraction", "Queue processing", "Format-aware tools"],
+            "workflow": "Add supported media, pick the extraction action, then export the derived assets.",
+        },
+        "Metadata": {
+            "summary": "Inspect metadata or write lightweight metadata changes and sidecars where supported.",
+            "highlights": ["Inspect files", "Write metadata", "Media-aware fallback"],
+            "workflow": "Add files, inspect the current metadata, then apply only the fields you need to change.",
+        },
+        "PDF / Documents": {
+            "summary": "Handle document and image-to-PDF conversion with Pandoc or LibreOffice when available.",
+            "highlights": ["PDF export", "Office fallback", "Image-to-PDF path"],
+            "workflow": "Queue documents, choose the target format, then run conversion with the best available backend.",
+        },
+        "Images": {
+            "summary": "Run a focused image pipeline for resizing, format export, and optional sharpen cleanup.",
+            "highlights": ["Resize to fit", "Format export", "Sharpen control"],
+            "workflow": "Add images, set resize/export options, confirm output, then process the batch.",
+        },
+        "Audio": {
+            "summary": "Convert and clean audio with sample-rate, channel, normalization, and trim controls.",
+            "highlights": ["Format conversion", "Normalize loudness", "Trim silence"],
+            "workflow": "Queue audio, choose the cleanup/export options, then process the batch.",
+        },
+        "Video": {
+            "summary": "Use the dedicated video toolbox for remuxing, trim jobs, streaming prep, and thumbnail sheets.",
+            "highlights": ["Remux", "Trim", "Stream presets"],
+            "workflow": "Select the video mode first, set only the relevant fields, then run the queue.",
+        },
+        "Archives": {
+            "summary": "Create archives from mixed inputs or extract selected archive files into structured folders.",
+            "highlights": ["Create archives", "Extract selected", "Mixed file/folder inputs"],
+            "workflow": "Queue files or folders, choose create or extract, then point the output where you want it.",
+        },
+        "Rename / Organize": {
+            "summary": "Preview rename rules before applying them so the result is understandable before anything changes.",
+            "highlights": ["Preview first", "Regex optional", "Sequential numbering"],
+            "workflow": "Add files, build the preview, verify the proposed names, then apply the rename.",
+        },
+        "Duplicate Finder": {
+            "summary": "Scan a folder tree for duplicate content and review the grouped matches before acting.",
+            "highlights": ["Folder scan", "Grouped duplicates", "Size filter"],
+            "workflow": "Choose a folder, run the scan, then review duplicate groups and paths.",
+        },
+        "Storage Analyzer": {
+            "summary": "Analyze a folder visually with chart and table views that compare the biggest items quickly.",
+            "highlights": ["Pie charts", "Largest files", "Largest folders"],
+            "workflow": "Pick a folder, analyze it, then compare the views to see where the space is going.",
+        },
+        "Checksums / Integrity": {
+            "summary": "Generate digest reports or verify existing checksum files when you need trustable file integrity checks.",
+            "highlights": ["SHA256 by default", "Save reports", "Verify reports"],
+            "workflow": "Queue files to hash or open a saved report to verify what is already on disk.",
+        },
+        "Subtitles": {
+            "summary": "Convert common subtitle formats with a simple queue-focused workflow.",
+            "highlights": ["SRT <-> VTT", "Batch queue", "Plain output folder"],
+            "workflow": "Add subtitle files, choose the target format, then convert the queue.",
+        },
+        "Downloads": {
+            "summary": "Use aria2 directly for HTTP, FTP, SFTP, torrent, magnet, and Metalink transfers.",
+            "highlights": ["URI queue", "Pause/resume/stop", "No app-side rate cap"],
+            "workflow": "Add URIs or metadata files, confirm the download folder, then run the queue.",
+        },
+        "Torrents": {
+            "summary": "Create torrents or download selected torrent contents with file-level control and live progress.",
+            "highlights": ["Build torrents", "Select files", "Per-file progress"],
+            "workflow": "Open a torrent, choose only the files you want, then start and monitor the download.",
+        },
+        "Presets / Batch Jobs": {
+            "summary": "Capture working settings from the current module so repeated jobs take fewer steps.",
+            "highlights": ["Save presets", "Reuse settings", "Cross-module capture"],
+            "workflow": "Tune a module first, capture its settings here, then reuse them for future runs.",
+        },
+    }
 
     def __init__(self, master, app: SuiteApp):
         super().__init__(master)
@@ -5098,6 +5201,51 @@ class ModuleTab(ttk.Frame):
         if raw:
             variable.set(raw)
 
+    def build_module_shell(self) -> ttk.Frame:
+        copy = self.MODULE_COPY.get(self.tab_name, {})
+        summary = str(copy.get("summary", "")).strip()
+        highlights = [str(item).strip() for item in copy.get("highlights", []) if str(item).strip()]
+        workflow = str(copy.get("workflow", "")).strip()
+
+        shell = ttk.Frame(self, style="Surface.TFrame", padding=12)
+        shell.pack(fill="both", expand=True)
+
+        hero = ttk.Frame(shell, style="ModuleHero.TFrame", padding=(14, 12))
+        hero.pack(fill="x", pady=(0, 10))
+
+        title_row = ttk.Frame(hero, style="ModuleHero.TFrame")
+        title_row.pack(fill="x")
+        ttk.Label(title_row, text=self.tab_name, style="ModuleTitle.TLabel").pack(side="left")
+        ttk.Label(title_row, text="Focused view", style="ModuleBadge.TLabel").pack(side="right")
+
+        if summary:
+            ttk.Label(
+                hero,
+                text=summary,
+                style="ModuleSummary.TLabel",
+                wraplength=1180,
+                justify="left",
+            ).pack(anchor="w", pady=(6, 0))
+
+        if highlights:
+            chips = ttk.Frame(hero, style="ModuleHero.TFrame")
+            chips.pack(fill="x", pady=(10, 0))
+            for index, item in enumerate(highlights):
+                ttk.Label(chips, text=item, style="ModuleChip.TLabel").pack(side="left", padx=(0 if index == 0 else 8, 0))
+
+        if workflow:
+            ttk.Label(
+                hero,
+                text=f"Workflow: {workflow}",
+                style="ModuleWorkflow.TLabel",
+                wraplength=1180,
+                justify="left",
+            ).pack(anchor="w", pady=(10, 0))
+
+        content = ttk.Frame(shell, style="Surface.TFrame")
+        content.pack(fill="both", expand=True)
+        return content
+
     def handle_external_drop(self, paths: list[Path]) -> bool:
         return False
 
@@ -5210,8 +5358,7 @@ class SuitePlanTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        body = ttk.Frame(self, padding=14)
-        body.pack(fill="both", expand=True)
+        body = self.build_module_shell()
 
         plan_text = (
             "Project Structure\n"
@@ -5264,8 +5411,7 @@ class BackendLinksTab(ModuleTab):
         self._populate()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         intro_label = ttk.Label(
             outer,
@@ -5524,8 +5670,7 @@ class ConvertTab(ModuleTab):
         self._refresh_target_formats()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         queue_controls = ttk.Frame(outer)
         queue_controls.pack(fill="x")
@@ -6025,8 +6170,7 @@ class CompressTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -6242,8 +6386,7 @@ class ExtractTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -6434,8 +6577,7 @@ class MetadataTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         top = ttk.Frame(outer)
         top.pack(fill="x")
@@ -6533,8 +6675,7 @@ class DocumentsTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         info = ttk.Label(
             outer,
@@ -6610,8 +6751,7 @@ class RoadmapModuleTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        body = ttk.Frame(self, padding=14)
-        body.pack(fill="both", expand=True)
+        body = self.build_module_shell()
         ttk.Label(body, text=f"{self.module_name} Module", font=self.app._font(13, bold=True)).pack(anchor="w")
         ttk.Label(body, text=f"Current status: starter scaffold ({self.phase})", foreground="#1f4f8a").pack(anchor="w", pady=(2, 10))
         ttk.Label(body, text=self.note, wraplength=1180).pack(anchor="w", pady=(0, 10))
@@ -6710,8 +6850,7 @@ class ImagesTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -6909,8 +7048,7 @@ class AudioTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -7112,8 +7250,7 @@ class VideoTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -7367,8 +7504,7 @@ class ArchivesTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -7501,8 +7637,7 @@ class RenameOrganizeTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -7631,8 +7766,7 @@ class DuplicateFinderTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         top = ttk.Frame(outer)
         top.pack(fill="x")
@@ -7907,8 +8041,7 @@ class StorageAnalyzerTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, style="App.TFrame", padding=12)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls_box = ttk.LabelFrame(outer, text="Storage Analysis", style="Card.TLabelframe")
         controls_box.pack(fill="x")
@@ -8505,8 +8638,7 @@ class ChecksumsTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
@@ -8632,8 +8764,7 @@ class SubtitlesTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
         ttk.Label(
             outer,
             text=(
@@ -8733,8 +8864,7 @@ class Aria2DownloadsTab(ModuleTab):
         self._build()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         ttk.Label(
             outer,
@@ -9118,8 +9248,7 @@ class TorrentsTab(ModuleTab):
         self.file_search_var.trace_add("write", lambda *_: self._refresh_file_tree())
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
         ttk.Label(
             outer,
             text=(
@@ -9949,8 +10078,7 @@ class PresetsBatchTab(ModuleTab):
         self._refresh_widgets()
 
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer = self.build_module_shell()
 
         split = ttk.Panedwindow(outer, orient="horizontal")
         split.pack(fill="both", expand=True)

@@ -138,6 +138,7 @@ mkdir -p \
   "${DEB_ROOT}/usr/bin" \
   "${DEB_ROOT}/usr/share/applications" \
   "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps" \
+  "${DEB_ROOT}/usr/share/pixmaps" \
   "${DEB_ROOT}/usr/share/metainfo"
 cp -f "dist/${APP_BINARY_NAME}" "${DEB_ROOT}/opt/${PACKAGE_NAME}/${APP_BINARY_NAME}"
 cp -f "dist/${UPDATER_BINARY_NAME}" "${DEB_ROOT}/opt/${PACKAGE_NAME}/${UPDATER_BINARY_NAME}"
@@ -145,6 +146,7 @@ cp -f "README.md" "${DEB_ROOT}/opt/${PACKAGE_NAME}/README.md"
 cp -f "PROJECT_PLAN.md" "${DEB_ROOT}/opt/${PACKAGE_NAME}/PROJECT_PLAN.md"
 cp -f "update_manifest.example.json" "${DEB_ROOT}/opt/${PACKAGE_NAME}/update_manifest.example.json"
 cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png"
+cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/pixmaps/${PACKAGE_NAME}.png"
 cp -f "$APPDATA_TEMPLATE" "${DEB_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
 render_desktop_file "universal-conversion-hub-uch" "${DEB_ROOT}/usr/share/applications/${DESKTOP_ID}"
 cat > "${DEB_ROOT}/usr/bin/universal-conversion-hub-uch" <<'EOF'

@@ -11,12 +11,14 @@ This changelog includes:
 
 ### Added
 - New `Torrents` workspace tab for creating `.torrent` files in-app and downloading/extracting torrent contents through the optional `Aria2` backend.
+- New dedicated `Aria2` workspace category with a `Downloads` tab for direct aria2-managed HTTP(S), FTP, SFTP, BitTorrent, magnet, and Metalink transfers.
 
 ### Changed
 - Linux port groundwork now uses XDG-style config paths for app and updater settings instead of assuming `%LOCALAPPDATA%`.
 - Backend install guidance now chooses platform-appropriate commands, including Linux package-manager suggestions where supported.
 - Backend detection now checks common Linux binary locations for FFmpeg, Pandoc, LibreOffice, 7-Zip, and ImageMagick.
 - Backend detection/install guidance now also includes `Aria2` for torrent download workflows.
+- `Torrents` now lives under the dedicated `Aria2` workspace category instead of `Misc`.
 - Linux build packaging now creates a release tarball named `UniversalConversionHub_UCH_linux_<arch>.tar.gz`.
 - Updater release-asset selection now prefers Linux `.AppImage` or `.tar.gz` assets on Linux instead of selecting Windows `.exe` downloads.
 - GitHub Actions now includes a Linux build/release workflow that can upload Linux tarball assets to tagged releases.

@@ -206,7 +206,7 @@ jobs:
           )
           while IFS= read -r asset; do
             ASSETS+=("$asset")
-          done < <(find release-payload/linux/release_bins -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage' -o -name 'FormatFoundry_linux_*.tar.gz' \) | sort)
+          done < <(find release-payload/linux -maxdepth 2 -type f \( -name '*.deb' -o -name '*.AppImage' -o -name 'FormatFoundry_linux_*.tar.gz' \) | sort)
           test "${#ASSETS[@]}" -gt 0
           for asset in "${ASSETS[@]}"; do
             test -f "$asset"

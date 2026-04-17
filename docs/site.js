@@ -1,6 +1,6 @@
 (() => {
   const site = {
-    version: "1.8.6",
+    version: "1.8.7",
     repo: "https://github.com/Pugmaster04/Universal-File-Conversion",
     releasePage: "https://github.com/Pugmaster04/Universal-File-Conversion/releases/latest",
     links: {

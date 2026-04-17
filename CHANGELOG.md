@@ -16,6 +16,12 @@ This changelog includes:
 - Linux AppStream metadata now includes release notes, a screenshot, age-rating metadata, richer project links, and a proprietary-license reference page so software centers can show more complete app details.
 - Linux packaging now validates AppStream metadata with `appstreamcli` during build and CI.
 
+## [1.8.7] - 2026-04-16
+
+### Fixed
+- Linux first-run setup now keeps its action buttons visible by using a scrollable content area with a fixed footer, plus keyboard shortcuts to continue or close the wizard.
+- Linux AppStream metadata now validates cleanly and includes richer store details such as release notes, screenshot data, content rating, and license-status links.
+
 ## [1.8.6] - 2026-04-16
 
 ### Fixed

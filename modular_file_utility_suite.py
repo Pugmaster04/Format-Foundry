@@ -26,7 +26,7 @@ import webbrowser
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar
 
 import tkinter as tk
 import tkinter.font as tkfont
@@ -84,7 +84,7 @@ except Exception:
 APP_TITLE = "Format Foundry"
 APP_SLUG = "FormatFoundry"
 LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
-APP_VERSION = "1.8.12"
+APP_VERSION = "1.8.13"
 DEFAULT_UPDATE_MANIFEST_URL = ""
 APP_EXE_BASENAME = "FormatFoundry"
 UPDATER_EXE_BASENAME = "FormatFoundry_Updater"
@@ -2080,6 +2080,7 @@ class SuiteApp:
         self.drag_drop_status_var = StringVar(value="")
         self._last_drop_signature: tuple[tuple[str, ...], float] | None = None
         self.backend_hover_cards: list[HoverCard] = []
+        self._mousewheel_targets: dict[str, Callable[[int], None]] = {}
         self._normal_geometry = self.root.geometry()
         self._normal_zoomed = False
         self._window_mode_state = "normal"
@@ -2088,6 +2089,9 @@ class SuiteApp:
         self.root.bind("<F11>", self._on_f11_toggle)
         self.root.bind("<F10>", self._on_f10_toggle_borderless)
         self.root.bind("<Escape>", self._on_escape_exit_fullscreen)
+        self.root.bind_all("<MouseWheel>", self._dispatch_mousewheel_scroll, add="+")
+        self.root.bind_all("<Button-4>", self._dispatch_mousewheel_scroll, add="+")
+        self.root.bind_all("<Button-5>", self._dispatch_mousewheel_scroll, add="+")
 
         self.backends = BackendRegistry.detect()
         self.backend_runtime_details: dict[str, dict[str, Any]] = {}
@@ -2236,25 +2240,10 @@ class SuiteApp:
             except Exception:
                 pass
 
-        def _on_first_run_mousewheel(event):
-            delta = 0
-            if hasattr(event, "delta") and event.delta:
-                delta = -1 if event.delta > 0 else 1
-            elif getattr(event, "num", None) == 4:
-                delta = -1
-            elif getattr(event, "num", None) == 5:
-                delta = 1
-            if delta:
-                _scroll_first_run(delta)
-                return "break"
-            return None
-
         content_body.bind("<Configure>", _sync_first_run_scrollregion, add="+")
         content_canvas.bind("<Configure>", _sync_first_run_width, add="+")
-        for widget in (content_canvas, content_body):
-            widget.bind("<MouseWheel>", _on_first_run_mousewheel, add="+")
-            widget.bind("<Button-4>", _on_first_run_mousewheel, add="+")
-            widget.bind("<Button-5>", _on_first_run_mousewheel, add="+")
+        self._register_mousewheel_target(content_canvas, _scroll_first_run)
+        self._register_mousewheel_target(content_body, _scroll_first_run)
 
         ttk.Label(content_body, text="Welcome to Format Foundry", font=self._font(14, semibold=True)).pack(anchor="w")
         ttk.Label(
@@ -2293,7 +2282,7 @@ class SuiteApp:
 
         ttk.Label(
             content_body,
-            text='Manifest example: {"latest_version":"1.8.12","download_url":"https://example.com/app.exe","notes":"Release notes"}',
+            text='Manifest example: {"latest_version":"1.8.13","download_url":"https://example.com/app.exe","notes":"Release notes"}',
             foreground="#57687F",
             wraplength=590,
             justify="left",
@@ -2530,6 +2519,68 @@ class SuiteApp:
 
     def _scaled(self, value: int, minimum: int = 1) -> int:
         return max(minimum, int(round(float(value) * self._ui_scale_factor())))
+
+    def _mousewheel_units_from_event(self, event: Any) -> int:
+        if hasattr(event, "delta") and getattr(event, "delta", 0):
+            delta = int(event.delta)
+            if delta == 0:
+                return 0
+            if os.name == "nt":
+                steps = max(1, abs(delta) // 120)
+                return -steps if delta > 0 else steps
+            return -1 if delta > 0 else 1
+        button_num = getattr(event, "num", None)
+        if button_num == 4:
+            return -1
+        if button_num == 5:
+            return 1
+        return 0
+
+    def _register_mousewheel_target(self, widget: tk.Misc, callback: Callable[[int], None]) -> None:
+        self._mousewheel_targets[str(widget)] = callback
+
+    def _dispatch_mousewheel_scroll(self, event: Any) -> str | None:
+        delta_units = self._mousewheel_units_from_event(event)
+        if not delta_units:
+            return None
+
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return None
+
+        try:
+            if isinstance(widget, tk.Text):
+                widget.yview_scroll(delta_units, "units")
+                return "break"
+            if isinstance(widget, tk.Listbox):
+                widget.yview_scroll(delta_units, "units")
+                return "break"
+            if isinstance(widget, ttk.Treeview):
+                widget.yview_scroll(delta_units, "units")
+                return "break"
+        except Exception:
+            return None
+
+        current = widget
+        while current is not None:
+            callback = self._mousewheel_targets.get(str(current))
+            if callback is not None:
+                try:
+                    callback(delta_units)
+                    return "break"
+                except Exception:
+                    return None
+            try:
+                parent_name = current.winfo_parent()
+            except Exception:
+                break
+            if not parent_name:
+                break
+            try:
+                current = current.nametowidget(parent_name)
+            except Exception:
+                break
+        return None
 
     def _preferred_font_family(self) -> str:
         cached = getattr(self, "_cached_font_family", "")
@@ -4762,7 +4813,7 @@ class SuiteApp:
         ttk.Entry(general_tab, textvariable=update_url_var).pack(fill="x", pady=(4, 0))
         ttk.Label(
             general_tab,
-            text='Example JSON: {"latest_version":"1.8.12","download_url":"https://example.com/app.exe","notes":"Release notes"}',
+            text='Example JSON: {"latest_version":"1.8.13","download_url":"https://example.com/app.exe","notes":"Release notes"}',
             foreground="#57687F",
             wraplength=760,
         ).pack(anchor="w", pady=(4, 0))
@@ -6180,6 +6231,8 @@ class ModuleTab(ttk.Frame):
 
         shell_canvas.bind("<Configure>", sync_shell_viewport, add="+")
         shell.bind("<Configure>", sync_shell_viewport, add="+")
+        self.app._register_mousewheel_target(shell_canvas, lambda delta_units: shell_canvas.yview_scroll(delta_units, "units"))
+        self.app._register_mousewheel_target(shell, lambda delta_units: shell_canvas.yview_scroll(delta_units, "units"))
         self.after(0, sync_shell_viewport)
 
         hero = ttk.Frame(shell, style="ModuleHero.TFrame", padding=(0, 0))
@@ -10402,6 +10455,8 @@ class TorrentsTab(ModuleTab):
         self._progress_canvas_window = self._progress_canvas.create_window((0, 0), window=self._progress_rows_frame, anchor="nw")
         self._progress_rows_frame.bind("<Configure>", self._on_progress_rows_configured)
         self._progress_canvas.bind("<Configure>", self._on_progress_canvas_configured)
+        self.app._register_mousewheel_target(self._progress_canvas, lambda delta_units: self._progress_canvas.yview_scroll(delta_units, "units"))
+        self.app._register_mousewheel_target(self._progress_rows_frame, lambda delta_units: self._progress_canvas.yview_scroll(delta_units, "units"))
 
         folder_row = ttk.Frame(download_box)
         folder_row.pack(fill="x", padx=10, pady=(0, 8))
@@ -11439,5 +11494,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 

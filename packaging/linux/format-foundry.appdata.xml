@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.Pugmaster04.FormatFoundry.desktop</id>
+  <id>io.github.pugmaster04.formatfoundry.desktop</id>
   <name>Format Foundry</name>
   <summary>Cross-platform file conversion and workflow workspace</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>LicenseRef-proprietary=https://pugmaster04.github.io/Universal-File-Conversion/license.html</project_license>
-  <developer id="io.github.Pugmaster04">
+  <developer id="io.github.pugmaster04">
     <name>Pugmaster04</name>
   </developer>
   <url type="homepage">https://pugmaster04.github.io/Universal-File-Conversion/index.html</url>
@@ -24,13 +24,14 @@
       extracting, downloading, and reviewing outputs need to happen in one place.
     </p>
   </description>
-  <launchable type="desktop-id">io.github.Pugmaster04.FormatFoundry.desktop</launchable>
+  <launchable type="desktop-id">io.github.pugmaster04.formatfoundry.desktop</launchable>
   <provides>
     <binary>format-foundry</binary>
     <binary>format-foundry-updater</binary>
   </provides>
   <screenshots>
     <screenshot type="default">
+      <caption>Format Foundry workspace on Linux desktop</caption>
       <image>https://pugmaster04.github.io/Universal-File-Conversion/site-assets/format-foundry-preview.png</image>
     </screenshot>
   </screenshots>

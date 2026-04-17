@@ -98,7 +98,7 @@ jobs:
           test -x deb-smoke/usr/bin/format-foundry-updater
           test -x deb-smoke/opt/format-foundry/FormatFoundry
           test -x deb-smoke/opt/format-foundry/FormatFoundry_Updater
-          test -f deb-smoke/usr/share/applications/io.github.Pugmaster04.FormatFoundry.desktop
+          test -f deb-smoke/usr/share/applications/io.github.pugmaster04.formatfoundry.desktop
           test -f deb-smoke/usr/share/pixmaps/format-foundry.png
           test -f release_bins/format-foundry_latest_amd64.deb || test -f release_bins/format-foundry_latest_arm64.deb
           test -f release_bins/FormatFoundry_linux_latest_x86_64.AppImage || test -f release_bins/FormatFoundry_linux_latest_arm64.AppImage

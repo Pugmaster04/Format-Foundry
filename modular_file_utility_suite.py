@@ -2792,6 +2792,7 @@ class SuiteApp:
             bordercolor=palette["hero_panel_border"],
         )
         self.style.configure("ModuleHero.TFrame", background=palette["card_bg"], borderwidth=1, relief="solid", bordercolor=palette["card_border"])
+        self.style.configure("ModuleHeroBody.TFrame", background=palette["card_bg"])
         self.style.configure("ModuleHeroPanel.TFrame", background=palette["hero_panel_bg"], borderwidth=1, relief="solid", bordercolor=palette["hero_panel_border"])
         self.style.configure("ModuleHeroAccent.TFrame", background=palette["accent_bg"])
         self.style.configure("DragStrip.TFrame", background=palette["window_bar_bg"], borderwidth=1, relief="solid", bordercolor=palette["window_bar_border"])
@@ -2809,7 +2810,7 @@ class SuiteApp:
         self.style.configure("CardMuted.TLabel", background=palette["card_bg"], foreground=palette["muted_fg"], font=self._font(9))
         self.style.configure("ModuleTitle.TLabel", background=palette["card_bg"], foreground=palette["title_fg"], font=self._font(16, semibold=True))
         self.style.configure("ModuleSummary.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10))
-        self.style.configure("ModuleWorkflow.TLabel", background=palette["card_bg"], foreground=palette["subtitle_fg"], font=self._font(9, semibold=True))
+        self.style.configure("ModuleWorkflow.TLabel", background=palette["hero_panel_bg"], foreground=palette["subtitle_fg"], font=self._font(9, semibold=True))
         self.style.configure("ModuleEyebrow.TLabel", background=palette["hero_strip_bg"], foreground=palette["hero_strip_fg"], font=self._font(8, semibold=True), padding=(self._scaled(8), self._scaled(4)))
         self.style.configure("ModuleLead.TLabel", background=palette["hero_panel_bg"], foreground=palette["muted_fg"], font=self._font(9))
         self.style.configure("ModuleChip.TLabel", background=palette["surface_alt_bg"], foreground=palette["meta_fg"], font=self._font(9, semibold=True), padding=(self._scaled(8), self._scaled(5)))
@@ -5689,10 +5690,10 @@ class ModuleTab(ttk.Frame):
         accent.place(relx=0.0, rely=0.0, relwidth=1.0, height=self.app._scaled(4))
         self._module_hero_accent = accent
 
-        hero_inner = ttk.Frame(hero, style="ModuleHero.TFrame", padding=(14, 14))
+        hero_inner = ttk.Frame(hero, style="ModuleHeroBody.TFrame", padding=(14, 14))
         hero_inner.pack(fill="x")
 
-        title_row = ttk.Frame(hero_inner, style="ModuleHero.TFrame")
+        title_row = ttk.Frame(hero_inner, style="ModuleHeroBody.TFrame")
         title_row.pack(fill="x")
         ttk.Label(title_row, text="Workflow module", style="ModuleEyebrow.TLabel").pack(side="left")
         ttk.Label(title_row, text="Active workspace", style="ModuleBadge.TLabel").pack(side="right")
@@ -5709,7 +5710,7 @@ class ModuleTab(ttk.Frame):
             ).pack(anchor="w", pady=(6, 0))
 
         if highlights:
-            chips = ttk.Frame(hero_inner, style="ModuleHero.TFrame")
+            chips = ttk.Frame(hero_inner, style="ModuleHeroBody.TFrame")
             chips.pack(fill="x", pady=(10, 0))
             for index, item in enumerate(highlights):
                 ttk.Label(chips, text=item, style="ModuleChip.TLabel").pack(side="left", padx=(0 if index == 0 else 8, 0))

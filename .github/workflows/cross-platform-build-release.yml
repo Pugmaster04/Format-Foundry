@@ -1,0 +1,219 @@
+name: Cross-Platform Build and Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - codex/linux-port
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Windows build prerequisites
+        shell: powershell
+        run: |
+          choco install innosetup --no-progress -y
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build Windows artifacts
+        shell: cmd
+        run: build_suite_release.bat
+
+      - name: Validate install surface
+        shell: powershell
+        run: |
+          python tools/validate_install_surface.py --readme README.md --artifacts release_bins installer_output dist --required-asset FormatFoundry_Setup.exe
+
+      - name: Upload Windows build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-build-artifacts
+          if-no-files-found: error
+          path: |
+            dist/FormatFoundry.exe
+            dist/FormatFoundry_Updater.exe
+            installer_output/FormatFoundry_Setup.exe
+            release_bins/FormatFoundry.exe
+            release_bins/FormatFoundry_Updater.exe
+            release_bins/FormatFoundry_Setup.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Linux build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-venv python3-tk tk-dev dpkg-dev curl
+
+      - name: Build Linux artifacts
+        shell: bash
+        run: |
+          chmod +x build_linux.sh
+          ./build_linux.sh
+
+      - name: Smoke test Linux binaries
+        shell: bash
+        run: |
+          chmod +x release_bins/FormatFoundry release_bins/FormatFoundry_Updater
+          ./release_bins/FormatFoundry --version
+          ./release_bins/FormatFoundry --smoke-test
+          ./release_bins/FormatFoundry_Updater --version
+          ./release_bins/FormatFoundry_Updater --smoke-test
+          APPIMAGE_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'FormatFoundry_linux_*.AppImage' ! -name '*latest*' | head -n 1)"
+          chmod +x "$APPIMAGE_PACKAGE"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --version
+          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --smoke-test
+
+      - name: Validate Debian package layout
+        shell: bash
+        run: |
+          DEB_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'format-foundry_*.deb' ! -name '*latest*' | head -n 1)"
+          dpkg-deb --info "$DEB_PACKAGE"
+          rm -rf deb-smoke
+          mkdir -p deb-smoke
+          dpkg-deb -x "$DEB_PACKAGE" deb-smoke
+          test -x deb-smoke/usr/bin/format-foundry
+          test -x deb-smoke/usr/bin/format-foundry-updater
+          test -x deb-smoke/opt/format-foundry/FormatFoundry
+          test -x deb-smoke/opt/format-foundry/FormatFoundry_Updater
+          test -f deb-smoke/usr/share/applications/io.github.Pugmaster04.FormatFoundry.desktop
+          test -f deb-smoke/usr/share/pixmaps/format-foundry.png
+          test -f release_bins/format-foundry_latest_amd64.deb || test -f release_bins/format-foundry_latest_arm64.deb
+          test -f release_bins/FormatFoundry_linux_latest_x86_64.AppImage || test -f release_bins/FormatFoundry_linux_latest_arm64.AppImage
+
+      - name: Validate install surface
+        shell: bash
+        run: |
+          python3 tools/validate_install_surface.py \
+            --readme README.md \
+            --artifacts release_bins \
+            --required-asset format-foundry_latest_amd64.deb \
+            --required-asset FormatFoundry_linux_latest_x86_64.AppImage
+
+      - name: Upload Linux build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-build-artifacts
+          if-no-files-found: error
+          path: |
+            release_bins/FormatFoundry
+            release_bins/FormatFoundry_Updater
+            release_bins/FormatFoundry_linux_*.tar.gz
+            release_bins/*.deb
+            release_bins/*.AppImage
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-windows
+      - build-linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: windows-build-artifacts
+          path: release-payload/windows
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v5
+        with:
+          name: linux-build-artifacts
+          path: release-payload/linux
+
+      - name: Prepare release notes
+        id: prep
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_NAME="${GITHUB_REF_NAME}"
+          VERSION="${TAG_NAME#v}"
+          VERSION="${VERSION%%-*}"
+          export VERSION
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["VERSION"]
+          raw = Path("CHANGELOG.md").read_bytes()
+          changelog = None
+          for encoding in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
+              try:
+                  changelog = raw.decode(encoding)
+                  break
+              except UnicodeDecodeError:
+                  continue
+          if changelog is None:
+              changelog = raw.decode("utf-8", errors="replace")
+          match = re.search(rf"^## \[{re.escape(version)}\] - .*$", changelog, flags=re.MULTILINE)
+          if match:
+              lines = changelog[match.start():].splitlines()
+              block = []
+              for index, line in enumerate(lines):
+                  if index and line.startswith("## ["):
+                      break
+                  block.append(line)
+              notes = "\n".join(block).strip()
+          else:
+              notes = f"Release {version}"
+          Path("RELEASE_NOTES.md").write_text(notes + "\n", encoding="utf-8")
+          PY
+          {
+            printf 'tag=%s\n' "$TAG_NAME"
+            printf 'version=%s\n' "$VERSION"
+            printf 'title=Format Foundry v%s\n' "$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish coordinated release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_NAME="${{ steps.prep.outputs.tag }}"
+          TITLE="${{ steps.prep.outputs.title }}"
+          declare -a ASSETS=(
+            "release-payload/windows/release_bins/FormatFoundry.exe"
+            "release-payload/windows/release_bins/FormatFoundry_Updater.exe"
+            "release-payload/windows/release_bins/FormatFoundry_Setup.exe"
+          )
+          while IFS= read -r asset; do
+            ASSETS+=("$asset")
+          done < <(find release-payload/linux/release_bins -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage' -o -name 'FormatFoundry_linux_*.tar.gz' \) | sort)
+          test "${#ASSETS[@]}" -gt 0
+          for asset in "${ASSETS[@]}"; do
+            test -f "$asset"
+          done
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "${ASSETS[@]}" --clobber
+            gh release edit "$TAG_NAME" --title "$TITLE" --notes-file RELEASE_NOTES.md --latest
+          else
+            gh release create "$TAG_NAME" "${ASSETS[@]}" --title "$TITLE" --notes-file RELEASE_NOTES.md --latest
+          fi

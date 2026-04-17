@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal
 cd /d "%~dp0"
 
@@ -11,8 +11,8 @@ if errorlevel 1 (
 
 echo.
 echo Build complete.
-echo App EXE:      dist\UniversalConversionHub_UCH.exe
-echo Updater EXE:  dist\UniversalConversionHub_UCH_Updater.exe
-echo Installer:    installer_output\UniversalConversionHub_UCH_Setup.exe
+echo App EXE:      dist\FormatFoundry.exe
+echo Updater EXE:  dist\FormatFoundry_Updater.exe
+echo Installer:    installer_output\FormatFoundry_Setup.exe
 pause
 

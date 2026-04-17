@@ -34,12 +34,12 @@ jobs:
       - name: Smoke test Linux binaries
         shell: bash
         run: |
-          chmod +x release_bins/UniversalConversionHub_UCH release_bins/UniversalConversionHub_UCH_Updater
-          ./release_bins/UniversalConversionHub_UCH --version
-          ./release_bins/UniversalConversionHub_UCH --smoke-test
-          ./release_bins/UniversalConversionHub_UCH_Updater --version
-          ./release_bins/UniversalConversionHub_UCH_Updater --smoke-test
-          APPIMAGE_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'UniversalConversionHub_UCH_linux_*.AppImage' ! -name '*latest*' | head -n 1)"
+          chmod +x release_bins/FormatFoundry release_bins/FormatFoundry_Updater
+          ./release_bins/FormatFoundry --version
+          ./release_bins/FormatFoundry --smoke-test
+          ./release_bins/FormatFoundry_Updater --version
+          ./release_bins/FormatFoundry_Updater --smoke-test
+          APPIMAGE_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'FormatFoundry_linux_*.AppImage' ! -name '*latest*' | head -n 1)"
           chmod +x "$APPIMAGE_PACKAGE"
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --version
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --smoke-test
@@ -47,19 +47,19 @@ jobs:
       - name: Validate Debian package layout
         shell: bash
         run: |
-          DEB_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'universal-conversion-hub-uch_*.deb' ! -name '*latest*' | head -n 1)"
+          DEB_PACKAGE="$(find release_bins -maxdepth 1 -type f -name 'format-foundry_*.deb' ! -name '*latest*' | head -n 1)"
           dpkg-deb --info "$DEB_PACKAGE"
           rm -rf deb-smoke
           mkdir -p deb-smoke
           dpkg-deb -x "$DEB_PACKAGE" deb-smoke
-          test -x deb-smoke/usr/bin/universal-conversion-hub-uch
-          test -x deb-smoke/usr/bin/universal-conversion-hub-uch-updater
-          test -x deb-smoke/opt/universal-conversion-hub-uch/UniversalConversionHub_UCH
-          test -x deb-smoke/opt/universal-conversion-hub-uch/UniversalConversionHub_UCH_Updater
-          test -f deb-smoke/usr/share/applications/io.github.Pugmaster04.UniversalConversionHub.desktop
-          test -f deb-smoke/usr/share/pixmaps/universal-conversion-hub-uch.png
-          test -f release_bins/universal-conversion-hub-uch_latest_amd64.deb || test -f release_bins/universal-conversion-hub-uch_latest_arm64.deb
-          test -f release_bins/UniversalConversionHub_UCH_linux_latest_x86_64.AppImage || test -f release_bins/UniversalConversionHub_UCH_linux_latest_arm64.AppImage
+          test -x deb-smoke/usr/bin/format-foundry
+          test -x deb-smoke/usr/bin/format-foundry-updater
+          test -x deb-smoke/opt/format-foundry/FormatFoundry
+          test -x deb-smoke/opt/format-foundry/FormatFoundry_Updater
+          test -f deb-smoke/usr/share/applications/io.github.Pugmaster04.FormatFoundry.desktop
+          test -f deb-smoke/usr/share/pixmaps/format-foundry.png
+          test -f release_bins/format-foundry_latest_amd64.deb || test -f release_bins/format-foundry_latest_arm64.deb
+          test -f release_bins/FormatFoundry_linux_latest_x86_64.AppImage || test -f release_bins/FormatFoundry_linux_latest_arm64.AppImage
 
       - name: Validate install surface
         shell: bash
@@ -67,8 +67,8 @@ jobs:
           python3 tools/validate_install_surface.py \
             --readme README.md \
             --artifacts release_bins \
-            --required-asset universal-conversion-hub-uch_latest_amd64.deb \
-            --required-asset UniversalConversionHub_UCH_linux_latest_x86_64.AppImage
+            --required-asset format-foundry_latest_amd64.deb \
+            --required-asset FormatFoundry_linux_latest_x86_64.AppImage
 
       - name: Upload Linux build artifacts
         uses: actions/upload-artifact@v6
@@ -76,9 +76,9 @@ jobs:
           name: linux-build-artifacts
           if-no-files-found: error
           path: |
-            release_bins/UniversalConversionHub_UCH
-            release_bins/UniversalConversionHub_UCH_Updater
-            release_bins/UniversalConversionHub_UCH_linux_*.tar.gz
+            release_bins/FormatFoundry
+            release_bins/FormatFoundry_Updater
+            release_bins/FormatFoundry_linux_*.tar.gz
             release_bins/*.deb
             release_bins/*.AppImage
 
@@ -90,4 +90,4 @@ jobs:
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
           gh release view "$TAG_NAME" >/dev/null 2>&1 || gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Linux build artifact added by GitHub Actions."
-          gh release upload "$TAG_NAME" release_bins/UniversalConversionHub_UCH_linux_*.tar.gz release_bins/*.deb release_bins/*.AppImage --clobber
+          gh release upload "$TAG_NAME" release_bins/FormatFoundry_linux_*.tar.gz release_bins/*.deb release_bins/*.AppImage --clobber

@@ -86,11 +86,11 @@ require_command_or_exit curl "curl"
 require_command_or_exit dpkg-deb "dpkg-dev"
 require_python_module_or_exit "${PYTHON_BIN}" tkinter "python3-tk"
 
-APP_NAME="Universal Conversion Hub (UCH)"
-APP_BINARY_NAME="UniversalConversionHub_UCH"
-UPDATER_BINARY_NAME="UniversalConversionHub_UCH_Updater"
-PACKAGE_NAME="universal-conversion-hub-uch"
-DESKTOP_ID="io.github.Pugmaster04.UniversalConversionHub.desktop"
+APP_NAME="Format Foundry"
+APP_BINARY_NAME="FormatFoundry"
+UPDATER_BINARY_NAME="FormatFoundry_Updater"
+PACKAGE_NAME="format-foundry"
+DESKTOP_ID="io.github.Pugmaster04.FormatFoundry.desktop"
 PACKAGING_ROOT="packaging/linux"
 BUILD_ROOT="build/linux-packaging"
 APPDIR_ROOT="${BUILD_ROOT}/AppDir"
@@ -152,7 +152,7 @@ build_linux_icon() {
 from pathlib import Path
 import shutil
 
-dst = Path("build/linux-packaging/universal-conversion-hub-uch.png")
+dst = Path("build/linux-packaging/format-foundry.png")
 dst.parent.mkdir(parents=True, exist_ok=True)
 src_ico = Path("assets/universal_file_utility_suite.ico")
 src_png = Path("assets/universal_file_utility_suite_preview.png")
@@ -181,14 +181,18 @@ echo "[1/8] Installing Python dependencies..."
 "${PYTHON_BIN}" -m pip install -r requirements.txt
 
 echo "[2/8] Building app binary..."
-"${PYTHON_BIN}" -m PyInstaller --noconfirm --clean UniversalConversionHub_UCH.spec
+"${PYTHON_BIN}" -m PyInstaller --noconfirm --clean FormatFoundry.spec
 
 echo "[3/8] Building updater binary..."
-"${PYTHON_BIN}" -m PyInstaller --noconfirm --clean UniversalConversionHub_UCH_Updater.spec
+"${PYTHON_BIN}" -m PyInstaller --noconfirm --clean FormatFoundry_Updater.spec
 
 echo "[4/8] Staging binaries..."
 mkdir -p release_bins
 rm -f \
+  "release_bins/${APP_BINARY_NAME}" \
+  "release_bins/${UPDATER_BINARY_NAME}" \
+  "release_bins/UniversalConversionHub_UCH" \
+  "release_bins/UniversalConversionHub_UCH_Updater" \
   "release_bins/UniversalConversionHub_HCB" \
   "release_bins/UniversalConversionHub_HCB_Updater" \
   "release_bins/UniversalFileUtilitySuite" \
@@ -198,6 +202,8 @@ rm -f \
   "$DEB_LATEST_PACKAGE" \
   "$APPIMAGE_PACKAGE" \
   "$APPIMAGE_LATEST_PACKAGE" \
+  release_bins/UniversalConversionHub_UCH_linux_*.tar.gz \
+  release_bins/FormatFoundry_linux_*.tar.gz \
   release_bins/*.deb \
   release_bins/*.AppImage
 rm -rf "$TAR_DIR" "$APPDIR_ROOT" "$DEB_ROOT" "$BUILD_ROOT/deb-smoke"
@@ -234,20 +240,20 @@ cp -f "update_manifest.example.json" "${DEB_ROOT}/opt/${PACKAGE_NAME}/update_man
 cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png"
 cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/pixmaps/${PACKAGE_NAME}.png"
 cp -f "$APPDATA_TEMPLATE" "${DEB_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
-render_desktop_file "universal-conversion-hub-uch" "${DEB_ROOT}/usr/share/applications/${DESKTOP_ID}"
-cat > "${DEB_ROOT}/usr/bin/universal-conversion-hub-uch" <<'EOF'
+render_desktop_file "format-foundry" "${DEB_ROOT}/usr/share/applications/${DESKTOP_ID}"
+cat > "${DEB_ROOT}/usr/bin/format-foundry" <<'EOF'
 #!/bin/sh
-exec /opt/universal-conversion-hub-uch/UniversalConversionHub_UCH "$@"
+exec /opt/format-foundry/FormatFoundry "$@"
 EOF
-cat > "${DEB_ROOT}/usr/bin/universal-conversion-hub-uch-updater" <<'EOF'
+cat > "${DEB_ROOT}/usr/bin/format-foundry-updater" <<'EOF'
 #!/bin/sh
-exec /opt/universal-conversion-hub-uch/UniversalConversionHub_UCH_Updater "$@"
+exec /opt/format-foundry/FormatFoundry_Updater "$@"
 EOF
 chmod 755 \
   "${DEB_ROOT}/opt/${PACKAGE_NAME}/${APP_BINARY_NAME}" \
   "${DEB_ROOT}/opt/${PACKAGE_NAME}/${UPDATER_BINARY_NAME}" \
-  "${DEB_ROOT}/usr/bin/universal-conversion-hub-uch" \
-  "${DEB_ROOT}/usr/bin/universal-conversion-hub-uch-updater"
+  "${DEB_ROOT}/usr/bin/format-foundry" \
+  "${DEB_ROOT}/usr/bin/format-foundry-updater"
 cat > "${DEB_ROOT}/DEBIAN/control" <<EOF
 Package: ${PACKAGE_NAME}
 Version: ${PACKAGE_VERSION}
@@ -293,8 +299,8 @@ echo "[8/8] Validating install surface..."
 "${PYTHON_BIN}" tools/validate_install_surface.py \
   --readme README.md \
   --artifacts release_bins \
-  --required-asset "universal-conversion-hub-uch_latest_${DEB_ARCH}.deb" \
-  --required-asset "UniversalConversionHub_UCH_linux_latest_${ARCH}.AppImage"
+  --required-asset "format-foundry_latest_${DEB_ARCH}.deb" \
+  --required-asset "FormatFoundry_linux_latest_${ARCH}.AppImage"
 
 echo "Done."
 echo "App binary:      $ROOT/dist/${APP_BINARY_NAME}"

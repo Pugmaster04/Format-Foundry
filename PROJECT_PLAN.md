@@ -1,4 +1,4 @@
-﻿# Universal Conversion Hub (UCH) - Project Plan
+# Format Foundry - Project Plan
 
 ## Vision
 Build one desktop app with modular tools instead of a single tangled interface.  
@@ -39,9 +39,9 @@ Each module should be independently testable, replaceable, and extensible.
 - App entrypoint: `modular_file_utility_suite.py`
 - Updater entrypoint: `suite_updater.py`
 - Release builds:
-  - `UniversalConversionHub_UCH.exe`
-  - `UniversalConversionHub_UCH_Updater.exe`
-  - `UniversalConversionHub_UCH_Setup.exe`
+  - `FormatFoundry.exe`
+  - `FormatFoundry_Updater.exe`
+  - `FormatFoundry_Setup.exe`
 - Includes all requested module tabs:
   - Convert
   - Compress

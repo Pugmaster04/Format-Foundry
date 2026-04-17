@@ -78,7 +78,7 @@ Linux work needed:
 Files:
 - `build_linux.sh`
 - `build_suite_release.bat`
-- `installer/UniversalConversionHub_UCH.iss`
+- `installer/FormatFoundry.iss`
 
 Current state:
 - Linux now builds frozen PyInstaller binaries.

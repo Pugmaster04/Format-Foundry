@@ -20,22 +20,24 @@ import tkinter as tk
 from tkinter import BooleanVar, StringVar, filedialog, messagebox, ttk
 
 
-APP_TITLE = "Universal Conversion Hub (UCH) Updater"
+APP_TITLE = "Format Foundry Updater"
 CURRENT_VERSION = "1.8.5"
-APP_SLUG = "UniversalConversionHubUCH"
-LEGACY_APP_SLUGS = ("UniversalConversionHubHCB", "UniversalFileUtilitySuite")
+APP_SLUG = "FormatFoundry"
+LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
 SINGLE_INSTANCE_MUTEX_NAMES = (
+    "Local\\FormatFoundryUpdater_SingleInstanceMutex",
     "Local\\UniversalConversionHubUCHUpdater_SingleInstanceMutex",
     "Local\\UniversalConversionHubHCBUpdater_SingleInstanceMutex",
     "Local\\UniversalFileUtilitySuiteUpdater_SingleInstanceMutex",
 )
-SINGLE_INSTANCE_LOCKFILE_NAME = "universal_conversion_hub_uch_updater.lock"
+SINGLE_INSTANCE_LOCKFILE_NAME = "format_foundry_updater.lock"
 DEFAULT_GITHUB_REPO = "Pugmaster04/Universal-File-Conversion"
 DEFAULT_GITHUB_REPO_URL = f"https://github.com/{DEFAULT_GITHUB_REPO}"
-UPDATER_USER_AGENT = f"UniversalConversionHubUCH-Updater/{CURRENT_VERSION}"
-DEFAULT_UPDATE_DOWNLOAD_PREFIX = "UniversalConversionHub_UCH_Update"
+UPDATER_USER_AGENT = f"FormatFoundry-Updater/{CURRENT_VERSION}"
+DEFAULT_UPDATE_DOWNLOAD_PREFIX = "FormatFoundry_Update"
 LEGACY_WINDOW_TITLES = (
     APP_TITLE,
+    "Universal Conversion Hub (UCH) Updater",
     "Universal Conversion Hub (HCB) Updater",
     "Universal File Utility Suite Updater",
 )

@@ -1,4 +1,4 @@
-﻿# Universal Conversion Hub (UCH) User Guide
+# Format Foundry User Guide
 
 This guide keeps the detailed install, build, workflow, backend, and archive notes that used to live in the repo front-page README.
 
@@ -53,11 +53,11 @@ Runtime behavior:
 - Updater is also single-instance
 
 Uninstall behavior:
-- Windows installed builds now expose `File -> Uninstall...`, `Settings -> Uninstall App`, and a Start-menu shortcut named `Uninstall Universal Conversion Hub (UCH)`
+- Windows installed builds now expose `File -> Uninstall...`, `Settings -> Uninstall App`, and a Start-menu shortcut named `Uninstall Format Foundry`
 - Debian installs expose `File -> Uninstall...`, `Settings -> Uninstall App`, or the manual command:
 
 ```bash
-sudo apt remove universal-conversion-hub-uch
+sudo apt remove format-foundry
 ```
 
 - AppImage copies are removed by deleting the `.AppImage` file
@@ -65,7 +65,7 @@ sudo apt remove universal-conversion-hub-uch
 
 ## 1) What The App Does
 
-Universal Conversion Hub (UCH) is designed as one desktop app with separate tools, instead of a single tangled converter view.
+Format Foundry is designed as one desktop app with separate tools, instead of a single tangled converter view.
 
 Core behavior:
 - Queue-based processing for batch workflows
@@ -161,7 +161,7 @@ Backends panel behavior:
 ## 6) Update Sources
 
 Use `Settings -> Update manifest URL` for app update checks.
-You can also use the standalone updater executable (`UniversalConversionHub_UCH_Updater.exe`), which supports:
+You can also use the standalone updater executable (`FormatFoundry_Updater.exe`), which supports:
 - Manifest URL
 - Local manifest JSON file
 - GitHub repo URL (checks latest release metadata/tags)
@@ -179,7 +179,7 @@ Example:
 ```json
 {
   "latest_version": "1.8.5",
-  "download_url": "https://example.com/UniversalConversionHub_UCH.exe",
+  "download_url": "https://example.com/FormatFoundry.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "notes": "Release notes here"
 }
@@ -203,12 +203,12 @@ build_suite_release.bat
 ```
 
 Outputs:
-- `dist\UniversalConversionHub_UCH.exe`
-- `dist\UniversalConversionHub_UCH_Updater.exe`
-- `installer_output\UniversalConversionHub_UCH_Setup.exe`
-- `release_bins\UniversalConversionHub_UCH.exe`
-- `release_bins\UniversalConversionHub_UCH_Updater.exe`
-- `release_bins\UniversalConversionHub_UCH_Setup.exe`
+- `dist\FormatFoundry.exe`
+- `dist\FormatFoundry_Updater.exe`
+- `installer_output\FormatFoundry_Setup.exe`
+- `release_bins\FormatFoundry.exe`
+- `release_bins\FormatFoundry_Updater.exe`
+- `release_bins\FormatFoundry_Setup.exe`
 
 `release_bins` is the stable folder that always keeps the latest runnable app, updater, and installer binaries together.
 
@@ -220,41 +220,41 @@ chmod +x build_linux.sh
 ```
 
 Linux outputs:
-- `dist/UniversalConversionHub_UCH`
-- `dist/UniversalConversionHub_UCH_Updater`
-- `release_bins/UniversalConversionHub_UCH`
-- `release_bins/UniversalConversionHub_UCH_Updater`
-- `release_bins/UniversalConversionHub_UCH_linux_<arch>.tar.gz`
-- `release_bins/universal-conversion-hub-uch_<version>_<deb-arch>.deb`
-- `release_bins/UniversalConversionHub_UCH_linux_<arch>.AppImage`
+- `dist/FormatFoundry`
+- `dist/FormatFoundry_Updater`
+- `release_bins/FormatFoundry`
+- `release_bins/FormatFoundry_Updater`
+- `release_bins/FormatFoundry_linux_<arch>.tar.gz`
+- `release_bins/format-foundry_<version>_<deb-arch>.deb`
+- `release_bins/FormatFoundry_linux_<arch>.AppImage`
 
 Linux release packaging:
-- `build_linux.sh` now stages raw Linux binaries, creates a release tarball named `UniversalConversionHub_UCH_linux_<arch>.tar.gz`, builds a Debian package named `universal-conversion-hub-uch_<version>_<deb-arch>.deb`, and builds an AppImage named `UniversalConversionHub_UCH_linux_<arch>.AppImage`
-- Debian package installs to `/opt/universal-conversion-hub-uch` and exposes launchers:
-  - `universal-conversion-hub-uch`
-  - `universal-conversion-hub-uch-updater`
+- `build_linux.sh` now stages raw Linux binaries, creates a release tarball named `FormatFoundry_linux_<arch>.tar.gz`, builds a Debian package named `format-foundry_<version>_<deb-arch>.deb`, and builds an AppImage named `FormatFoundry_linux_<arch>.AppImage`
+- Debian package installs to `/opt/format-foundry` and exposes launchers:
+  - `format-foundry`
+  - `format-foundry-updater`
 - The AppImage contains the app, bundled updater binary, desktop metadata, and icon resources so it can launch without the source tree.
 - The updater branch logic now prefers Linux `.deb` assets on Debian-family systems, then `.AppImage`, then `.tar.gz`
 
 Ubuntu 24.04 install from `.deb`:
 
 ```bash
-sudo apt install ./universal-conversion-hub-uch_<version>_<deb-arch>.deb
+sudo apt install ./format-foundry_<version>_<deb-arch>.deb
 ```
 
 Launch after `.deb` install:
 
 ```bash
-universal-conversion-hub-uch
+format-foundry
 ```
 
-The Debian package installs a standalone app under `/opt/universal-conversion-hub-uch`. It does not rely on the source checkout after install.
+The Debian package installs a standalone app under `/opt/format-foundry`. It does not rely on the source checkout after install.
 
 Ubuntu 24.04 install from AppImage:
 
 ```bash
-chmod +x UniversalConversionHub_UCH_linux_<arch>.AppImage
-./UniversalConversionHub_UCH_linux_<arch>.AppImage
+chmod +x FormatFoundry_linux_<arch>.AppImage
+./FormatFoundry_linux_<arch>.AppImage
 ```
 
 The AppImage is also self-contained. You can move it anywhere you want after download.
@@ -263,9 +263,9 @@ Optional AppImage launcher install:
 
 ```bash
 mkdir -p ~/Applications
-cp UniversalConversionHub_UCH_linux_<arch>.AppImage ~/Applications/
-chmod +x ~/Applications/UniversalConversionHub_UCH_linux_<arch>.AppImage
-~/Applications/UniversalConversionHub_UCH_linux_<arch>.AppImage
+cp FormatFoundry_linux_<arch>.AppImage ~/Applications/
+chmod +x ~/Applications/FormatFoundry_linux_<arch>.AppImage
+~/Applications/FormatFoundry_linux_<arch>.AppImage
 ```
 
 Ubuntu 24.04 build-from-source prerequisites:
@@ -292,7 +292,7 @@ GitHub Actions Linux workflow:
 - Uploads workflow artifacts for branch builds
 - Validates the generated `.deb` layout in CI
 - Smoke-tests the built AppImage in CI
-- Uploads `UniversalConversionHub_UCH_linux_<arch>.tar.gz`, `universal-conversion-hub-uch_<version>_<deb-arch>.deb`, and `UniversalConversionHub_UCH_linux_<arch>.AppImage` to tagged GitHub Releases
+- Uploads `FormatFoundry_linux_<arch>.tar.gz`, `format-foundry_<version>_<deb-arch>.deb`, and `FormatFoundry_linux_<arch>.AppImage` to tagged GitHub Releases
 
 ### Basic dependencies
 
@@ -344,7 +344,7 @@ This repo uses automated historical snapshots:
 - `.githooks/post-commit`
 
 Default external snapshot location:
-- `%USERPROFILE%\\Documents\\Universal File Utility Suite Output\\Universal Conversion Hub Archives\\history\\v<version>\\<timestamp>_<reason>\\`
+- `%USERPROFILE%\\Documents\\Universal File Utility Suite Output\\Format Foundry Archives\\history\\v<version>\\<timestamp>_<reason>\\`
 
 Build script also runs snapshots:
 - pre-build source snapshot
@@ -354,7 +354,7 @@ Legacy imported archives are also stored in that external archive root, under:
 - `legacy_universal_file_utility_suite`
 
 Override location:
-- Set environment variable `UCH_ARCHIVE_ROOT`
+- Set environment variable `FORMAT_FOUNDRY_ARCHIVE_ROOT`
 
 To enable local hooks in a clone:
 
@@ -365,23 +365,23 @@ git config core.hooksPath .githooks
 ## 12) Important Paths
 
 Windows settings file:
-- `%LOCALAPPDATA%\UniversalConversionHubUCH\settings.json`
+- `%LOCALAPPDATA%\FormatFoundry\settings.json`
 - Legacy fallback: `%LOCALAPPDATA%\UniversalConversionHubHCB\settings.json`
 - Legacy fallback: `%LOCALAPPDATA%\UniversalFileUtilitySuite\settings.json`
-- Updater settings: `%LOCALAPPDATA%\UniversalConversionHubUCH\updater_settings.json`
+- Updater settings: `%LOCALAPPDATA%\FormatFoundry\updater_settings.json`
 - Updater legacy fallback: `%LOCALAPPDATA%\UniversalConversionHubHCB\updater_settings.json`
 - Updater legacy fallback: `%LOCALAPPDATA%\UniversalFileUtilitySuite\updater_settings.json`
 
 Linux settings file:
-- `$XDG_CONFIG_HOME/UniversalConversionHubUCH/settings.json`
-- Fallback: `~/.config/UniversalConversionHubUCH/settings.json`
-- Updater settings: `$XDG_CONFIG_HOME/UniversalConversionHubUCH/updater_settings.json`
-- Updater fallback: `~/.config/UniversalConversionHubUCH/updater_settings.json`
+- `$XDG_CONFIG_HOME/FormatFoundry/settings.json`
+- Fallback: `~/.config/FormatFoundry/settings.json`
+- Updater settings: `$XDG_CONFIG_HOME/FormatFoundry/updater_settings.json`
+- Updater fallback: `~/.config/FormatFoundry/updater_settings.json`
 
 Default output root:
-- Windows: `%USERPROFILE%\Documents\Universal Conversion Hub Output`
-- Linux: `~/Documents/Universal Conversion Hub Output`
-- Linux fallback when `~/Documents` is absent: `~/Universal Conversion Hub Output`
+- Windows: `%USERPROFILE%\Documents\Format Foundry Output`
+- Linux: `~/Documents/Format Foundry Output`
+- Linux fallback when `~/Documents` is absent: `~/Format Foundry Output`
 
 Updater download folder default:
 - Windows/Linux: `~/Downloads`

@@ -2,13 +2,12 @@
 
 
 a = Analysis(
-    ['modular_file_utility_suite.py'],
+    ['suite_updater.py'],
     pathex=[],
     binaries=[],
     datas=[
         ('assets/universal_file_utility_suite.ico', 'assets'),
         ('assets/universal_file_utility_suite_preview.png', 'assets'),
-        ('README.md', '.'),
         ('update_manifest.example.json', '.'),
     ],
     hiddenimports=[],
@@ -27,7 +26,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='UniversalConversionHub_UCH',
+    name='FormatFoundry_Updater',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

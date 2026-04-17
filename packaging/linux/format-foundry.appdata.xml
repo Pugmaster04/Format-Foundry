@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.Pugmaster04.UniversalConversionHub.desktop</id>
-  <name>Universal Conversion Hub (UCH)</name>
-  <summary>Universal file conversion and utility workspace</summary>
+  <id>io.github.Pugmaster04.FormatFoundry.desktop</id>
+  <name>Format Foundry</name>
+  <summary>Cross-platform file conversion and workflow workspace</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>LicenseRef-Proprietary</project_license>
   <developer id="io.github.Pugmaster04">
@@ -11,15 +11,15 @@
   <url type="homepage">https://github.com/Pugmaster04/Universal-File-Conversion</url>
   <description>
     <p>
-      Universal Conversion Hub provides conversion, extraction, metadata editing,
+      Format Foundry provides conversion, extraction, metadata editing,
       archive handling, media workflows, aria2 downloads, and storage-analysis tools
       in a single desktop application.
     </p>
   </description>
-  <launchable type="desktop-id">io.github.Pugmaster04.UniversalConversionHub.desktop</launchable>
+  <launchable type="desktop-id">io.github.Pugmaster04.FormatFoundry.desktop</launchable>
   <provides>
-    <binary>universal-conversion-hub-uch</binary>
-    <binary>universal-conversion-hub-uch-updater</binary>
+    <binary>format-foundry</binary>
+    <binary>format-foundry-updater</binary>
   </provides>
   <categories>
     <category>Utility</category>

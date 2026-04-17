@@ -68,17 +68,23 @@ except Exception:
     Torrent = None
 
 
-APP_TITLE = "Universal Conversion Hub (UCH)"
-APP_SLUG = "UniversalConversionHubUCH"
-LEGACY_APP_SLUGS = ("UniversalConversionHubHCB", "UniversalFileUtilitySuite")
+APP_TITLE = "Format Foundry"
+APP_SLUG = "FormatFoundry"
+LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
 APP_VERSION = "1.8.5"
 DEFAULT_UPDATE_MANIFEST_URL = ""
-APP_EXE_BASENAME = "UniversalConversionHub_UCH"
-UPDATER_EXE_BASENAME = "UniversalConversionHub_UCH_Updater"
-DEBIAN_PACKAGE_NAME = "universal-conversion-hub-uch"
-LEGACY_UPDATER_EXE_BASENAMES = ("UniversalConversionHub_HCB_Updater", "UniversalFileUtilitySuite_Updater")
+APP_EXE_BASENAME = "FormatFoundry"
+UPDATER_EXE_BASENAME = "FormatFoundry_Updater"
+DEBIAN_PACKAGE_NAME = "format-foundry"
+LEGACY_APP_EXE_BASENAMES = ("UniversalConversionHub_UCH", "UniversalConversionHub_HCB", "UniversalFileUtilitySuite")
+LEGACY_UPDATER_EXE_BASENAMES = (
+    "UniversalConversionHub_UCH_Updater",
+    "UniversalConversionHub_HCB_Updater",
+    "UniversalFileUtilitySuite_Updater",
+)
 LEGACY_WINDOW_TITLES = (
     APP_TITLE,
+    "Universal Conversion Hub (UCH)",
     "Universal Conversion Hub (HCB)",
     "Universal File Utility Suite - Modular Starter",
 )
@@ -144,8 +150,8 @@ def platform_lock_root_path(app_slug: str) -> Path:
 def default_output_root_path() -> Path:
     documents = Path.home() / "Documents"
     if documents.exists() and documents.is_dir():
-        return documents / "Universal Conversion Hub Output"
-    return Path.home() / "Universal Conversion Hub Output"
+        return documents / "Format Foundry Output"
+    return Path.home() / "Format Foundry Output"
 
 
 def resolve_settings_dir(root: Path, settings_filename: str) -> Path:
@@ -479,11 +485,12 @@ def reserve_local_tcp_port() -> int:
         return int(sock.getsockname()[1])
 
 SINGLE_INSTANCE_MUTEX_NAMES = (
+    "Local\\FormatFoundry_SingleInstanceMutex",
     "Local\\UniversalConversionHubUCH_SingleInstanceMutex",
     "Local\\UniversalConversionHubHCB_SingleInstanceMutex",
     "Local\\UniversalFileUtilitySuite_SingleInstanceMutex",
 )
-SINGLE_INSTANCE_LOCKFILE_NAME = "universal_conversion_hub_uch.lock"
+SINGLE_INSTANCE_LOCKFILE_NAME = "format_foundry.lock"
 
 
 def ensure_dir(path: Path) -> None:
@@ -2172,7 +2179,7 @@ class SuiteApp:
         self._apply_window_icon_to(wizard)
         outer = self._build_draggable_dialog_shell(wizard, drag_label="Drag Setup Wizard")
 
-        ttk.Label(outer, text="Welcome to Universal Conversion Hub (UCH)", font=self._font(14, semibold=True)).pack(anchor="w")
+        ttk.Label(outer, text="Welcome to Format Foundry", font=self._font(14, semibold=True)).pack(anchor="w")
         ttk.Label(
             outer,
             text="Set your defaults now. You can change them later from File -> Settings.",
@@ -3610,15 +3617,19 @@ class SuiteApp:
             return None
 
         runtime_dir = self.runtime_dir.resolve()
-        app_exe = (self.runtime_dir / f"{APP_EXE_BASENAME}.exe").resolve()
+        app_exe_candidates = [(self.runtime_dir / f"{APP_EXE_BASENAME}.exe").resolve()]
+        for legacy_name in LEGACY_APP_EXE_BASENAMES:
+            app_exe_candidates.append((self.runtime_dir / f"{legacy_name}.exe").resolve())
         uninstall_roots = [
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
             (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
             (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
         ]
         name_markers = {
+            "format foundry",
             "universal conversion hub",
             "universal conversion hub (uch)",
+            "universal conversion hub (hcb)",
         }
         for root, subkey in uninstall_roots:
             try:
@@ -3665,7 +3676,7 @@ class SuiteApp:
                     if not matched and display_icon:
                         try:
                             icon_path = Path(display_icon.split(",")[0].strip().strip('"')).resolve()
-                            matched = icon_path == app_exe
+                            matched = icon_path in app_exe_candidates
                         except Exception:
                             matched = False
                     if not matched:
@@ -3717,7 +3728,7 @@ class SuiteApp:
                     install_path=self.runtime_dir,
                     notes=notes
                     + [
-                        "You can also uninstall from Start -> Uninstall Universal Conversion Hub (UCH) or from Apps & Features.",
+                        "You can also uninstall from Start -> Uninstall Format Foundry or from Apps & Features.",
                     ],
                 )
             return UninstallPlan(
@@ -3745,7 +3756,7 @@ class SuiteApp:
             if self._linux_package_installed(DEBIAN_PACKAGE_NAME) or str(self.runtime_dir).startswith(f"/opt/{DEBIAN_PACKAGE_NAME}"):
                 launch_command, manual_command = self._resolve_linux_uninstall_command()
                 return UninstallPlan(
-                    summary="Remove the installed Debian package for Universal Conversion Hub.",
+                    summary="Remove the installed Debian package for Format Foundry.",
                     action_label="Remove Package" if launch_command else "",
                     launch_command=launch_command,
                     manual_command=manual_command,
@@ -3818,7 +3829,7 @@ class SuiteApp:
     def _open_uninstall_dialog(self) -> None:
         plan = self._build_uninstall_plan()
         dialog = tk.Toplevel(self.root)
-        dialog.title("Uninstall Universal Conversion Hub")
+        dialog.title("Uninstall Format Foundry")
         dialog.geometry("760x520")
         dialog.minsize(700, 460)
         dialog.transient(self.root)
@@ -3826,7 +3837,7 @@ class SuiteApp:
         self._apply_window_icon_to(dialog)
 
         outer = self._build_draggable_dialog_shell(dialog, drag_label="Drag Uninstall Window")
-        ttk.Label(outer, text="Uninstall Universal Conversion Hub", font=self._font(14, semibold=True)).pack(anchor="w")
+        ttk.Label(outer, text="Uninstall Format Foundry", font=self._font(14, semibold=True)).pack(anchor="w")
         ttk.Label(
             outer,
             text=plan.summary,
@@ -9361,7 +9372,7 @@ class Aria2DownloadsTab(ModuleTab):
         ttk.Label(
             warning_box,
             text=(
-                "aria2 comes with no warranty. Use this workflow at your own risk. Universal Conversion Hub does not "
+                "aria2 comes with no warranty. Use this workflow at your own risk. Format Foundry does not "
                 "accept responsibility for damage, data loss, malware, or other issues caused by downloaded content, "
                 "metadata files, trackers, or remote servers. Only download files, torrents, magnet links, or Metalink "
                 "sources when you trust the source and all related data."
@@ -9744,7 +9755,7 @@ class TorrentsTab(ModuleTab):
         ttk.Label(
             warning_box,
             text=(
-                "Use torrent features at your own risk. Universal Conversion Hub does not accept responsibility for "
+                "Use torrent features at your own risk. Format Foundry does not accept responsibility for "
                 "damage, data loss, malware, or other issues caused by torrent files, magnet links, trackers, or any "
                 "downloaded content. Do not download data from websites or torrent sources unless you fully trust all "
                 "files, metadata, and peers involved."

@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$RepoRoot = "",
     [string]$LegacyArchiveRoot = "",
     [string]$ArchiveRoot = ""
@@ -17,7 +17,7 @@ function Get-DefaultArchiveRoot {
         [string]$RepoRoot
     )
     $parent = Split-Path $RepoRoot -Parent
-    return (Join-Path $parent "Universal Conversion Hub Archives")
+    return (Join-Path $parent "Format Foundry Archives")
 }
 
 if ([string]::IsNullOrWhiteSpace($LegacyArchiveRoot)) {
@@ -29,7 +29,13 @@ if (-not (Test-Path $LegacyArchiveRoot)) {
 $LegacyArchiveRoot = (Resolve-Path $LegacyArchiveRoot).Path
 
 if ([string]::IsNullOrWhiteSpace($ArchiveRoot)) {
-    $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "User")
+    $envArchiveRoot = [Environment]::GetEnvironmentVariable("FORMAT_FOUNDRY_ARCHIVE_ROOT", "User")
+    if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) {
+        $envArchiveRoot = [Environment]::GetEnvironmentVariable("FORMAT_FOUNDRY_ARCHIVE_ROOT", "Process")
+    }
+    if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) {
+        $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "User")
+    }
     if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) {
         $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "Process")
     }

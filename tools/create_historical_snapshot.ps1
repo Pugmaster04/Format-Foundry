@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$RepoRoot = "",
     [string]$ArchiveRoot = "",
     [string]$Reason = "manual",
@@ -19,7 +19,7 @@ function Get-DefaultArchiveRoot {
         [string]$RepoRoot
     )
     $parent = Split-Path $RepoRoot -Parent
-    return (Join-Path $parent "Universal Conversion Hub Archives")
+    return (Join-Path $parent "Format Foundry Archives")
 }
 
 function Get-AppVersion {
@@ -81,7 +81,13 @@ $safeReason = ($Reason -replace '[^A-Za-z0-9._-]', "_")
 $version = Get-AppVersion
 
 if ([string]::IsNullOrWhiteSpace($ArchiveRoot)) {
-    $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "User")
+    $envArchiveRoot = [Environment]::GetEnvironmentVariable("FORMAT_FOUNDRY_ARCHIVE_ROOT", "User")
+    if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) {
+        $envArchiveRoot = [Environment]::GetEnvironmentVariable("FORMAT_FOUNDRY_ARCHIVE_ROOT", "Process")
+    }
+    if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) {
+        $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "User")
+    }
     if ([string]::IsNullOrWhiteSpace($envArchiveRoot)) {
         $envArchiveRoot = [Environment]::GetEnvironmentVariable("UCH_ARCHIVE_ROOT", "Process")
     }
@@ -103,13 +109,13 @@ if ($IncludeBuildOutputs.IsPresent) {
     New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 
     Copy-ExistingArtifacts -ArtifactRoot $artifactRoot -RelativePaths @(
-        "dist\UniversalConversionHub_UCH.exe",
+        "dist\FormatFoundry.exe",
         "dist\UniversalConversionHub_HCB.exe",
         "dist\UniversalFileUtilitySuite.exe",
-        "dist\UniversalConversionHub_UCH_Updater.exe",
+        "dist\FormatFoundry_Updater.exe",
         "dist\UniversalConversionHub_HCB_Updater.exe",
         "dist\UniversalFileUtilitySuite_Updater.exe",
-        "installer_output\UniversalConversionHub_UCH_Setup.exe",
+        "installer_output\FormatFoundry_Setup.exe",
         "installer_output\UniversalConversionHub_HCB_Setup.exe",
         "installer_output\UniversalFileUtilitySuite_Setup.exe"
     )

@@ -1,26 +1,26 @@
-# Universal Conversion Hub (UCH)
+# Format Foundry
 
-Universal Conversion Hub is a cross-platform desktop toolkit for conversion, compression, extraction, media prep, downloads, archives, storage analysis, and repeatable batch workflows.
+Format Foundry is a cross-platform desktop toolkit for conversion, compression, extraction, media prep, downloads, archives, storage analysis, and repeatable batch workflows.
 
 Canonical release target: `1.8.5`
 
 ## Install
 
-[![Windows installer](https://img.shields.io/badge/Windows-Download%20Installer-19786B?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Pugmaster04/Universal-File-Conversion/releases/latest/download/UniversalConversionHub_UCH_Setup.exe)
-[![Ubuntu or Debian package](https://img.shields.io/badge/Ubuntu%20%2F%20Debian-Download%20.deb-19786B?style=for-the-badge&logo=ubuntu&logoColor=white)](https://github.com/Pugmaster04/Universal-File-Conversion/releases/latest/download/universal-conversion-hub-uch_latest_amd64.deb)
+[![Windows installer](https://img.shields.io/badge/Windows-Download%20Installer-19786B?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Pugmaster04/Universal-File-Conversion/releases/latest/download/FormatFoundry_Setup.exe)
+[![Ubuntu or Debian package](https://img.shields.io/badge/Ubuntu%20%2F%20Debian-Download%20.deb-19786B?style=for-the-badge&logo=ubuntu&logoColor=white)](https://github.com/Pugmaster04/Universal-File-Conversion/releases/latest/download/format-foundry_latest_amd64.deb)
 
 If you want the manual artifact list instead of the direct installer buttons, use the [latest release page](https://github.com/Pugmaster04/Universal-File-Conversion/releases/latest).
 
 ### Windows
 
-1. Download `UniversalConversionHub_UCH_Setup.exe`.
+1. Download `FormatFoundry_Setup.exe`.
 2. Run the installer.
-3. Launch `Universal Conversion Hub (UCH)` from Start or Desktop.
+3. Launch `Format Foundry` from Start or Desktop.
 
 Uninstall:
 - `File -> Uninstall...`
 - `Settings -> Uninstall App`
-- `Start -> Uninstall Universal Conversion Hub (UCH)`
+- `Start -> Uninstall Format Foundry`
 - Windows `Apps & Features`
 
 ### Ubuntu 24.04 / Debian
@@ -30,26 +30,26 @@ Use the packaged app. Normal Linux installs do not require the source folder aft
 Recommended `.deb` install:
 
 ```bash
-sudo apt install ./universal-conversion-hub-uch_latest_amd64.deb
+sudo apt install ./format-foundry_latest_amd64.deb
 ```
 
 Launch:
 
 ```bash
-universal-conversion-hub-uch
+format-foundry
 ```
 
 Portable AppImage fallback:
 
 ```bash
-chmod +x UniversalConversionHub_UCH_linux_latest_x86_64.AppImage
-./UniversalConversionHub_UCH_linux_latest_x86_64.AppImage
+chmod +x FormatFoundry_linux_latest_x86_64.AppImage
+./FormatFoundry_linux_latest_x86_64.AppImage
 ```
 
 Uninstall:
 - `File -> Uninstall...`
 - `Settings -> Uninstall App`
-- `sudo apt remove universal-conversion-hub-uch`
+- `sudo apt remove format-foundry`
 
 ## What It Covers
 

@@ -2160,7 +2160,11 @@ class SuiteApp:
         wizard.title("First Run Setup")
         wizard.geometry("680x460")
         wizard.resizable(False, False)
-        wizard.transient(self.root)
+        if str(self.root.state()) != "withdrawn":
+            try:
+                wizard.transient(self.root)
+            except Exception:
+                pass
         wizard.grab_set()
 
         output_var = StringVar(value=str(self.default_output_root))
@@ -2251,6 +2255,13 @@ class SuiteApp:
         ttk.Button(buttons, text="Save and Continue", command=finish).pack(side="right", padx=(0, 8))
 
         wizard.protocol("WM_DELETE_WINDOW", finish)
+        self._center_window_on_screen(wizard)
+        try:
+            wizard.deiconify()
+            wizard.lift()
+            wizard.focus_force()
+        except Exception:
+            pass
         self.root.wait_window(wizard)
         if not finished["done"]:
             self.settings["first_run_done"] = True
@@ -4935,6 +4946,8 @@ class SuiteApp:
         focus_loss_enabled = {"value": False}
 
         def on_focus_out(_event=None) -> None:
+            if os.name != "nt":
+                return
             if not focus_loss_enabled["value"]:
                 return
             if not self._startup_animation_active or self._startup_splash_hidden_by_focus_loss:
@@ -5093,6 +5106,11 @@ class SuiteApp:
         self._apply_window_mode_state()
         self.root.deiconify()
         if self._startup_splash_hidden_by_focus_loss and not fullscreen_like:
+            if os.name != "nt":
+                self._startup_splash_hidden_by_focus_loss = False
+                self.root.lift()
+                self._schedule_startup_tasks_once()
+                return
             self.root.update_idletasks()
             try:
                 self.root.iconify()

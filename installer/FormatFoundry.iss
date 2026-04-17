@@ -1,5 +1,5 @@
 #define MyAppName "Format Foundry"
-#define MyAppVersion "1.8.10"
+#define MyAppVersion "1.8.11"
 #define MyAppPublisher "Format Foundry"
 #define MyAppExeName "FormatFoundry.exe"
 #define MyUpdaterExeName "FormatFoundry_Updater.exe"
@@ -46,3 +46,4 @@ Name: "{autodesktop}\Format Foundry"; Filename: "{app}\{#MyAppExeName}"; Tasks: 
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch Format Foundry"; Flags: nowait postinstall skipifsilent
+

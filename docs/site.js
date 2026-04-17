@@ -1,6 +1,6 @@
 (() => {
   const site = {
-    version: "1.8.10",
+    version: "1.8.11",
     repo: "https://github.com/Pugmaster04/Format-Foundry",
     releasePage: "https://github.com/Pugmaster04/Format-Foundry/releases/latest",
     links: {
@@ -94,3 +94,4 @@
     document.querySelectorAll(".reveal").forEach((node) => node.classList.add("is-visible"));
   }
 })();
+

@@ -9,12 +9,13 @@ This changelog includes:
 
 ## [Unreleased]
 
-## [1.8.10] - 2026-04-17
+## [1.8.11] - 2026-04-17
 
 ### Fixed
 - The updater now accepts GitHub release asset SHA256 digests published by the GitHub API, so strict checksum verification works without a separate manifest checksum file when checking the canonical release repo.
 - Legacy updater source URLs pointing at `Pugmaster04/Universal-File-Conversion` are now normalized to the canonical `Format-Foundry` repo.
 - Linux startup animation now uses a safer splash-window mode instead of the Windows-only borderless/topmost path that could fail to appear on Linux desktops.
+- Linux packaging validation now runs AppStream in offline mode, so a transient upstream `502` from a referenced URL can no longer block Debian/AppImage release builds.
 
 ## [1.8.9] - 2026-04-17
 
@@ -325,3 +326,4 @@ This changelog includes:
 - Rapid binary iteration cycle in Downloads workspace while core UI/packaging foundations were being established.
 - Artifacts from this stage were later archived and superseded by the canonical `v0.5` source/build process in:
   - `C:\Users\Pugma\Documents\Universal File Utility Suite Output\Universal-File-Conversion`
+

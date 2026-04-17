@@ -271,7 +271,7 @@ Description: ${APP_NAME}
 EOF
 dpkg-deb --build --root-owner-group "$DEB_ROOT" "$DEB_PACKAGE"
 cp -f "$DEB_PACKAGE" "$DEB_LATEST_PACKAGE"
-appstreamcli validate --pedantic "${DEB_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
+appstreamcli validate --pedantic --no-net "${DEB_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
 
 echo "[7/8] Creating AppImage..."
 download_appimagetool
@@ -293,7 +293,7 @@ cp -f "$APPDATA_TEMPLATE" "${APPDIR_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.app
 render_desktop_file "${APP_BINARY_NAME}" "${APPDIR_ROOT}/${DESKTOP_ID}"
 cp -f "${APPDIR_ROOT}/${DESKTOP_ID}" "${APPDIR_ROOT}/usr/share/applications/${DESKTOP_ID}"
 chmod 755 "${APPDIR_ROOT}/AppRun" "${APPDIR_ROOT}/usr/bin/${APP_BINARY_NAME}" "${APPDIR_ROOT}/usr/bin/${UPDATER_BINARY_NAME}"
-appstreamcli validate --pedantic "${APPDIR_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
+appstreamcli validate --pedantic --no-net "${APPDIR_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_TOOL" "$APPDIR_ROOT" "$APPIMAGE_PACKAGE"
 chmod +x "$APPIMAGE_PACKAGE"
 cp -f "$APPIMAGE_PACKAGE" "$APPIMAGE_LATEST_PACKAGE"

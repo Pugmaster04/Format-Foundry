@@ -37,7 +37,7 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="1.8.10" date="2026-04-17">
+    <release version="1.8.11" date="2026-04-17">
       <description>
         <ul>
           <li>The updater now accepts GitHub release asset SHA256 digests so checksum verification works against the canonical release feed.</li>
@@ -93,3 +93,4 @@
     <category>Office</category>
   </categories>
 </component>
+

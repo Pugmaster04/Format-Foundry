@@ -6,6 +6,14 @@ set ROOT_CLEAN=%ROOT:~0,-1%
 cd /d "%ROOT%"
 set SNAPSHOT_SCRIPT=%ROOT%tools\create_historical_snapshot.ps1
 set STAGE_DIR=%ROOT%release_bins
+
+echo [preflight] Verifying repo integrity...
+python -m tools.verify_repo_integrity "%ROOT_CLEAN%"
+if errorlevel 1 (
+  echo Repo integrity verification failed.
+  exit /b 7
+)
+
 set PACKAGE_VERSION=
 for /f "usebackq delims=" %%i in (`python "%ROOT%tools\extract_app_version.py"`) do set PACKAGE_VERSION=%%i
 if "%PACKAGE_VERSION%"=="" (

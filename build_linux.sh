@@ -88,6 +88,9 @@ require_command_or_exit dpkg-deb "dpkg-dev"
 require_command_or_exit appstreamcli "appstream"
 require_python_module_or_exit "${PYTHON_BIN}" tkinter "python3-tk"
 
+echo "[preflight] Verifying repo integrity..."
+"${PYTHON_BIN}" -m tools.verify_repo_integrity "${ROOT}"
+
 APP_NAME="Format Foundry"
 APP_BINARY_NAME="FormatFoundry"
 UPDATER_BINARY_NAME="FormatFoundry_Updater"

@@ -33,6 +33,7 @@ import tkinter.font as tkfont
 from tkinter import END, SINGLE, BooleanVar, IntVar, StringVar, filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+from aria2_support import build_download_command, call_rpc, process_is_running, terminate_process
 from support_runtime import (
     BACKEND_KEY_TO_NAME,
     BACKEND_NAME_TO_KEY,
@@ -44,6 +45,7 @@ from support_runtime import (
     parse_trusted_host_patterns,
     validate_trusted_remote_url,
 )
+from task_runner_support import execute_action
 
 try:
     from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
@@ -6206,15 +6208,47 @@ class ModuleTab(ttk.Frame):
             return
 
         def runner() -> None:
-            try:
-                action()
-                if done_message:
-                    self.app.info(done_message)
-            except OperationCanceledError as exc:
-                self.log(str(exc))
-            except Exception as exc:
-                self.log(f"Error: {exc}")
-                self.app.error(f"{self.tab_name} failed:\n{exc}")
+            execute_action(
+                action,
+                task_name=self.tab_name,
+                cancel_exception_type=OperationCanceledError,
+                done_message=done_message,
+                info_cb=self.app.info,
+                error_cb=self.app.error,
+                log_cb=self.log,
+            )
+
+        self.worker = threading.Thread(target=runner, daemon=True)
+        self.worker.start()
+
+    def run_async_managed(
+        self,
+        action,
+        *,
+        done_message: str | None = None,
+        on_success=None,
+        on_cancel=None,
+        on_error=None,
+        on_finally=None,
+    ) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showwarning(APP_TITLE, f"{self.tab_name} is already running.")
+            return
+
+        def runner() -> None:
+            execute_action(
+                action,
+                task_name=self.tab_name,
+                cancel_exception_type=OperationCanceledError,
+                done_message=done_message,
+                on_success=on_success,
+                on_cancel=on_cancel,
+                on_error=on_error,
+                on_finally=on_finally,
+                info_cb=self.app.info,
+                error_cb=self.app.error,
+                log_cb=self.log,
+            )
 
         self.worker = threading.Thread(target=runner, daemon=True)
         self.worker.start()
@@ -6342,6 +6376,8 @@ class ModuleTab(ttk.Frame):
     def build_module_shell(self) -> ttk.Frame:
         copy = self.MODULE_COPY.get(self.tab_name, {})
         summary = str(copy.get("summary", "")).strip()
+        highlights = [str(item).strip() for item in copy.get("highlights", []) if str(item).strip()]
+        workflow = str(copy.get("workflow", "")).strip()
 
         viewport = ttk.Frame(self, style="Surface.TFrame")
         viewport.pack(fill="both", expand=True)
@@ -6386,7 +6422,10 @@ class ModuleTab(ttk.Frame):
         hero_inner = ttk.Frame(hero, style="ModuleHeroBody.TFrame", padding=(14, 14))
         hero_inner.pack(fill="x")
 
-        ttk.Label(hero_inner, text="Tool descriptor", style="ModuleEyebrow.TLabel").pack(anchor="w")
+        title_row = ttk.Frame(hero_inner, style="ModuleHeroBody.TFrame")
+        title_row.pack(fill="x")
+        ttk.Label(title_row, text="Workflow module", style="ModuleEyebrow.TLabel").pack(side="left")
+        ttk.Label(title_row, text="Active workspace", style="ModuleBadge.TLabel").pack(side="right")
 
         ttk.Label(hero_inner, text=self.tab_name, style="ModuleTitle.TLabel").pack(anchor="w", pady=(10, 0))
 
@@ -6400,6 +6439,34 @@ class ModuleTab(ttk.Frame):
             )
             summary_label.pack(anchor="w", pady=(6, 0))
             self.app._bind_responsive_wrap(summary_label, padding=24, minimum=320)
+
+        if highlights:
+            chips = ttk.Frame(hero_inner, style="ModuleHeroBody.TFrame")
+            chips.pack(fill="x", pady=(10, 0))
+            for index, item in enumerate(highlights):
+                ttk.Label(chips, text=item, style="ModuleChip.TLabel").pack(side="left", padx=(0 if index == 0 else 8, 0))
+
+        workflow_panel = ttk.Frame(hero_inner, style="ModuleHeroPanel.TFrame", padding=(12, 10))
+        workflow_panel.pack(fill="x", pady=(10, 0))
+        ttk.Label(workflow_panel, text="Recommended flow", style="ModuleWorkflow.TLabel").pack(anchor="w")
+        workflow_label = ttk.Label(
+            workflow_panel,
+            text=workflow or "Add the source, configure the target behavior, and run the queue from this module.",
+            style="ModuleLead.TLabel",
+            wraplength=1180,
+            justify="left",
+        )
+        workflow_label.pack(anchor="w", pady=(4, 0))
+        self.app._bind_responsive_wrap(workflow_label, padding=20, minimum=320)
+
+        if workflow:
+            detail_label = ttk.Label(
+                workflow_panel,
+                text="Designed to stay readable while jobs are in flight.",
+                style="ModuleLead.TLabel",
+            )
+            detail_label.pack(anchor="w", pady=(6, 0))
+            self.app._bind_responsive_wrap(detail_label, padding=20, minimum=260)
 
         content = ttk.Frame(shell, style="Surface.TFrame")
         content.pack(fill="both", expand=True)
@@ -10246,24 +10313,11 @@ class Aria2DownloadsTab(ModuleTab):
     def _aria2_rpc_call(self, method: str, params: list[Any] | None = None) -> Any:
         if not self.download_rpc_port:
             return None
-        payload = {
-            "jsonrpc": "2.0",
-            "id": "uch-aria2",
-            "method": f"aria2.{method}",
-            "params": params or [],
-        }
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{self.download_rpc_port}/jsonrpc",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=1.5) as response:
-            data = json.loads(response.read().decode("utf-8", errors="replace"))
-        return data.get("result") if isinstance(data, dict) else None
+        return call_rpc(self.download_rpc_port, method, params=params, request_id="uch-aria2")
 
     def toggle_pause_download(self) -> None:
         process = self.download_process
-        if not process or process.poll() is not None or not self.download_rpc_port:
+        if not process_is_running(process) or not self.download_rpc_port:
             self.status_var.set("No active aria2 download to pause.")
             return
         try:
@@ -10307,24 +10361,23 @@ class Aria2DownloadsTab(ModuleTab):
             self.pause_button.configure(text="Pause", state="normal")
 
         def work() -> None:
-            cmd = [
+            cmd = build_download_command(
                 aria2,
-                "--dir",
-                str(destination),
-                "--summary-interval=1",
-                "--console-log-level=notice",
-                "--check-integrity=true",
-                "--continue=true",
-                "--auto-file-renaming=true",
-                "--follow-torrent=true",
-                "--follow-metalink=true",
-                "--bt-save-metadata=true",
-                "--seed-time=0",
-                "--enable-rpc=true",
-                "--rpc-listen-all=false",
-                f"--rpc-listen-port={self.download_rpc_port}",
-                *sources,
-            ]
+                destination,
+                self.download_rpc_port,
+                sources,
+                extra_args=[
+                    "--summary-interval=1",
+                    "--console-log-level=notice",
+                    "--check-integrity=true",
+                    "--continue=true",
+                    "--auto-file-renaming=true",
+                    "--follow-torrent=true",
+                    "--follow-metalink=true",
+                    "--bt-save-metadata=true",
+                    "--seed-time=0",
+                ],
+            )
             self.log(f"Running aria2 command: {quote_cmd(cmd)}")
             proc = subprocess.Popen(
                 cmd,
@@ -10361,33 +10414,24 @@ class Aria2DownloadsTab(ModuleTab):
                 raise RuntimeError(last_detail or f"aria2 exited with code {code}")
             self.app.call_ui(lambda: self._set_progress(100, f"Downloaded {len(sources)} aria2 source(s)."))
 
-        self.worker = threading.Thread(target=lambda: self._run_download_worker(work), daemon=True)
-        self.worker.start()
-
-    def _run_download_worker(self, action) -> None:
-        try:
-            action()
-            self.app.call_ui(lambda: self._set_session_state("Complete"))
-            self.app.info("Aria2 download finished.")
-        except OperationCanceledError as exc:
-            self.log(str(exc))
-            self.app.call_ui(lambda: self._set_session_state("Stopped"))
-            self.app.call_ui(lambda: self.status_var.set(str(exc)))
-        except Exception as exc:
-            self.log(f"Error: {exc}")
-            self.app.call_ui(lambda: self._set_session_state("Error"))
-            self.app.error(f"Aria2 download failed:\n{exc}")
-        finally:
-            self.download_rpc_port = None
-            if self.pause_button is not None:
-                self.app.call_ui(lambda: self.pause_button.configure(text="Pause", state="disabled"))
+        self.run_async_managed(
+            work,
+            done_message="Aria2 download finished.",
+            on_success=lambda: self.app.call_ui(lambda: self._set_session_state("Complete")),
+            on_cancel=lambda exc: self.app.call_ui(lambda: (self._set_session_state("Stopped"), self.status_var.set(str(exc)))),
+            on_error=lambda _exc: self.app.call_ui(lambda: self._set_session_state("Error")),
+            on_finally=lambda: (
+                setattr(self, "download_rpc_port", None),
+                self.app.call_ui(lambda: self.pause_button.configure(text="Pause", state="disabled")) if self.pause_button is not None else None,
+            ),
+        )
 
     def cancel_download(self) -> None:
         self.download_cancel_requested.set()
         process = self.download_process
-        if process and process.poll() is None:
+        if process_is_running(process):
             try:
-                process.terminate()
+                terminate_process(process)
             except Exception:
                 pass
             self._set_session_state("Stopping")
@@ -10944,26 +10988,11 @@ class TorrentsTab(ModuleTab):
             self.session_state_label.configure(style=session_state_style(state))
 
     def _aria2_rpc_call(self, port: int, method: str, params: list[Any] | None = None) -> Any:
-        payload = {
-            "jsonrpc": "2.0",
-            "id": "uch",
-            "method": f"aria2.{method}",
-            "params": params or [],
-        }
-        request = urllib.request.Request(
-            f"http://127.0.0.1:{port}/jsonrpc",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=1.5) as response:
-            data = json.loads(response.read().decode("utf-8", errors="replace"))
-        if isinstance(data, dict) and "result" in data:
-            return data["result"]
-        return None
+        return call_rpc(port, method, params=params, request_id="uch")
 
     def toggle_pause_download(self) -> None:
         process = self.download_process
-        if not process or process.poll() is not None or not self.download_rpc_port:
+        if not process_is_running(process) or not self.download_rpc_port:
             self.status_var.set("No active torrent download to pause.")
             return
         try:
@@ -11129,23 +11158,22 @@ class TorrentsTab(ModuleTab):
                 self.app.call_ui(self._refresh_entry_views)
                 rpc_port = reserve_local_tcp_port()
                 self.download_rpc_port = rpc_port
-                cmd = [
+                cmd = build_download_command(
                     aria2,
-                    "--dir",
-                    str(destination),
-                    "--summary-interval=1",
-                    "--console-log-level=notice",
-                    "--seed-time=0",
-                    "--bt-save-metadata=true",
-                    "--follow-torrent=true",
-                    "--enable-dht=true",
-                    "--enable-peer-exchange=true",
-                    "--check-integrity=true",
-                    "--enable-rpc=true",
-                    "--rpc-listen-all=false",
-                    f"--rpc-listen-port={rpc_port}",
-                    entry.source,
-                ]
+                    destination,
+                    rpc_port,
+                    [entry.source],
+                    extra_args=[
+                        "--summary-interval=1",
+                        "--console-log-level=notice",
+                        "--seed-time=0",
+                        "--bt-save-metadata=true",
+                        "--follow-torrent=true",
+                        "--enable-dht=true",
+                        "--enable-peer-exchange=true",
+                        "--check-integrity=true",
+                    ],
+                )
                 selected_indices = self._selected_file_indices(entry)
                 if entry.entry_type == "torrent" and entry.files and selected_indices and len(selected_indices) != len(entry.files):
                     cmd.insert(-1, f"--select-file={compress_index_ranges(selected_indices)}")
@@ -11168,7 +11196,7 @@ class TorrentsTab(ModuleTab):
                     while proc.poll() is None:
                         if self.download_cancel_requested.is_set():
                             try:
-                                proc.terminate()
+                                terminate_process(proc)
                             except Exception:
                                 pass
                             break
@@ -11197,33 +11225,24 @@ class TorrentsTab(ModuleTab):
                 self.app.call_ui(lambda p=int(completed / total * 100), c=completed, t=total: self._set_download_progress(p, f"Completed {c} of {t} torrent source(s)."))
             self.app.call_ui(lambda: self._set_download_progress(100, f"Downloaded {len(entries)} torrent source(s)."))
 
-        self.worker = threading.Thread(target=lambda: self._run_download_worker(work), daemon=True)
-        self.worker.start()
-
-    def _run_download_worker(self, action) -> None:
-        try:
-            action()
-            self.app.call_ui(lambda: self._set_session_state("Complete"))
-            self.app.info("Torrent download finished.")
-        except OperationCanceledError as exc:
-            self.log(str(exc))
-            self.app.call_ui(lambda: self._set_session_state("Stopped"))
-            self.app.call_ui(lambda: self.status_var.set(str(exc)))
-        except Exception as exc:
-            self.log(f"Error: {exc}")
-            self.app.call_ui(lambda: self._set_session_state("Error"))
-            self.app.error(f"{self.tab_name} failed:\n{exc}")
-        finally:
-            self.download_rpc_port = None
-            if self.pause_button is not None:
-                self.app.call_ui(lambda: self.pause_button.configure(text="Pause", state="disabled"))
+        self.run_async_managed(
+            work,
+            done_message="Torrent download finished.",
+            on_success=lambda: self.app.call_ui(lambda: self._set_session_state("Complete")),
+            on_cancel=lambda exc: self.app.call_ui(lambda: (self._set_session_state("Stopped"), self.status_var.set(str(exc)))),
+            on_error=lambda _exc: self.app.call_ui(lambda: self._set_session_state("Error")),
+            on_finally=lambda: (
+                setattr(self, "download_rpc_port", None),
+                self.app.call_ui(lambda: self.pause_button.configure(text="Pause", state="disabled")) if self.pause_button is not None else None,
+            ),
+        )
 
     def cancel_download(self) -> None:
         self.download_cancel_requested.set()
         process = self.download_process
-        if process and process.poll() is None:
+        if process_is_running(process):
             try:
-                process.terminate()
+                terminate_process(process)
             except Exception:
                 pass
             self._set_session_state("Stopping")

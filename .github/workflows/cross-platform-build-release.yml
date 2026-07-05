@@ -141,13 +141,13 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download Windows artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: windows-build-artifacts
           path: release-payload/windows
 
       - name: Download Linux artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: linux-build-artifacts
           path: release-payload/linux

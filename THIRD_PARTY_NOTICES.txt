@@ -4,11 +4,11 @@ This source package uses or can interact with third-party components.
 Check the installed versions and their licenses on the system where you build or distribute the program.
 The major components intended by this package include:
 - Pillow
+- pillow-heif
 - imageio-ffmpeg / FFmpeg
 - PyYAML
-- py7zr
-- xmltodict
-- tomli-w
+- torrentool
+- windnd (Windows only)
 - PyInstaller
 
 Optional external tools the app can call if installed:

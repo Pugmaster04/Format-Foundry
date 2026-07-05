@@ -46,6 +46,18 @@ BACKEND_VERSION_PROBES: dict[str, tuple[list[str], str]] = {
 }
 
 
+def _normalize_probe_output(*parts: Any) -> str:
+    values: list[str] = []
+    for part in parts:
+        if part is None:
+            continue
+        if isinstance(part, bytes):
+            values.append(part.decode("utf-8", errors="replace"))
+        else:
+            values.append(str(part))
+    return "\n".join(value for value in values if value).strip()
+
+
 def current_platform_key() -> str:
     if os.name == "nt":
         return "windows"
@@ -196,6 +208,7 @@ def _probe_backend_version(
         "version": "",
         "raw": "",
         "error": "",
+        "note": "",
     }
     try:
         timeout_seconds = 3 if backend_key == "libreoffice" else 8
@@ -207,10 +220,17 @@ def _probe_backend_version(
             check=False,
             **(popen_kwargs or {}),
         )
+    except subprocess.TimeoutExpired as exc:
+        result["raw"] = _normalize_probe_output(getattr(exc, "stdout", None), getattr(exc, "stderr", None))
+        if backend_key == "libreoffice":
+            result["note"] = "Version probe timed out; backend remains usable."
+            return result
+        result["error"] = str(exc)
+        return result
     except Exception as exc:
         result["error"] = str(exc)
         return result
-    output = "\n".join(part for part in [completed.stdout, completed.stderr] if part).strip()
+    output = _normalize_probe_output(completed.stdout, completed.stderr)
     result["raw"] = output
     if output:
         match = re.search(pattern, output, flags=re.IGNORECASE)

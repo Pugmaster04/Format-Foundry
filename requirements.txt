@@ -2,9 +2,6 @@ pillow
 pillow-heif
 imageio-ffmpeg
 pyyaml
-py7zr
-xmltodict
-tomli-w
 torrentool
 pyinstaller
 windnd; platform_system == "Windows"

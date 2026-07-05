@@ -37,6 +37,14 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.8.17" date="2026-07-05">
+      <description>
+        <ul>
+          <li>LibreOffice backend detection now degrades cleanly when the short version probe times out, instead of surfacing a false backend error.</li>
+          <li>Removed stale Python dependency declarations and added explicit proprietary license metadata to the public repository.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.8.16" date="2026-04-17">
       <description>
         <ul>

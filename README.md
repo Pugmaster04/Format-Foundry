@@ -2,7 +2,7 @@
 
 Format Foundry is a cross-platform desktop toolkit for conversion, compression, extraction, media prep, downloads, archives, storage analysis, and repeatable batch workflows.
 
-Canonical release target: `1.8.16`
+Canonical release target: `1.8.17`
 
 Website:
 - Overview: [index.html](https://pugmaster04.github.io/Format-Foundry/index.html)
@@ -11,14 +11,14 @@ Website:
 
 ## Install
 
-[![Windows installer](https://img.shields.io/badge/Windows-Download%20Installer-19786B?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.16/FormatFoundry_Setup_1.8.16.exe)
-[![Ubuntu or Debian package](https://img.shields.io/badge/Ubuntu%20%2F%20Debian-Download%20.deb-19786B?style=for-the-badge&logo=ubuntu&logoColor=white)](https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.16/format-foundry_1.8.16_amd64.deb)
+[![Windows installer](https://img.shields.io/badge/Windows-Download%20Installer-19786B?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.17/FormatFoundry_Setup_1.8.17.exe)
+[![Ubuntu or Debian package](https://img.shields.io/badge/Ubuntu%20%2F%20Debian-Download%20.deb-19786B?style=for-the-badge&logo=ubuntu&logoColor=white)](https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.17/format-foundry_1.8.17_amd64.deb)
 
-If you want the manual artifact list instead of the direct installer buttons, use the [current release page](https://github.com/Pugmaster04/Format-Foundry/releases/tag/v1.8.16).
+If you want the manual artifact list instead of the direct installer buttons, use the [current release page](https://github.com/Pugmaster04/Format-Foundry/releases/tag/v1.8.17).
 
 ### Windows
 
-1. Download `FormatFoundry_Setup_1.8.16.exe`.
+1. Download `FormatFoundry_Setup_1.8.17.exe`.
 2. Run the installer.
 3. Launch `Format Foundry` from Start or Desktop.
 
@@ -35,7 +35,7 @@ Use the packaged app. Normal Linux installs do not require the source folder aft
 Recommended `.deb` install:
 
 ```bash
-sudo apt install ./format-foundry_1.8.16_amd64.deb
+sudo apt install ./format-foundry_1.8.17_amd64.deb
 ```
 
 Launch:
@@ -51,8 +51,8 @@ Packaging note:
 Portable AppImage fallback:
 
 ```bash
-chmod +x FormatFoundry_linux_1.8.16_x86_64.AppImage
-./FormatFoundry_linux_1.8.16_x86_64.AppImage
+chmod +x FormatFoundry_linux_1.8.17_x86_64.AppImage
+./FormatFoundry_linux_1.8.17_x86_64.AppImage
 ```
 
 Uninstall:

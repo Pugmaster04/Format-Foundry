@@ -9,6 +9,16 @@ This changelog includes:
 
 ## [Unreleased]
 
+## [1.8.17] - 2026-07-05
+
+### Fixed
+- LibreOffice backend detection no longer reports a hard error when `soffice --version` exceeds the short probe timeout; the backend remains detected and usable with a diagnostic note instead.
+
+### Changed
+- Removed stale Python dependency declarations that were no longer used by the current source tree.
+- Added a top-level proprietary `LICENSE` file so the public repository metadata no longer appears license-less on GitHub.
+- Updated the public repo description and license page copy to match the current proprietary distribution model.
+
 ## [1.8.16] - 2026-04-17
 
 ### Changed

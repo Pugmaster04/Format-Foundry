@@ -1,5 +1,5 @@
 ﻿(() => {
-  const version = "1.8.16";
+  const version = "1.8.17";
   const releaseTag = `v${version}`;
   const releaseBase = `https://github.com/Pugmaster04/Format-Foundry/releases/download/${releaseTag}`;
   const site = {

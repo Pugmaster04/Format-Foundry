@@ -86,7 +86,7 @@ except Exception:
 APP_TITLE = "Format Foundry"
 APP_SLUG = "FormatFoundry"
 LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
-APP_VERSION = "1.8.16"
+APP_VERSION = "1.8.17"
 DEFAULT_UPDATE_MANIFEST_URL = ""
 APP_EXE_BASENAME = "FormatFoundry"
 UPDATER_EXE_BASENAME = "FormatFoundry_Updater"
@@ -2284,7 +2284,7 @@ class SuiteApp:
 
         ttk.Label(
             content_body,
-            text='Manifest example: {"latest_version":"1.8.16","download_url":"https://example.com/FormatFoundry_Setup_1.8.16.exe","notes":"Release notes"}',
+            text='Manifest example: {"latest_version":"1.8.17","download_url":"https://example.com/FormatFoundry_Setup_1.8.17.exe","notes":"Release notes"}',
             foreground="#57687F",
             wraplength=590,
             justify="left",
@@ -4944,7 +4944,7 @@ class SuiteApp:
         ttk.Entry(general_tab, textvariable=update_url_var).pack(fill="x", pady=(4, 0))
         update_example_label = ttk.Label(
             general_tab,
-            text='Example JSON: {"latest_version":"1.8.16","download_url":"https://example.com/FormatFoundry_Setup_1.8.16.exe","notes":"Release notes"}',
+            text='Example JSON: {"latest_version":"1.8.17","download_url":"https://example.com/FormatFoundry_Setup_1.8.17.exe","notes":"Release notes"}',
             foreground="#57687F",
             justify="left",
         )

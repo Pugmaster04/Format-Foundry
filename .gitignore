@@ -5,6 +5,12 @@ __pycache__/
 .venv/
 venv/
 env/
+.env.codex.local
+
+# Code-signing credentials must stay outside version control.
+*.pfx
+*.p12
+*.key
 
 build/
 dist/

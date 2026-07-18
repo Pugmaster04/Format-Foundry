@@ -1,7 +1,7 @@
-pillow
-pillow-heif
-imageio-ffmpeg
-pyyaml
-torrentool
-pyinstaller
-windnd; platform_system == "Windows"
+pillow==12.2.0
+pillow-heif==1.4.0
+imageio-ffmpeg==0.6.0
+pyyaml==6.0.3
+torrentool==1.2.0
+pyinstaller==6.20.0
+windnd==1.0.7; platform_system == "Windows"

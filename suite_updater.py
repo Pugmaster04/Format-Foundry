@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -20,19 +21,33 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import BooleanVar, StringVar, filedialog, messagebox, ttk
 
+from backend_support import (
+    BACKEND_DEFINITIONS,
+    BACKENDS_BY_NAME,
+    backend_install_command,
+    backend_install_process_args,
+    detect_backend_paths,
+    unique_install_targets,
+)
 from support_runtime import (
     DEFAULT_GITHUB_REPO,
     DEFAULT_GITHUB_REPO_URL,
     DEFAULT_TRUSTED_UPDATE_HOSTS,
     build_environment_snapshot,
+    collect_backend_details,
     evaluate_manifest_compatibility,
+    format_release_label,
+    is_release_newer,
+    normalize_update_metadata,
     parse_trusted_host_patterns,
+    release_version_key,
     validate_trusted_remote_url,
 )
 
 
 APP_TITLE = "Format Foundry Updater"
-CURRENT_VERSION = "1.8.17"
+CURRENT_VERSION = "0.5.0-beta"
+CURRENT_VERSION_LABEL = "Beta 0.5"
 APP_SLUG = "FormatFoundry"
 LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
 LEGACY_GITHUB_REPOS = ("Pugmaster04/Universal-File-Conversion",)
@@ -310,18 +325,11 @@ def version_tuple(value: str) -> tuple[int, ...]:
 
 
 def is_version_newer(candidate: str, current: str) -> bool:
-    c = version_tuple(candidate)
-    k = version_tuple(current)
-    if not c:
-        return False
-    width = max(len(c), len(k))
-    c = c + (0,) * (width - len(c))
-    k = k + (0,) * (width - len(k))
-    return c > k
+    return is_release_newer(candidate, current)
 
 
 class UpdaterApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, open_backends: bool = False):
         self.root = root
         self.root.title(APP_TITLE)
 
@@ -343,7 +351,7 @@ class UpdaterApp:
 
         saved_source = self._normalize_update_source(str(self.settings.get("source", "")).strip())
         self.source_var = StringVar(value=saved_source or self._default_manifest_source())
-        self.version_var = StringVar(value=CURRENT_VERSION)
+        self.version_var = StringVar(value=CURRENT_VERSION_LABEL)
         self.output_dir_var = StringVar(value=str(self.settings.get("output_dir", str(default_download_dir()))))
         self.status_var = StringVar(value="Ready.")
         self.latest_var = StringVar(value="Latest version: (not checked)")
@@ -351,6 +359,8 @@ class UpdaterApp:
         self.sha256_var = StringVar(value="SHA256: (not provided)")
         self.environment_var = StringVar(value="")
         self.compatibility_var = StringVar(value="Compatibility: not checked")
+        self.backend_status_var = StringVar(value="Checking optional feature tools...")
+        self.backend_detail_var = StringVar(value="Select a tool to see what it enables and where it is installed.")
         self.require_https_manifest_var = BooleanVar(value=bool(self.settings.get("require_https_manifest", True)))
         self.require_https_download_var = BooleanVar(value=bool(self.settings.get("require_https_download", True)))
         self.require_sha256_var = BooleanVar(value=bool(self.settings.get("require_sha256_verification", True)))
@@ -379,6 +389,12 @@ class UpdaterApp:
         self.last_compatibility: dict[str, Any] | None = None
         self.checking = False
         self.downloading = False
+        self.backend_checking = False
+        self.backend_installing = False
+        self.backend_paths: dict[str, str | None] = {}
+        self.backend_details: dict[str, dict[str, Any]] = {}
+        self.backend_tree: ttk.Treeview | None = None
+        self.backend_card: ttk.Frame | None = None
         self.style: ttk.Style | None = None
 
         self._configure_styles()
@@ -389,6 +405,9 @@ class UpdaterApp:
         self._bind_setting_traces()
         self._save_settings()
         self._refresh_environment_status()
+        self.root.after(120, self._refresh_backends_clicked)
+        if open_backends:
+            self.root.after(220, self._focus_backend_center)
 
     def _resolve_appdata_dir(self) -> Path:
         return resolve_settings_dir(self.settings_root, "updater_settings.json")
@@ -534,8 +553,12 @@ class UpdaterApp:
                 widget.yview_scroll(delta_units, "units")
                 return "break"
             if isinstance(widget, ttk.Treeview):
-                widget.yview_scroll(delta_units, "units")
-                return "break"
+                first, last = widget.yview()
+                can_scroll_up = delta_units < 0 and first > 0.0
+                can_scroll_down = delta_units > 0 and last < 1.0
+                if can_scroll_up or can_scroll_down:
+                    widget.yview_scroll(delta_units, "units")
+                    return "break"
         except Exception:
             return None
 
@@ -675,6 +698,14 @@ class UpdaterApp:
             lightcolor=palette["progress_bg"],
             darkcolor=palette["progress_bg"],
         )
+        self.style.configure(
+            "Backend.Treeview",
+            background=palette["card_bg"],
+            fieldbackground=palette["card_bg"],
+            foreground=palette["text_fg"],
+            rowheight=self._scaled(30),
+        )
+        self.style.configure("Backend.Treeview.Heading", font=self._font(9, semibold=True))
 
     def _download_dialog_profile(self, url: str) -> tuple[str, str, list[tuple[str, str]]]:
         lower = url.strip().lower()
@@ -835,7 +866,8 @@ class UpdaterApp:
             runtime_dir=self.runtime_dir,
             script_dir=self.script_dir,
             resource_dir=self.resource_dir,
-            backend_paths={},
+            backend_paths=self.backend_paths,
+            backend_details_override=self.backend_details or None,
             settings={
                 "source": str(self.source_var.get()).strip(),
                 "require_https_manifest": bool(self.require_https_manifest_var.get()),
@@ -964,7 +996,7 @@ class UpdaterApp:
                 tags.append(tag_name)
         if not tags:
             return ""
-        return max(tags, key=lambda tag: (version_tuple(tag), tag))
+        return max(tags, key=lambda tag: (release_version_key(tag), tag))
 
     def _select_release_asset(self, assets: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str, str]:
         normalized: list[tuple[dict[str, Any], str, str, str]] = []
@@ -1129,7 +1161,8 @@ class UpdaterApp:
             release = {}
 
         if release:
-            latest = str(release.get("tag_name") or release.get("name") or "").strip()
+            normalized_release = normalize_update_metadata(release)
+            latest = str(normalized_release.get("latest_version") or "").strip()
             if not latest:
                 raise RuntimeError("GitHub release is missing tag_name/name.")
             notes = str(release.get("body") or "").strip()
@@ -1171,6 +1204,7 @@ class UpdaterApp:
                 raw_manifest = self._fetch_json_url(raw_url, timeout=18)
                 if not isinstance(raw_manifest, dict):
                     continue
+                raw_manifest = normalize_update_metadata(raw_manifest)
                 latest = str(raw_manifest.get("latest_version") or raw_manifest.get("version") or "").strip()
                 if not latest:
                     continue
@@ -1251,14 +1285,16 @@ class UpdaterApp:
         outer = ttk.Frame(self.root, style="Updater.TFrame", padding=self._scaled(14))
         outer.pack(fill="both", expand=True)
 
+        body_viewport = ttk.Frame(outer, style="Updater.TFrame")
+        body_viewport.pack(fill="both", expand=True)
         body_canvas = tk.Canvas(
-            outer,
+            body_viewport,
             bg=palette["window_bg"],
             highlightthickness=0,
             borderwidth=0,
             relief="flat",
         )
-        body_scrollbar = ttk.Scrollbar(outer, orient="vertical", command=body_canvas.yview)
+        body_scrollbar = ttk.Scrollbar(body_viewport, orient="vertical", command=body_canvas.yview)
         body_canvas.configure(yscrollcommand=body_scrollbar.set)
         body_canvas.pack(side="left", fill="both", expand=True)
         body_scrollbar.pack(side="right", fill="y")
@@ -1310,7 +1346,7 @@ class UpdaterApp:
         stat_rail = ttk.Frame(hero, style="UpdaterHero.TFrame")
         stat_rail.grid(row=0, column=1, sticky="ne")
         for value, label, pad in [
-            (CURRENT_VERSION, "Canonical version", (0, 0)),
+            (CURRENT_VERSION_LABEL, "Canonical version", (0, 0)),
             ("GitHub + manifest aware", "Source support", (8, 0)),
             ("Windows + Linux", "Package targets", (8, 0)),
         ]:
@@ -1383,6 +1419,93 @@ class UpdaterApp:
         ttk.Entry(out_row, textvariable=self.output_dir_var).pack(side="left", fill="x", expand=True, padx=(self._scaled(8), self._scaled(8)))
         ttk.Button(out_row, text="Browse", style="UpdaterQuiet.TButton", command=self._browse_output_dir).pack(side="left")
         ttk.Button(out_row, text="Open", style="UpdaterQuiet.TButton", command=self._open_output_dir).pack(side="left", padx=(self._scaled(8), 0))
+
+        backend_card = ttk.Frame(body, style="UpdaterCard.TFrame", padding=(self._scaled(14), self._scaled(12)))
+        backend_card.pack(fill="x", pady=(self._scaled(10), 0))
+        self.backend_card = backend_card
+        ttk.Label(backend_card, text="Optional feature tools", style="UpdaterSection.TLabel").pack(anchor="w")
+        backend_intro = ttk.Label(
+            backend_card,
+            text=(
+                "Format Foundry works as a standalone app. Missing tools only limit the workflows listed below. "
+                "Install actions use Windows Package Manager or your Linux package manager; each third-party tool keeps its own license and updates."
+            ),
+            style="UpdaterHint.TLabel",
+            justify="left",
+        )
+        backend_intro.pack(anchor="w", pady=(self._scaled(4), self._scaled(8)), fill="x")
+        self._bind_responsive_wrap(backend_intro, padding=0, minimum=280)
+        backend_status = ttk.Label(
+            backend_card,
+            textvariable=self.backend_status_var,
+            style="UpdaterValue.TLabel",
+            justify="left",
+        )
+        backend_status.pack(anchor="w", fill="x", pady=(0, self._scaled(8)))
+        self._bind_responsive_wrap(backend_status, padding=0, minimum=280)
+
+        backend_tree_host = ttk.Frame(backend_card, style="UpdaterCard.TFrame")
+        backend_tree_host.pack(fill="x")
+        backend_tree = ttk.Treeview(
+            backend_tree_host,
+            columns=("status", "enables"),
+            show="tree headings",
+            height=len(BACKEND_DEFINITIONS),
+            selectmode="browse",
+            style="Backend.Treeview",
+        )
+        backend_tree.heading("#0", text="Tool")
+        backend_tree.heading("status", text="Status")
+        backend_tree.heading("enables", text="Features enabled")
+        backend_tree.column("#0", width=self._scaled(120), minwidth=self._scaled(95), stretch=False)
+        backend_tree.column("status", width=self._scaled(120), minwidth=self._scaled(100), stretch=False)
+        backend_tree.column("enables", width=self._scaled(480), minwidth=self._scaled(220), stretch=True)
+        backend_tree.tag_configure("detected", foreground="#176B4A")
+        backend_tree.tag_configure("missing", foreground="#9A4A17")
+        backend_tree_scroll = ttk.Scrollbar(backend_tree_host, orient="vertical", command=backend_tree.yview)
+        backend_tree.configure(yscrollcommand=backend_tree_scroll.set)
+        backend_tree.pack(side="left", fill="x", expand=True)
+        backend_tree_scroll.pack(side="right", fill="y")
+        backend_tree.bind("<<TreeviewSelect>>", self._on_backend_selection, add="+")
+        self.backend_tree = backend_tree
+        for definition in BACKEND_DEFINITIONS:
+            backend_tree.insert("", "end", iid=definition.name, text=definition.name, values=("Checking...", definition.enables))
+
+        backend_detail = ttk.Label(
+            backend_card,
+            textvariable=self.backend_detail_var,
+            style="UpdaterHint.TLabel",
+            justify="left",
+        )
+        backend_detail.pack(anchor="w", fill="x", pady=(self._scaled(8), 0))
+        self._bind_responsive_wrap(backend_detail, padding=0, minimum=280)
+
+        backend_actions = ttk.Frame(backend_card, style="UpdaterCard.TFrame")
+        backend_actions.pack(fill="x", pady=(self._scaled(10), 0))
+        backend_buttons = [
+            ("Refresh", self._refresh_backends_clicked),
+            ("Install Selected", self._install_selected_backend),
+            ("Install Missing", self._install_missing_backends),
+            ("Official Page", lambda: self._open_selected_backend_link("homepage")),
+            ("Documentation", lambda: self._open_selected_backend_link("docs")),
+            ("Copy Install Command", self._copy_selected_backend_command),
+        ]
+        for index, (label, command) in enumerate(backend_buttons):
+            row, column = divmod(index, 3)
+            backend_actions.columnconfigure(column, weight=1, uniform="backend-actions")
+            ttk.Button(backend_actions, text=label, style="UpdaterQuiet.TButton", command=command).grid(
+                row=row,
+                column=column,
+                sticky="ew",
+                padx=(0 if column == 0 else self._scaled(6), 0),
+                pady=(0 if row == 0 else self._scaled(6), 0),
+            )
+        ttk.Button(
+            backend_card,
+            text="Open Format Foundry",
+            style="UpdaterPrimary.TButton",
+            command=self._launch_main_app,
+        ).pack(anchor="e", pady=(self._scaled(10), 0))
 
         security_frame = ttk.Labelframe(body, text="Security Options")
         security_frame.pack(fill="x", pady=(self._scaled(10), 0))
@@ -1476,6 +1599,255 @@ class UpdaterApp:
         status_bar.pack(fill="x")
         ttk.Label(status_bar, textvariable=self.status_var, style="UpdaterValue.TLabel").pack(anchor="w")
 
+    def _focus_backend_center(self) -> None:
+        if self._body_canvas is None or self.backend_card is None:
+            return
+        try:
+            self.root.update_idletasks()
+            scroll_box = self._body_canvas.bbox("all")
+            if scroll_box:
+                target = max(0, int(self.backend_card.winfo_y()) - self._scaled(12))
+                total = max(1, int(scroll_box[3] - scroll_box[1]))
+                self._body_canvas.yview_moveto(min(1.0, target / total))
+            if self.backend_tree is not None:
+                self.backend_tree.focus_set()
+        except Exception:
+            return
+
+    def _selected_backend_name(self) -> str:
+        if self.backend_tree is None:
+            return ""
+        selected = self.backend_tree.selection()
+        return str(selected[0]) if selected else ""
+
+    def _on_backend_selection(self, _event=None) -> None:
+        backend_name = self._selected_backend_name()
+        definition = BACKENDS_BY_NAME.get(backend_name)
+        if definition is None:
+            return
+        detail = self.backend_details.get(definition.key, {})
+        detected = bool(detail.get("detected"))
+        if detected:
+            version = str(detail.get("version") or "").strip()
+            version_text = f"Version {version}. " if version else ""
+            path_text = str(detail.get("path") or self.backend_paths.get(definition.key) or "").strip()
+            self.backend_detail_var.set(
+                f"{definition.name}: detected. {version_text}{definition.enables}. Installed at {path_text or '(path unavailable)'}."
+            )
+            return
+        command = backend_install_command(definition.name)
+        self.backend_detail_var.set(
+            f"{definition.name}: not detected. Until installed, {definition.enables.lower()} remain unavailable or limited. "
+            f"Suggested command: {command or 'use the official download page'}."
+        )
+
+    def _render_backend_detection(self) -> None:
+        if self.backend_tree is None:
+            return
+        detected_count = 0
+        missing_capabilities: list[str] = []
+        first_missing = ""
+        for definition in BACKEND_DEFINITIONS:
+            detail = self.backend_details.get(definition.key, {})
+            detected = bool(detail.get("detected"))
+            if detected:
+                detected_count += 1
+                status = "Detected"
+                tag = "detected"
+            else:
+                status = "Not installed"
+                tag = "missing"
+                missing_capabilities.append(definition.enables)
+                first_missing = first_missing or definition.name
+            self.backend_tree.item(definition.name, values=(status, definition.enables), tags=(tag,))
+
+        total = len(BACKEND_DEFINITIONS)
+        if missing_capabilities:
+            self.backend_status_var.set(
+                f"{detected_count}/{total} tools detected. The app can open normally; "
+                "features tied to missing tools stay unavailable or limited."
+            )
+        else:
+            self.backend_status_var.set(f"{detected_count}/{total} tools detected. All listed feature integrations are ready.")
+        current_selection = self._selected_backend_name()
+        target = current_selection or first_missing or BACKEND_DEFINITIONS[0].name
+        self.backend_tree.selection_set(target)
+        self.backend_tree.focus(target)
+        self.backend_tree.see(target)
+        self._on_backend_selection()
+
+    def _refresh_backends_clicked(self) -> None:
+        if self.backend_checking or self.backend_installing:
+            return
+        self.backend_checking = True
+        self.backend_status_var.set("Checking installed feature tools in the background...")
+        self.status_var.set("Checking optional feature tools...")
+
+        def worker() -> None:
+            try:
+                paths = detect_backend_paths()
+                details = collect_backend_details(paths, popen_kwargs=hidden_console_process_kwargs())
+
+                def apply() -> None:
+                    self.backend_paths = paths
+                    self.backend_details = details
+                    self._render_backend_detection()
+                    self._refresh_environment_status(self.last_manifest or {})
+                    self.status_var.set("Feature tool check complete.")
+
+                self.root.after(0, apply)
+            except Exception as exc:
+                self.root.after(0, lambda: self.backend_status_var.set(f"Feature tool check failed: {exc}"))
+                self.root.after(0, lambda: self.status_var.set("Feature tool check failed."))
+            finally:
+                self.root.after(0, lambda: setattr(self, "backend_checking", False))
+
+        threading.Thread(target=worker, daemon=True, name="updater-backend-detection").start()
+
+    def _open_selected_backend_link(self, link_kind: str) -> None:
+        backend_name = self._selected_backend_name()
+        definition = BACKENDS_BY_NAME.get(backend_name)
+        if definition is None:
+            messagebox.showwarning(APP_TITLE, "Select a feature tool first.")
+            return
+        url = str(getattr(definition, link_kind, "") or definition.download).strip()
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme.lower() != "https" or not parsed.hostname:
+            messagebox.showwarning(APP_TITLE, "The configured backend link is not a valid HTTPS URL.")
+            return
+        if bool(self.confirm_external_links_var.get()) and not messagebox.askyesno(
+            APP_TITLE,
+            f"Open the official {definition.name} page?\n\n{url}",
+        ):
+            return
+        webbrowser.open(url)
+        self.status_var.set(f"Opened the official {definition.name} page.")
+
+    def _copy_selected_backend_command(self) -> None:
+        backend_name = self._selected_backend_name()
+        command = backend_install_command(backend_name)
+        if not command:
+            messagebox.showwarning(APP_TITLE, "No package-manager command is available for the selected tool on this system.")
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(command)
+        self.status_var.set(f"Copied {backend_name} install command.")
+
+    def _install_selected_backend(self) -> None:
+        backend_name = self._selected_backend_name()
+        if not backend_name:
+            messagebox.showwarning(APP_TITLE, "Select a feature tool first.")
+            return
+        self._install_backend_names([backend_name])
+
+    def _install_missing_backends(self) -> None:
+        missing = [
+            definition.name
+            for definition in BACKEND_DEFINITIONS
+            if not bool(self.backend_details.get(definition.key, {}).get("detected"))
+        ]
+        if not missing:
+            messagebox.showinfo(APP_TITLE, "All listed feature tools are already detected.")
+            return
+        self._install_backend_names(missing)
+
+    def _install_backend_names(self, backend_names: list[str]) -> None:
+        if self.backend_installing or self.backend_checking:
+            return
+        targets = unique_install_targets(backend_names)
+        actions: list[tuple[str, list[str]]] = []
+        unavailable: list[str] = []
+        for backend_name in targets:
+            args, reason = backend_install_process_args(backend_name)
+            if args:
+                actions.append((backend_name, args))
+            else:
+                unavailable.append(f"{backend_name}: {reason}")
+        if unavailable:
+            messagebox.showwarning(
+                APP_TITLE,
+                "Some tools cannot be installed automatically on this system:\n\n"
+                + "\n".join(unavailable)
+                + "\n\nUse Official Page or Copy Install Command instead.",
+            )
+        if not actions:
+            return
+        names = ", ".join(name for name, _args in actions)
+        if not messagebox.askyesno(
+            APP_TITLE,
+            "Install these third-party feature tools?\n\n"
+            f"{names}\n\n"
+            "The updater will use your operating system's package manager. Administrator approval may appear, "
+            "and each tool remains covered by its own license and security updates.",
+        ):
+            return
+
+        self.backend_installing = True
+        self.progress.configure(mode="indeterminate")
+        self.progress.start(self._scaled(12))
+        self.status_var.set(f"Installing feature tools: {names}...")
+
+        def worker() -> None:
+            failures: list[str] = []
+            for backend_name, args in actions:
+                try:
+                    completed = subprocess.run(
+                        args,
+                        capture_output=True,
+                        text=True,
+                        timeout=1800,
+                        check=False,
+                        **hidden_console_process_kwargs(),
+                    )
+                    if int(completed.returncode) != 0:
+                        output = (completed.stderr or completed.stdout or "unknown package-manager error").strip()
+                        failures.append(f"{backend_name}: {output[:300]}")
+                except Exception as exc:
+                    failures.append(f"{backend_name}: {exc}")
+
+            def done() -> None:
+                self.progress.stop()
+                self.progress.configure(mode="determinate", value=0)
+                self.backend_installing = False
+                if failures:
+                    self.status_var.set("Some feature tools could not be installed.")
+                    messagebox.showwarning(APP_TITLE, "Installation finished with issues:\n\n" + "\n".join(failures))
+                else:
+                    self.status_var.set("Feature tool installation finished. Refreshing detection...")
+                    messagebox.showinfo(APP_TITLE, "Installation finished. Format Foundry will now re-check the tools.")
+                self._refresh_backends_clicked()
+
+            self.root.after(0, done)
+
+        threading.Thread(target=worker, daemon=True, name="updater-backend-install").start()
+
+    def _launch_main_app(self) -> None:
+        candidates: list[list[str]] = []
+        if os.name == "nt":
+            candidates.extend([[str(self.runtime_dir / "FormatFoundry.exe")], [str(self.script_dir / "FormatFoundry.exe")]])
+        elif sys.platform.startswith("linux"):
+            candidates.extend(
+                [
+                    [str(self.runtime_dir / "FormatFoundry")],
+                    ["/opt/format-foundry/FormatFoundry"],
+                    ["format-foundry"],
+                ]
+            )
+        source_script = self.script_dir / "modular_file_utility_suite.py"
+        if source_script.exists():
+            candidates.append([sys.executable, str(source_script)])
+        for command in candidates:
+            executable = command[0]
+            if os.path.isabs(executable) and not Path(executable).exists():
+                continue
+            try:
+                subprocess.Popen(command, cwd=str(self.runtime_dir), **hidden_console_process_kwargs())
+                self.status_var.set("Format Foundry launched.")
+                return
+            except Exception:
+                continue
+        messagebox.showwarning(APP_TITLE, "Format Foundry was not found beside the updater. Open it from the Start menu or app launcher.")
+
     def _browse_manifest(self) -> None:
         raw = filedialog.askopenfilename(
             title="Select update manifest JSON",
@@ -1522,11 +1894,13 @@ class UpdaterApp:
             if not allow_host:
                 raise RuntimeError(f"Manifest URL blocked by security settings.\n{host_reason}")
             payload = self._fetch_text_url(source, timeout=18)
-            return json.loads(payload)
+            data = json.loads(payload)
+            return normalize_update_metadata(data) if isinstance(data, dict) else data
         path = Path(source).expanduser().resolve()
         if not path.exists():
             raise RuntimeError(f"Manifest file was not found:\n{path}")
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return normalize_update_metadata(data) if isinstance(data, dict) else data
 
     def _check_updates_clicked(self) -> None:
         if self.checking:
@@ -1561,7 +1935,7 @@ class UpdaterApp:
                             blocked_reason = f"Download URL blocked by security settings: {host_reason}"
                             download_url = ""
 
-                current = self.version_var.get().strip() or CURRENT_VERSION
+                current = self.version_var.get().strip() or CURRENT_VERSION_LABEL
                 newer = is_version_newer(latest, current)
                 compatibility = evaluate_manifest_compatibility(self._environment_snapshot(), manifest)
                 compatibility_messages = [str(item).strip() for item in compatibility.get("messages", []) if str(item).strip()]
@@ -1576,7 +1950,8 @@ class UpdaterApp:
                     self.last_sha256 = sha256_value
                     self.last_download_block_reason = blocked_reason
                     self._refresh_environment_status(manifest)
-                    self.latest_var.set(f"Latest version: {latest}")
+                    latest_label = format_release_label(latest)
+                    self.latest_var.set(f"Latest version: {latest_label}")
                     self.download_var.set(f"Download URL: {download_url or '(not provided)'}")
                     self.sha256_var.set(f"SHA256: {sha256_value or '(not provided)'}")
                     combined_notes = notes or "(No release notes.)"
@@ -1587,11 +1962,11 @@ class UpdaterApp:
                     self._set_notes(combined_notes)
                     self.progress.configure(value=100)
                     if newer and bool(compatibility.get("allowed", True)):
-                        self.status_var.set(f"Update available: {current} -> {latest}")
-                        messagebox.showinfo(APP_TITLE, f"Update available.\n\nCurrent: {current}\nLatest: {latest}")
+                        self.status_var.set(f"Update available: {current} -> {latest_label}")
+                        messagebox.showinfo(APP_TITLE, f"Update available.\n\nCurrent: {current}\nLatest: {latest_label}")
                     elif newer:
-                        self.status_var.set(f"Update {latest} is not targeted to this environment.")
-                        messagebox.showwarning(APP_TITLE, f"Update {latest} is available, but it is not marked as compatible with this environment.")
+                        self.status_var.set(f"Update {latest_label} is not targeted to this environment.")
+                        messagebox.showwarning(APP_TITLE, f"Update {latest_label} is available, but it is not marked as compatible with this environment.")
                     else:
                         self.status_var.set(f"Already up to date ({current}).")
                 self.root.after(0, apply)
@@ -1727,14 +2102,7 @@ class UpdaterApp:
                         self.status_var.set(f"Download verified (SHA256): {target_path}")
                     else:
                         self.status_var.set(f"Download complete: {target_path}")
-                    if messagebox.askyesno(APP_TITLE, "Download complete.\n\nOpen file location?"):
-                        try:
-                            if os.name == "nt":
-                                subprocess.Popen(["explorer", "/select,", str(target_path)])
-                            else:
-                                self._open_output_dir()
-                        except Exception:
-                            self._open_output_dir()
+                    self._offer_verified_package_action(target_path)
 
                 self.root.after(0, done)
             except (urllib.error.URLError, TimeoutError) as exc:
@@ -1758,17 +2126,81 @@ class UpdaterApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _offer_verified_package_action(self, target_path: Path) -> None:
+        suffix = target_path.suffix.lower()
+        if os.name == "nt" and suffix == ".exe":
+            if not messagebox.askyesno(APP_TITLE, "Download verified.\n\nRun the installer now?"):
+                self._reveal_download(target_path)
+                return
+            try:
+                subprocess.Popen([str(target_path)], cwd=str(target_path.parent))
+                self.status_var.set(f"Installer launched: {target_path.name}")
+            except Exception as exc:
+                messagebox.showerror(APP_TITLE, f"Failed to launch installer:\n{exc}")
+                self._reveal_download(target_path)
+            return
 
-def _run_cli_mode() -> int | None:
+        if sys.platform.startswith("linux") and suffix == ".deb":
+            pkexec = shutil.which("pkexec")
+            apt = shutil.which("apt") or shutil.which("apt-get")
+            if pkexec and apt and messagebox.askyesno(
+                APP_TITLE,
+                "Download verified.\n\nInstall this Debian package now?\n\nYour desktop will request administrator approval.",
+            ):
+                try:
+                    subprocess.Popen([pkexec, apt, "install", "-y", str(target_path)])
+                    self.status_var.set(f"Installer launched: {target_path.name}")
+                    return
+                except Exception as exc:
+                    messagebox.showerror(APP_TITLE, f"Failed to start package installation:\n{exc}")
+            self._reveal_download(target_path)
+            return
+
+        if sys.platform.startswith("linux") and target_path.name.lower().endswith(".appimage"):
+            try:
+                target_path.chmod(target_path.stat().st_mode | 0o111)
+            except OSError as exc:
+                messagebox.showerror(APP_TITLE, f"Failed to make AppImage executable:\n{exc}")
+                self._reveal_download(target_path)
+                return
+            if messagebox.askyesno(APP_TITLE, "Download verified.\n\nLaunch the AppImage now?"):
+                try:
+                    subprocess.Popen([str(target_path)], cwd=str(target_path.parent))
+                    self.status_var.set(f"AppImage launched: {target_path.name}")
+                    return
+                except Exception as exc:
+                    messagebox.showerror(APP_TITLE, f"Failed to launch AppImage:\n{exc}")
+            self._reveal_download(target_path)
+            return
+
+        if messagebox.askyesno(APP_TITLE, "Download verified.\n\nShow the downloaded file?"):
+            self._reveal_download(target_path)
+
+    def _reveal_download(self, target_path: Path) -> None:
+        try:
+            if os.name == "nt":
+                subprocess.Popen(["explorer", "/select,", str(target_path)])
+            else:
+                opener = shutil.which("xdg-open")
+                if opener:
+                    subprocess.Popen([opener, str(target_path.parent)])
+                else:
+                    self._open_output_dir()
+        except Exception:
+            self._open_output_dir()
+
+
+def _run_cli_mode() -> tuple[int | None, bool]:
     parser = argparse.ArgumentParser(add_help=True, prog=APP_SLUG)
     parser.add_argument("--version", action="store_true", help="Print updater version and exit.")
     parser.add_argument("--smoke-test", action="store_true", help="Run a headless updater probe and exit.")
+    parser.add_argument("--backends", action="store_true", help="Open directly to the optional feature tools center.")
     args, unknown = parser.parse_known_args()
     if unknown:
         parser.error(f"unrecognized arguments: {' '.join(unknown)}")
     if args.version:
-        print(f"{APP_TITLE} {CURRENT_VERSION}")
-        return 0
+        print(f"{APP_TITLE} {CURRENT_VERSION_LABEL} ({CURRENT_VERSION})")
+        return 0, bool(args.backends)
     if args.smoke_test:
         script_dir = Path(__file__).resolve().parent
         resource_dir = Path(getattr(sys, "_MEIPASS", script_dir))
@@ -1787,12 +2219,12 @@ def _run_cli_mode() -> int | None:
             extra={"mode": "smoke-test"},
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-    return None
+        return 0, bool(args.backends)
+    return None, bool(args.backends)
 
 
 def main() -> None:
-    cli_status = _run_cli_mode()
+    cli_status, open_backends = _run_cli_mode()
     if cli_status is not None:
         raise SystemExit(cli_status)
     acquired, mutex_handle = _acquire_single_instance_mutex()
@@ -1802,7 +2234,7 @@ def main() -> None:
         return
     root = tk.Tk()
     try:
-        UpdaterApp(root)
+        UpdaterApp(root, open_backends=open_backends)
         root.mainloop()
     finally:
         _release_single_instance_mutex(mutex_handle)

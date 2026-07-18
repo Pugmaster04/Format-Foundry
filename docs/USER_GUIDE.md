@@ -2,15 +2,15 @@
 
 This guide keeps the detailed install, build, workflow, backend, and archive notes that used to live in the repo front-page README.
 
-Version: `1.8.17`
+Version: **Beta 0.5** (`0.5.0-beta` package version)
 
 Changelog:
 - `CHANGELOG.md` (full project history and release notes)
 - `archive/ARCHIVE_INDEX.md` (archive map and external archive-root policy)
 
 Canonical release line:
-- `1.8.17` is the current Windows + Linux UX, packaging, and audit milestone.
-- Version numbers are now coordinated per release target instead of following the older staged-major/staged-minor note that used to live in this file.
+- Beta 0.5 is the current Windows + Linux consumer-installation and backend-management milestone.
+- Every release before Beta 0.5 is classified as Alpha, regardless of its historical numeric identifier.
 
 This is a modular desktop suite for practical file workflows:
 - Convert
@@ -47,6 +47,8 @@ Installer behavior is configured to reduce duplicate installs and preserve upgra
 - Hides directory chooser for upgrades (`DisableDirPage=auto`)
 - Detects running app/updater instances via mutex and requests closing before install (`AppMutex`)
 - Replaces existing installed files with the new version during upgrade
+- Scans the stable product registration and standard install folder for older Format Foundry or legacy-name builds
+- Runs on a normal Windows computer without Codex, Python, a source checkout, or preinstalled backends
 
 Runtime behavior:
 - Main app is single-instance (one running copy at a time)
@@ -145,7 +147,7 @@ Convert queue behavior:
 
 ## 5) Optional Backends
 
-Base app functions work without all backends, but advanced workflows improve when these are installed:
+The app opens without separately installed backends. Missing tools only disable or limit their related workflows:
 - FFmpeg + FFprobe
 - Pandoc
 - LibreOffice
@@ -157,6 +159,13 @@ Torrent note:
 - Torrent file creation is built into the app through the bundled `torrentool` Python dependency.
 - Torrent download and extraction requires the optional `Aria2` backend.
 - The torrent workflow does not apply any download speed limit flags.
+
+Updater backend center behavior:
+- Open it from `Settings -> Backend Center`, the post-install option, or `FormatFoundry_Updater.exe --backends`
+- Detects tools without blocking the interface
+- Explains the feature impact of each missing tool
+- Installs allowlisted packages through winget or the detected Linux package manager after explicit confirmation
+- Provides official links and copyable commands when direct installation is unavailable
 
 Backends panel behavior:
 - Detected backend path: click to open file location
@@ -183,8 +192,10 @@ Example:
 
 ```json
 {
-  "latest_version": "1.8.17",
-  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.17/FormatFoundry_Setup_1.8.17.exe",
+  "latest_version": "v1.8.18",
+  "release_label": "Beta 0.5",
+  "package_version": "0.5.0-beta",
+  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18/FormatFoundry_Setup_0.5.0-beta.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "notes": "Release notes here",
   "compatibility": {
@@ -227,6 +238,17 @@ Outputs:
 - `release_bins\FormatFoundry_Setup_<version>.exe`
 
 `release_bins` is the staging folder for the current release line. Public release assets are versioned so the downloaded filenames match the shipped release exactly.
+
+Official tagged Windows releases require a real Authenticode code-signing PFX. Configure these GitHub Actions secrets before creating the release tag:
+- `WINDOWS_SIGNING_CERTIFICATE_BASE64`
+- `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`
+
+Optional repository variable:
+- `WINDOWS_SIGNING_TIMESTAMP_URL` (defaults to DigiCert's RFC 3161 timestamp service)
+
+The tagged build signs the app and updater before compiling the installer, signs the completed installer, verifies all three signatures, and only then allows the coordinated GitHub release job to run. Missing or invalid credentials fail the tagged build; branch CI remains unsigned test output.
+
+Beta 0.5 deliberately uses Git transport tag `v1.8.18`, which lets installed Alpha `1.8.17` updaters discover the lifecycle transition. Release titles, application UI, package metadata, and asset filenames continue to use `Beta 0.5` / `0.5.0-beta`.
 
 ### Linux build (preview)
 
@@ -288,7 +310,7 @@ Ubuntu 24.04 build-from-source prerequisites:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-tk tk-dev dpkg-dev curl
+sudo apt install -y python3 python3-venv python3-tk tk-dev dpkg-dev curl appstream
 ```
 
 If `apt update` fails because of an unrelated third-party repository on your machine, fix or disable that repository first. That is outside this project's build logic.
@@ -303,12 +325,13 @@ chmod +x build_linux.sh
 `build_linux.sh` now creates and reuses a repo-local `.venv` automatically. Do not run a system-wide `pip install` for this project on Ubuntu 24.04.
 
 GitHub Actions Linux workflow:
-- `.github/workflows/linux-build-release.yml`
+- `.github/workflows/cross-platform-build-release.yml`
 - Builds Linux artifacts on `ubuntu-latest`
 - Uploads workflow artifacts for branch builds
 - Validates the generated `.deb` layout in CI
 - Smoke-tests the built AppImage in CI
 - Uploads `FormatFoundry_linux_<version>_<arch>.tar.gz`, `format-foundry_<version>_<deb-arch>.deb`, and `FormatFoundry_linux_<version>_<arch>.AppImage` to tagged GitHub Releases
+- Publishes `SHA256SUMS` so downloaded release artifacts can be verified independently
 
 ### Basic dependencies
 

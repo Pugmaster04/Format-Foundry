@@ -1,4 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+
+version_info = 'packaging/windows/FormatFoundry_Updater_version_info.txt' if sys.platform == 'win32' else None
 
 
 a = Analysis(
@@ -40,4 +43,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['assets/universal_file_utility_suite.ico'],
+    version=version_info,
 )

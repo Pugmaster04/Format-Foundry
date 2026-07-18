@@ -24,6 +24,13 @@ set STAGED_APP=FormatFoundry_%PACKAGE_VERSION%.exe
 set STAGED_UPDATER=FormatFoundry_Updater_%PACKAGE_VERSION%.exe
 set STAGED_SETUP=FormatFoundry_Setup_%PACKAGE_VERSION%.exe
 
+echo [metadata] Generating Windows version resources...
+python "%ROOT%tools\generate_windows_version_info.py"
+if errorlevel 1 (
+  echo Windows version metadata generation failed.
+  exit /b 9
+)
+
 if exist "%SNAPSHOT_SCRIPT%" (
   echo [0/7] Creating pre-build source snapshot...
   powershell -NoProfile -ExecutionPolicy Bypass -File "%SNAPSHOT_SCRIPT%" -RepoRoot "%ROOT_CLEAN%" -Reason "pre-build" >nul
@@ -43,6 +50,15 @@ if errorlevel 1 (
   exit /b 4
 )
 
+echo [sign] Applying Authenticode to app and updater when signing is configured...
+for %%F in ("%ROOT%dist\FormatFoundry.exe" "%ROOT%dist\FormatFoundry_Updater.exe") do (
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%tools\sign_windows_artifact.ps1" -Path "%%~fF"
+  if errorlevel 1 (
+    echo Windows executable signing failed.
+    exit /b 10
+  )
+)
+
 echo [3/7] Building installer (Inno Setup)...
 set ISCC_PATH=
 if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" set ISCC_PATH=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe
@@ -56,6 +72,13 @@ if "%ISCC_PATH%"=="" (
 if errorlevel 1 (
   echo Installer build failed.
   exit /b 3
+)
+
+echo [sign] Applying Authenticode to the installer when signing is configured...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%tools\sign_windows_artifact.ps1" -Path "%ROOT%installer_output\FormatFoundry_Setup.exe"
+if errorlevel 1 (
+  echo Windows installer signing failed.
+  exit /b 11
 )
 
 echo [4/7] Staging executables in release_bins...
@@ -95,6 +118,12 @@ if errorlevel 1 (
   exit /b 5
 )
 
+powershell -NoProfile -Command "$files = Get-ChildItem -LiteralPath '%STAGE_DIR%' -File | Where-Object { $_.Name -in @('%STAGED_APP%', '%STAGED_UPDATER%', '%STAGED_SETUP%') }; $lines = foreach ($file in $files) { $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant(); \"$hash  $($file.Name)\" }; Set-Content -LiteralPath '%STAGE_DIR%\SHA256SUMS' -Value $lines -Encoding ascii"
+if errorlevel 1 (
+  echo Failed to generate SHA256SUMS.
+  exit /b 8
+)
+
 if exist "%SNAPSHOT_SCRIPT%" (
   echo [6/7] Creating post-build source + artifact snapshot...
   powershell -NoProfile -ExecutionPolicy Bypass -File "%SNAPSHOT_SCRIPT%" -RepoRoot "%ROOT_CLEAN%" -Reason "release-build" -IncludeBuildOutputs >nul
@@ -105,5 +134,6 @@ echo App EXE:      "%ROOT%dist\FormatFoundry.exe"
 echo Updater EXE:  "%ROOT%dist\FormatFoundry_Updater.exe"
 echo Installer:    "%ROOT%installer_output\FormatFoundry_Setup.exe"
 echo Versioned public assets: "%STAGE_DIR%\%STAGED_APP%", "%STAGE_DIR%\%STAGED_UPDATER%", "%STAGE_DIR%\%STAGED_SETUP%"
+echo Checksums:    "%STAGE_DIR%\SHA256SUMS"
 endlocal
 

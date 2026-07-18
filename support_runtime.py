@@ -14,6 +14,8 @@ from typing import Any, Iterable
 
 DEFAULT_GITHUB_REPO = "Pugmaster04/Format-Foundry"
 DEFAULT_GITHUB_REPO_URL = f"https://github.com/{DEFAULT_GITHUB_REPO}"
+DEFAULT_GITHUB_RELEASE_API_URL = f"https://api.github.com/repos/{DEFAULT_GITHUB_REPO}/releases/latest"
+RELEASE_TRANSPORT_TAG = "v1.8.18"
 DEFAULT_TRUSTED_UPDATE_HOSTS = (
     "github.com",
     "api.github.com",
@@ -91,6 +93,76 @@ def version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in parts if part.isdigit())
 
 
+def release_version_key(value: str) -> tuple[int, tuple[int, ...]]:
+    """Return a lifecycle-aware key for Format Foundry releases.
+
+    Historical releases were not explicitly labeled, but are now classified as
+    Alpha. Explicit Beta/RC/Stable labels therefore advance the lifecycle even
+    when their numeric marketing version is lower than a historical Alpha build.
+    """
+    normalized = str(value).strip().lower()
+    phase_rank = 1
+    if "release candidate" in normalized or re.search(r"(?:^|[^a-z])rc(?:[^a-z]|$)", normalized):
+        phase_rank = 3
+    elif "beta" in normalized:
+        phase_rank = 2
+    elif "alpha" in normalized:
+        phase_rank = 1
+    elif "stable" in normalized or re.search(r"(?:^|[^a-z])release(?:[^a-z]|$)", normalized):
+        phase_rank = 4
+    return phase_rank, version_tuple(normalized)
+
+
+def is_release_newer(candidate: str, current: str) -> bool:
+    candidate_phase, candidate_numbers = release_version_key(candidate)
+    current_phase, current_numbers = release_version_key(current)
+    if not candidate_numbers:
+        return False
+    if candidate_phase != current_phase:
+        return candidate_phase > current_phase
+    width = max(len(candidate_numbers), len(current_numbers))
+    candidate_numbers += (0,) * (width - len(candidate_numbers))
+    current_numbers += (0,) * (width - len(current_numbers))
+    return candidate_numbers > current_numbers
+
+
+def format_release_label(value: str) -> str:
+    normalized = str(value).strip()
+    numbers = list(version_tuple(normalized))
+    while len(numbers) > 2 and numbers[-1] == 0:
+        numbers.pop()
+    numeric_label = ".".join(str(number) for number in numbers) or normalized
+    lowered = normalized.lower()
+    if "beta" in lowered:
+        return f"Beta {numeric_label}"
+    if "release candidate" in lowered or re.search(r"(?:^|[^a-z])rc(?:[^a-z]|$)", lowered):
+        return f"Release Candidate {numeric_label}"
+    if "stable" in lowered or "release" in lowered:
+        return f"Stable {numeric_label}"
+    return f"Alpha {numeric_label}"
+
+
+def release_identity_from_github(payload: dict[str, Any]) -> str:
+    """Choose the lifecycle identity while retaining a legacy-compatible tag.
+
+    Alpha updaters only compare GitHub's numeric tag. Beta 0.5 therefore ships
+    under a numeric transport tag, while current clients compare the explicit
+    lifecycle name published on the same release.
+    """
+    release_name = str(payload.get("name") or "").strip()
+    tag_name = str(payload.get("tag_name") or "").strip()
+    if re.search(r"(?:^|\b)(?:alpha|beta|rc|stable|release candidate)(?:\b|$)", release_name, re.IGNORECASE):
+        return release_name
+    return tag_name or release_name
+
+
+def _explicit_release_label(value: Any) -> str:
+    label = str(value or "").strip()
+    if re.search(r"(?:^|\b)(?:alpha|beta|rc|stable|release candidate)(?:\b|$)", label, re.IGNORECASE):
+        return label
+    return ""
+
+
 def version_meets_minimum(actual: str, minimum: str) -> bool:
     actual_tuple = version_tuple(actual)
     minimum_tuple = version_tuple(minimum)
@@ -102,6 +174,23 @@ def version_meets_minimum(actual: str, minimum: str) -> bool:
     actual_tuple = actual_tuple + (0,) * (width - len(actual_tuple))
     minimum_tuple = minimum_tuple + (0,) * (width - len(minimum_tuple))
     return actual_tuple >= minimum_tuple
+
+
+def normalize_update_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize either a project manifest or a GitHub release response."""
+    normalized = dict(payload)
+    if payload.get("tag_name") or payload.get("html_url"):
+        normalized["latest_version"] = release_identity_from_github(payload)
+        normalized["release_tag"] = str(payload.get("tag_name") or "").strip()
+        normalized["release_name"] = str(payload.get("name") or "").strip()
+        normalized["release_url"] = str(payload.get("html_url") or "").strip()
+        normalized["notes"] = str(payload.get("body") or "").strip()
+    else:
+        release_label = _explicit_release_label(payload.get("release_label"))
+        if release_label:
+            normalized["transport_version"] = str(payload.get("latest_version") or payload.get("version") or "").strip()
+            normalized["latest_version"] = release_label
+    return normalized
 
 
 @lru_cache(maxsize=1)
@@ -399,11 +488,16 @@ def build_environment_snapshot(
     script_dir: Path,
     resource_dir: Path,
     backend_paths: dict[str, str | None],
+    backend_details_override: dict[str, dict[str, Any]] | None = None,
     settings: dict[str, Any] | None = None,
     popen_kwargs: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    backend_details = collect_backend_details(backend_paths, popen_kwargs=popen_kwargs)
+    backend_details = (
+        dict(backend_details_override)
+        if backend_details_override is not None
+        else collect_backend_details(backend_paths, popen_kwargs=popen_kwargs)
+    )
     snapshot: dict[str, Any] = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "app": {

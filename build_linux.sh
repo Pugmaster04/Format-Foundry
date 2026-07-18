@@ -54,6 +54,7 @@ PY
 bootstrap_local_virtualenv() {
   require_command_or_exit python3 "python3"
   require_command_or_exit curl "curl"
+  require_command_or_exit sha256sum "coreutils"
   require_command_or_exit dpkg-deb "dpkg-dev"
   require_command_or_exit appstreamcli "appstream"
   require_python_module_or_exit python3 venv "python3-venv"
@@ -84,6 +85,7 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
 fi
 
 require_command_or_exit curl "curl"
+require_command_or_exit sha256sum "coreutils"
 require_command_or_exit dpkg-deb "dpkg-dev"
 require_command_or_exit appstreamcli "appstream"
 require_python_module_or_exit "${PYTHON_BIN}" tkinter "python3-tk"
@@ -135,6 +137,7 @@ if not match:
 print(match.group(1))
 PY
 )"
+DEBIAN_VERSION="${PACKAGE_VERSION/-beta/~beta}"
 
 TAR_BASENAME="${APP_BINARY_NAME}_linux_${PACKAGE_VERSION}_${ARCH}"
 TAR_DIR="release_bins/${TAR_BASENAME}"
@@ -143,6 +146,14 @@ DEB_PACKAGE="release_bins/${PACKAGE_NAME}_${PACKAGE_VERSION}_${DEB_ARCH}.deb"
 APPIMAGE_PACKAGE="release_bins/${APP_BINARY_NAME}_linux_${PACKAGE_VERSION}_${ARCH}.AppImage"
 APPIMAGE_TOOL="${APPIMAGE_TOOL_DIR}/appimagetool-${APPIMAGE_ARCH}.AppImage"
 APPIMAGE_TOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage"
+case "$APPIMAGE_ARCH" in
+  x86_64)
+    APPIMAGE_TOOL_SHA256="${APPIMAGE_TOOL_SHA256:-a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0}"
+    ;;
+  aarch64)
+    APPIMAGE_TOOL_SHA256="${APPIMAGE_TOOL_SHA256:-1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe}"
+    ;;
+esac
 
 render_desktop_file() {
   local exec_target="$1"
@@ -172,15 +183,23 @@ PY
 
 download_appimagetool() {
   mkdir -p "$APPIMAGE_TOOL_DIR"
-  if [[ ! -x "$APPIMAGE_TOOL" ]]; then
-    echo "Downloading appimagetool for ${APPIMAGE_ARCH}..."
-    curl -L "$APPIMAGE_TOOL_URL" -o "$APPIMAGE_TOOL"
-    chmod +x "$APPIMAGE_TOOL"
+  if [[ -f "$APPIMAGE_TOOL" ]] && ! echo "${APPIMAGE_TOOL_SHA256}  ${APPIMAGE_TOOL}" | sha256sum --check --status; then
+    echo "Discarding cached appimagetool because its SHA256 does not match."
+    rm -f "$APPIMAGE_TOOL"
   fi
+  if [[ ! -f "$APPIMAGE_TOOL" ]]; then
+    echo "Downloading appimagetool for ${APPIMAGE_ARCH}..."
+    curl --fail --location --proto '=https' --tlsv1.2 "$APPIMAGE_TOOL_URL" -o "$APPIMAGE_TOOL"
+  fi
+  echo "${APPIMAGE_TOOL_SHA256}  ${APPIMAGE_TOOL}" | sha256sum --check --status || {
+    echo "appimagetool SHA256 verification failed. Refusing to execute ${APPIMAGE_TOOL}." >&2
+    rm -f "$APPIMAGE_TOOL"
+    exit 1
+  }
+  chmod +x "$APPIMAGE_TOOL"
 }
 
 echo "[1/8] Installing Python dependencies..."
-"${PYTHON_BIN}" -m pip install --upgrade pip
 "${PYTHON_BIN}" -m pip install -r requirements.txt
 
 echo "[2/8] Building app binary..."
@@ -257,12 +276,12 @@ chmod 755 \
   "${DEB_ROOT}/usr/bin/format-foundry-updater"
 cat > "${DEB_ROOT}/DEBIAN/control" <<EOF
 Package: ${PACKAGE_NAME}
-Version: ${PACKAGE_VERSION}
+Version: ${DEBIAN_VERSION}
 Section: utils
 Priority: optional
 Architecture: ${DEB_ARCH}
 Maintainer: Pugmaster04 <noreply@users.noreply.github.com>
-Depends: python3-tk, xdg-utils
+Depends: xdg-utils
 Suggests: ffmpeg, pandoc, libreoffice, p7zip-full, imagemagick, aria2
 Description: ${APP_NAME}
  Modular desktop utility for conversion, extraction, archives, media workflows,
@@ -302,6 +321,15 @@ echo "[8/8] Validating install surface..."
   --required-asset "format-foundry_${PACKAGE_VERSION}_${DEB_ARCH}.deb" \
   --required-asset "FormatFoundry_linux_${PACKAGE_VERSION}_${ARCH}.AppImage"
 
+(
+  cd release_bins
+  sha256sum \
+    "${TAR_BASENAME}.tar.gz" \
+    "${PACKAGE_NAME}_${PACKAGE_VERSION}_${DEB_ARCH}.deb" \
+    "${APP_BINARY_NAME}_linux_${PACKAGE_VERSION}_${ARCH}.AppImage" \
+    > "SHA256SUMS"
+)
+
 echo "Done."
 echo "App binary:      $ROOT/dist/${APP_BINARY_NAME}"
 echo "Updater binary:  $ROOT/dist/${UPDATER_BINARY_NAME}"
@@ -309,3 +337,4 @@ echo "Staged output:   $ROOT/release_bins"
 echo "Linux package:   $ROOT/$TAR_PACKAGE"
 echo "Debian package:  $ROOT/$DEB_PACKAGE"
 echo "AppImage:        $ROOT/$APPIMAGE_PACKAGE"
+echo "Checksums:       $ROOT/release_bins/SHA256SUMS"

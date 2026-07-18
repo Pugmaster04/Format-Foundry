@@ -4,12 +4,14 @@ import argparse
 import csv
 import glob
 import hashlib
+import heapq
 import json
 import math
 import os
 import platform
 import queue
 import re
+import signal
 import shlex
 import shutil
 import socket
@@ -34,14 +36,25 @@ from tkinter import END, SINGLE, BooleanVar, IntVar, StringVar, filedialog, mess
 from tkinter.scrolledtext import ScrolledText
 
 from aria2_support import build_download_command, call_rpc, process_is_running, terminate_process
+from archive_support import safe_extract_tar, safe_extract_zip
+from backend_support import (
+    BACKEND_DESCRIPTIONS as SHARED_BACKEND_DESCRIPTIONS,
+    BACKEND_LINKS as SHARED_BACKEND_LINKS,
+    backend_install_command,
+    detect_backend_paths,
+)
 from support_runtime import (
     BACKEND_KEY_TO_NAME,
     BACKEND_NAME_TO_KEY,
+    DEFAULT_GITHUB_RELEASE_API_URL,
     DEFAULT_GITHUB_REPO_URL,
     DEFAULT_TRUSTED_UPDATE_HOSTS,
     build_environment_snapshot,
     collect_backend_details,
     evaluate_manifest_compatibility,
+    format_release_label,
+    is_release_newer,
+    normalize_update_metadata,
     parse_trusted_host_patterns,
     validate_trusted_remote_url,
 )
@@ -86,7 +99,8 @@ except Exception:
 APP_TITLE = "Format Foundry"
 APP_SLUG = "FormatFoundry"
 LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
-APP_VERSION = "1.8.17"
+APP_VERSION = "0.5.0-beta"
+APP_VERSION_LABEL = "Beta 0.5"
 DEFAULT_UPDATE_MANIFEST_URL = ""
 APP_EXE_BASENAME = "FormatFoundry"
 UPDATER_EXE_BASENAME = "FormatFoundry_Updater"
@@ -184,26 +198,8 @@ def resolve_settings_dir(root: Path, settings_filename: str) -> Path:
     return preferred
 
 
-def detect_linux_package_manager() -> str:
-    for manager in ("apt", "dnf", "pacman", "zypper"):
-        if shutil.which(manager):
-            return manager
-    return ""
-
-
 def backend_install_command_for_platform(backend_name: str) -> str:
-    links = BACKEND_LINKS.get(backend_name, {})
-    platform_key = current_platform_key()
-    if platform_key == "windows":
-        return str(links.get("install_cmd_windows") or "").strip()
-    if platform_key == "linux":
-        manager = detect_linux_package_manager()
-        packages = LINUX_BACKEND_PACKAGES.get(backend_name, {}).get(manager, "")
-        template = LINUX_PACKAGE_MANAGER_COMMANDS.get(manager, "")
-        if packages and template:
-            return template.format(packages=packages)
-        return "Use your Linux package manager and the install page linked above."
-    return str(links.get("install_cmd_windows") or "").strip()
+    return backend_install_command(backend_name)
 
 HEIF_IMAGE_EXTS = {
     ".heic",
@@ -449,6 +445,10 @@ BACKEND_DESCRIPTIONS: dict[str, str] = {
     "Aria2": "Torrent download backend used to fetch and extract torrent contents with no speed cap flags applied.",
 }
 
+# Keep the app and standalone updater on the same consumer-facing backend contract.
+BACKEND_LINKS = SHARED_BACKEND_LINKS
+BACKEND_DESCRIPTIONS = SHARED_BACKEND_DESCRIPTIONS
+
 
 def is_torrent_source_path(path: Path) -> bool:
     return path.suffix.lower() in TORRENT_SOURCE_EXTS
@@ -561,20 +561,8 @@ def is_archive_input_path(path: Path) -> bool:
     return path.suffix.lower() in ARCHIVE_INPUT_EXTS or lower_name.endswith((".tar.gz", ".tar.bz2", ".tar.xz"))
 
 
-def version_tuple(value: str) -> tuple[int, ...]:
-    parts = re.split(r"[^0-9]+", value.strip())
-    return tuple(int(part) for part in parts if part.isdigit())
-
-
 def is_version_newer(candidate: str, current: str) -> bool:
-    c = version_tuple(candidate)
-    k = version_tuple(current)
-    if not c:
-        return False
-    width = max(len(c), len(k))
-    c = c + (0,) * (width - len(c))
-    k = k + (0,) * (width - len(k))
-    return c > k
+    return is_release_newer(candidate, current)
 
 
 def hash_file(path: Path, algorithm: str = "sha256") -> str:
@@ -2013,15 +2001,12 @@ class TaskEngine:
         suffix = archive_path.suffix.lower()
         lower_name = archive_path.name.lower()
         if suffix == ".zip":
-            with zipfile.ZipFile(archive_path, "r") as archive:
-                archive.extractall(destination)
+            safe_extract_zip(archive_path, destination)
             return destination
         if suffix in {".tar", ".gz", ".bz2", ".xz"} or lower_name.endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
-            with tarfile.open(archive_path, "r:*") as archive:
-                archive.extractall(destination)
+            safe_extract_tar(archive_path, destination)
             return destination
-        shutil.unpack_archive(str(archive_path), str(destination))
-        return destination
+        raise RuntimeError(f"Unsupported archive format: {archive_path.name}")
 
 
 class SuiteApp:
@@ -2036,6 +2021,9 @@ class SuiteApp:
 
         self.main_thread = threading.current_thread()
         self.ui_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self._process_lock = threading.Lock()
+        self._active_processes: dict[int, set[subprocess.Popen[Any]]] = {}
+        self._task_cancel_events: dict[int, threading.Event] = {}
         self._window_icon_photo = None
         self.script_dir = Path(__file__).resolve().parent
         self.resource_dir = Path(getattr(sys, "_MEIPASS", self.script_dir))
@@ -2055,7 +2043,8 @@ class SuiteApp:
         self.dark_mode_var = BooleanVar(value=bool(self.settings.get("dark_mode", False)))
         self.fullscreen_var = BooleanVar(value=bool(self.settings.get("fullscreen", False)))
         self.borderless_max_var = BooleanVar(value=bool(self.settings.get("borderless_maximized", False)))
-        self.show_overview_panel_var = BooleanVar(value=bool(self.settings.get("show_overview_panel", True)))
+        self.show_overview_panel_var = BooleanVar(value=bool(self.settings.get("show_overview_panel", False)))
+        self._overview_auto_hidden = False
         self._startup_window_shown = False
         self._startup_tasks_scheduled = False
         self._startup_update_flow_handled = False
@@ -2095,8 +2084,9 @@ class SuiteApp:
         self.root.bind_all("<Button-4>", self._dispatch_mousewheel_scroll, add="+")
         self.root.bind_all("<Button-5>", self._dispatch_mousewheel_scroll, add="+")
 
-        self.backends = BackendRegistry.detect()
+        self.backends = BackendRegistry(None, None, None, None, None, None, None)
         self.backend_runtime_details: dict[str, dict[str, Any]] = {}
+        self._backend_refresh_thread: threading.Thread | None = None
         self.engine = TaskEngine(self)
 
         if not self.settings.get("first_run_done", False):
@@ -2112,6 +2102,7 @@ class SuiteApp:
         self._set_backend_summary_status()
         self._refresh_hover_tooltip_preferences()
         self.root.after(100, self._poll_ui_queue)
+        self.root.after(40, lambda: self._refresh_backend_runtime_details_async(force_refresh=True))
         show_startup_animation = bool(self.settings.get("show_startup_animation", True))
         if bool(self.settings.get("check_updates_on_startup", True)):
             show_startup_animation = True
@@ -2120,7 +2111,6 @@ class SuiteApp:
                 self._show_startup_logo_animation(show_main_when_done=False, modal=True)
             except Exception as exc:
                 self.log(f"Startup animation unavailable: {exc}")
-        self._run_startup_update_flow()
         self._show_main_window_after_startup()
 
     def _resolve_appdata_dir(self) -> Path:
@@ -2134,7 +2124,7 @@ class SuiteApp:
             "high_contrast_mode": False,
             "fullscreen": False,
             "borderless_maximized": False,
-            "show_overview_panel": True,
+            "show_overview_panel": False,
             "reduce_motion": False,
             "ui_scale_percent": 100,
             "use_hover_tooltips": False,
@@ -2269,13 +2259,13 @@ class SuiteApp:
         ttk.Checkbutton(row2, text="Check for updates on startup", variable=update_check_var).pack(anchor="w")
         ttk.Checkbutton(
             row2,
-            text="Prompt to install missing backends on startup (recommended)",
+            text="Prompt to review missing feature tools on startup (recommended)",
             variable=backend_prompt_var,
         ).pack(anchor="w")
         ttk.Checkbutton(row2, text="Show startup logo animation", variable=startup_animation_var).pack(anchor="w")
         ttk.Checkbutton(row2, text="Confirm before opening external links", variable=security_confirm_links_var).pack(anchor="w")
         ttk.Checkbutton(row2, text="Require HTTPS update manifest URLs", variable=security_https_manifest_var).pack(anchor="w")
-        ttk.Button(row2, text="Review Missing Backends Now", command=self._open_backend_install_assistant).pack(anchor="w", pady=(6, 0))
+        ttk.Button(row2, text="Open Backend Center", command=self._open_backend_install_assistant).pack(anchor="w", pady=(6, 0))
 
         row3 = ttk.Frame(content_body)
         row3.pack(fill="x", pady=(0, 10))
@@ -2284,7 +2274,7 @@ class SuiteApp:
 
         ttk.Label(
             content_body,
-            text='Manifest example: {"latest_version":"1.8.17","download_url":"https://example.com/FormatFoundry_Setup_1.8.17.exe","notes":"Release notes"}',
+            text='Manifest example: {"latest_version":"0.5.0-beta","download_url":"https://example.com/FormatFoundry_Setup_0.5.0-beta.exe","notes":"Release notes"}',
             foreground="#57687F",
             wraplength=590,
             justify="left",
@@ -2410,14 +2400,6 @@ class SuiteApp:
     ) -> ttk.Frame:
         host = ttk.Frame(window, style="App.TFrame", padding=padding)
         host.pack(fill="both", expand=True)
-        strip = ttk.Frame(host, style="DragStrip.TFrame", height=self._scaled(18))
-        strip.pack(fill="x", pady=(0, 10))
-        strip.pack_propagate(False)
-        label = ttk.Label(strip, text=drag_label, style="DragStrip.TLabel", anchor="center")
-        label.pack(fill="both", expand=True)
-        offset_holder: dict[str, tuple[int, int] | None] = {"value": None}
-        self._bind_drag_handlers_to_window(window, strip, offset_holder)
-        self._bind_drag_handlers_to_window(window, label, offset_holder)
         body = ttk.Frame(host, style="App.TFrame")
         body.pack(fill="both", expand=True)
         return body
@@ -3299,12 +3281,7 @@ class SuiteApp:
         widget.bind("<ButtonRelease-1>", self._end_window_drag, add="+")
 
     def _window_drag_strip_enabled(self) -> bool:
-        if self._window_mode_state != "normal":
-            return False
-        try:
-            return str(self.root.state()) == "normal"
-        except Exception:
-            return True
+        return self._window_mode_state == "borderless"
 
     def _update_window_drag_strip_visibility(self) -> None:
         if self.window_drag_strip is None:
@@ -3344,6 +3321,16 @@ class SuiteApp:
         if self._window_mode_state == "normal":
             self._capture_normal_window_state()
         self._update_window_drag_strip_visibility()
+        try:
+            compact = self.root.winfo_width() < self._scaled(1400) or self.root.winfo_height() < self._scaled(900)
+        except Exception:
+            compact = False
+        if compact and self._overview_panel_host is not None and self._overview_panel_host.winfo_manager():
+            self._overview_panel_host.pack_forget()
+            self._overview_auto_hidden = True
+        elif not compact and self._overview_auto_hidden:
+            self._overview_auto_hidden = False
+            self._apply_overview_panel_visibility(log_change=False)
 
     def _on_root_focus_in(self, _event=None) -> None:
         if not self._startup_taskbar_attention_pending:
@@ -3493,7 +3480,7 @@ class SuiteApp:
         settings_menu.add_command(label="Uninstall...", command=self._open_uninstall_dialog)
         settings_menu.add_separator()
         settings_menu.add_command(label="Run First-Run Setup Wizard", command=self._rerun_setup_wizard)
-        settings_menu.add_command(label="Install Missing Backends", command=self._open_backend_install_assistant)
+        settings_menu.add_command(label="Backend Center", command=self._open_backend_install_assistant)
         settings_menu.add_command(label="Export Bug Report...", command=self._export_bug_report)
         settings_menu.add_separator()
         settings_menu.add_checkbutton(
@@ -3571,7 +3558,7 @@ class SuiteApp:
         meta_col = ttk.Frame(hero_row, style="HeaderCard.TFrame")
         meta_col.grid(row=0, column=1, sticky="ne")
         for value, label in (
-            (f"v{APP_VERSION}", "Canonical release"),
+            (APP_VERSION_LABEL, "Canonical release"),
             (platform.system() or "Desktop", "Runtime"),
             (self.header_backend_var, "Detected backends"),
         ):
@@ -3757,7 +3744,7 @@ class SuiteApp:
         host = self._overview_panel_host
         if host is None:
             return
-        visible = bool(self.show_overview_panel_var.get())
+        visible = bool(self.show_overview_panel_var.get()) and not self._overview_auto_hidden
         if visible:
             if not host.winfo_manager():
                 pack_kwargs: dict[str, Any] = {"fill": "x", "pady": (0, 8)}
@@ -4405,6 +4392,51 @@ class SuiteApp:
             )
         return self.backend_runtime_details
 
+    def _refresh_backend_runtime_details_async(self, force_refresh: bool = False) -> bool:
+        if self._backend_refresh_thread and self._backend_refresh_thread.is_alive():
+            return False
+
+        self.header_backend_var.set("Detecting...")
+        self.status_right_var.set("Backends: detecting...")
+        for tab in self.tabs.values():
+            callback = getattr(tab, "show_backend_detection_pending", None)
+            if callable(callback):
+                callback()
+
+        def worker() -> None:
+            try:
+                registry = BackendRegistry.detect(force_refresh=force_refresh)
+                details = collect_backend_details(
+                    {
+                        "ffmpeg": registry.ffmpeg,
+                        "ffprobe": registry.ffprobe,
+                        "pandoc": registry.pandoc,
+                        "libreoffice": registry.libreoffice,
+                        "sevenzip": registry.sevenzip,
+                        "imagemagick": registry.imagemagick,
+                        "aria2": registry.aria2,
+                    },
+                    popen_kwargs=hidden_console_process_kwargs(),
+                )
+
+                def apply() -> None:
+                    self.backends = registry
+                    self.backend_runtime_details = details
+                    self._set_backend_summary_status()
+                    for tab in self.tabs.values():
+                        callback = getattr(tab, "render_backend_detection", None)
+                        if callable(callback):
+                            callback()
+                    self.log("Backend detection finished.")
+
+                self.call_ui(apply)
+            except Exception as exc:
+                self.call_ui(lambda: self.log(f"Backend detection failed: {exc}"))
+
+        self._backend_refresh_thread = threading.Thread(target=worker, daemon=True, name="backend-detection")
+        self._backend_refresh_thread.start()
+        return True
+
     def _trusted_update_hosts(self) -> tuple[str, ...]:
         raw = str(self.settings.get("security_trusted_update_hosts", "")).strip()
         return parse_trusted_host_patterns(raw or DEFAULT_TRUSTED_UPDATE_HOSTS)
@@ -4449,6 +4481,7 @@ class SuiteApp:
             script_dir=self.script_dir,
             resource_dir=self.resource_dir,
             backend_paths=self._backend_paths_map(),
+            backend_details_override=self.backend_runtime_details or None,
             settings=self._support_settings_snapshot(),
             popen_kwargs=hidden_console_process_kwargs(),
             extra=extra,
@@ -4609,6 +4642,11 @@ class SuiteApp:
         return len(blocks)
 
     def _open_backend_install_assistant(self, backend_names: list[str] | None = None) -> None:
+        if self._launch_updater(wait=False, show_errors=False, extra_args=["--backends"]):
+            self.log("Opened the updater backend center.")
+            return
+
+        # Source-only fallback when the standalone updater is unavailable.
         self._refresh_backends(force_refresh=True)
         missing = self._missing_backend_names()
         targets = list(backend_names) if backend_names is not None else missing
@@ -4706,10 +4744,11 @@ class SuiteApp:
         if not missing:
             return
         prompt = (
-            "Optional backends are missing:\n\n"
+            "Some optional feature tools are missing:\n\n"
             f"{', '.join(missing)}\n\n"
-            "These are not required for the base app, but recommended for complex actions.\n\n"
-            "Would you like to review install options now?"
+            "Format Foundry will still open, but the related media, document, archive, image, "
+            "or download features stay limited until their tool is installed.\n\n"
+            "Open the updater's backend center now?"
         )
         if messagebox.askyesno(APP_TITLE, prompt):
             self._open_backend_install_assistant(missing)
@@ -4722,6 +4761,9 @@ class SuiteApp:
                 return
             except Exception:
                 self.log(f"Backend path is unavailable for {backend_name}: {value}")
+        if self._launch_updater(wait=False, show_errors=False, extra_args=["--backends"]):
+            self.log(f"Opened the updater backend center for missing tool: {backend_name}.")
+            return
         install_link = self._backend_install_link(backend_name)
         if install_link:
             self._open_external_url(install_link, purpose=f"{backend_name} install page")
@@ -4766,7 +4808,7 @@ class SuiteApp:
         high_contrast_var = BooleanVar(value=bool(self.settings.get("high_contrast_mode", False)))
         fullscreen_var = BooleanVar(value=bool(self.settings.get("fullscreen", False)))
         borderless_var = BooleanVar(value=bool(self.settings.get("borderless_maximized", False)))
-        show_overview_var = BooleanVar(value=bool(self.settings.get("show_overview_panel", True)))
+        show_overview_var = BooleanVar(value=bool(self.settings.get("show_overview_panel", False)))
         reduce_motion_var = BooleanVar(value=bool(self.settings.get("reduce_motion", False)))
         ui_scale_var = StringVar(value=str(int(self.settings.get("ui_scale_percent", 100))))
         hover_tooltips_var = BooleanVar(value=bool(self.settings.get("use_hover_tooltips", False)))
@@ -4944,7 +4986,7 @@ class SuiteApp:
         ttk.Entry(general_tab, textvariable=update_url_var).pack(fill="x", pady=(4, 0))
         update_example_label = ttk.Label(
             general_tab,
-            text='Example JSON: {"latest_version":"1.8.17","download_url":"https://example.com/FormatFoundry_Setup_1.8.17.exe","notes":"Release notes"}',
+            text='Example JSON: {"latest_version":"0.5.0-beta","download_url":"https://example.com/FormatFoundry_Setup_0.5.0-beta.exe","notes":"Release notes"}',
             foreground="#57687F",
             justify="left",
         )
@@ -4954,7 +4996,7 @@ class SuiteApp:
         ttk.Checkbutton(startup_tab, text="Check for updates on startup", variable=update_check_var).pack(anchor="w")
         ttk.Checkbutton(
             startup_tab,
-            text="Prompt to install missing optional backends on startup",
+            text="Prompt to review missing feature tools on startup",
             variable=backend_prompt_var,
         ).pack(anchor="w", pady=(2, 0))
         ttk.Checkbutton(startup_tab, text="Show startup logo animation", variable=startup_animation_var).pack(anchor="w", pady=(2, 0))
@@ -4967,7 +5009,7 @@ class SuiteApp:
         backend_button_row = ttk.Frame(startup_tab, style="App.TFrame")
         backend_button_row.pack(fill="x", pady=(12, 0))
         backend_buttons = [
-            ttk.Button(backend_button_row, text="Install Missing Backends Now", command=self._open_backend_install_assistant),
+            ttk.Button(backend_button_row, text="Open Backend Center in Updater", command=self._open_backend_install_assistant),
         ]
         self._bind_flow_layout(backend_button_row, backend_buttons, min_item_width=240, max_columns=1)
 
@@ -5225,7 +5267,7 @@ class SuiteApp:
         total = len(self.backends.as_rows())
         messagebox.showinfo(
             APP_TITLE,
-            f"{APP_TITLE}\nVersion {APP_VERSION}\n\n"
+            f"{APP_TITLE}\n{APP_VERSION_LABEL}\nPackage version {APP_VERSION}\n\n"
             f"Modules: {len(self.tabs)}\n"
             f"Backends detected: {available}/{total}\n"
             f"Settings file: {self.settings_path}\n"
@@ -5257,6 +5299,11 @@ class SuiteApp:
             )
             if not should_close:
                 return
+        for tab in self.tabs.values():
+            request_cancel = getattr(tab, "request_cancel", None)
+            if callable(request_cancel):
+                request_cancel(silent=True)
+        self._terminate_all_processes()
         self.root.destroy()
 
     def _resolve_updater_launch_command(self) -> list[str] | None:
@@ -5333,7 +5380,12 @@ class SuiteApp:
         path.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
         return path
 
-    def _launch_updater(self, wait: bool = False, show_errors: bool = True) -> bool:
+    def _launch_updater(
+        self,
+        wait: bool = False,
+        show_errors: bool = True,
+        extra_args: list[str] | None = None,
+    ) -> bool:
         command = self._resolve_updater_launch_command()
         if not command:
             if show_errors:
@@ -5344,6 +5396,8 @@ class SuiteApp:
             return False
         try:
             self._sync_updater_settings()
+            if extra_args:
+                command = [*command, *extra_args]
             popen_kwargs: dict[str, Any] = {"cwd": str(self.runtime_dir)}
             popen_kwargs.update(hidden_console_process_kwargs())
             process = subprocess.Popen(command, **popen_kwargs)
@@ -5417,16 +5471,7 @@ class SuiteApp:
         manifest_url = str(self.settings.get("update_manifest_url", "")).strip()
         if manifest_url:
             return manifest_url
-        local_candidates = [
-            self.runtime_dir / "update_manifest.json",
-            self.runtime_dir / "update_manifest.example.json",
-            self.script_dir / "update_manifest.json",
-            self.script_dir / "update_manifest.example.json",
-            self.resource_dir / "update_manifest.json",
-            self.resource_dir / "update_manifest.example.json",
-        ]
-        found = next((candidate for candidate in local_candidates if candidate.exists()), None)
-        return found.as_uri() if found else ""
+        return DEFAULT_GITHUB_RELEASE_API_URL
 
     def _run_startup_update_flow(self) -> None:
         if not bool(self.settings.get("check_updates_on_startup", True)):
@@ -5447,9 +5492,13 @@ class SuiteApp:
             return
 
         try:
-            with urllib.request.urlopen(manifest_url, timeout=12) as response:
+            request = urllib.request.Request(
+                manifest_url,
+                headers={"User-Agent": f"FormatFoundry/{APP_VERSION}", "Accept": "application/vnd.github+json, application/json"},
+            )
+            with urllib.request.urlopen(request, timeout=12) as response:
                 payload = response.read().decode("utf-8", errors="replace")
-            data = json.loads(payload)
+            data = normalize_update_metadata(json.loads(payload))
             if not isinstance(data, dict):
                 self.log(f"Startup update check skipped: manifest is not an object ({manifest_url})")
                 return
@@ -5792,11 +5841,16 @@ class SuiteApp:
                     if interactive:
                         self.error(msg)
                     return
-                with urllib.request.urlopen(manifest_url, timeout=12) as response:
+                request = urllib.request.Request(
+                    manifest_url,
+                    headers={"User-Agent": f"FormatFoundry/{APP_VERSION}", "Accept": "application/vnd.github+json, application/json"},
+                )
+                with urllib.request.urlopen(request, timeout=12) as response:
                     payload = response.read().decode("utf-8", errors="replace")
-                data = json.loads(payload)
+                data = normalize_update_metadata(json.loads(payload))
                 latest = str(data.get("latest_version") or data.get("version") or "").strip()
                 download_url = str(data.get("download_url") or data.get("url") or "").strip()
+                release_url = str(data.get("release_url") or "").strip()
                 notes = str(data.get("notes") or "").strip()
                 blocked_download_reason = ""
                 compatibility = evaluate_manifest_compatibility(self._build_environment_snapshot(include_log_tail=False), data)
@@ -5823,7 +5877,7 @@ class SuiteApp:
 
                 if latest and is_version_newer(latest, APP_VERSION):
                     if bool(compatibility.get("allowed", True)):
-                        self.call_ui(lambda: self._show_update_available(latest, download_url, notes, blocked_download_reason))
+                        self.call_ui(lambda: self._show_update_available(latest, download_url or release_url, notes, blocked_download_reason))
                     elif interactive:
                         self.call_ui(
                             lambda: self.info(
@@ -5831,7 +5885,7 @@ class SuiteApp:
                             )
                         )
                 elif interactive:
-                    self.info(f"You are up to date. Current version: {APP_VERSION}")
+                    self.info(f"You are up to date. Current version: {APP_VERSION_LABEL}")
             except urllib.error.URLError as exc:
                 if interactive:
                     self.error(f"Update check failed:\n{exc}")
@@ -5870,18 +5924,18 @@ class SuiteApp:
         if blocked_reason:
             details = f"{details}\n\n{blocked_reason}"
         info_prompt = (
-            f"Update available.\n\nCurrent version: {APP_VERSION}\nLatest version: {latest}\n\n"
-            f"{details}\n\nClick OK to continue."
+            f"Update available.\n\nCurrent version: {APP_VERSION_LABEL}\nLatest version: {format_release_label(latest)}\n\n"
+            f"{details}\n\nOpen the verified updater now?"
         )
         was_visible = str(self.root.state()) != "withdrawn"
         if was_visible:
             self.root.withdraw()
         try:
-            self._show_app_modal_dialog(
+            choice = self._show_app_modal_dialog(
                 APP_TITLE,
                 info_prompt,
-                [("OK", "ok")],
-                default_choice="ok",
+                [("Later", "later"), ("Open Updater", "updater")],
+                default_choice="updater",
                 width=620,
             )
         finally:
@@ -5889,18 +5943,12 @@ class SuiteApp:
                 self.root.deiconify()
                 self.root.lift()
                 self.root.focus_force()
+        if choice != "updater":
+            return
+        if self._launch_updater(wait=False, show_errors=False):
+            return
         if download_url:
-            if (
-                self._show_app_modal_dialog(
-                    APP_TITLE,
-                    "Open download page now?",
-                    [("No", "no"), ("Yes", "yes")],
-                    default_choice="no",
-                    width=420,
-                )
-                == "yes"
-            ):
-                self._open_external_url(download_url, purpose=f"update download for version {latest}")
+            self._open_external_url(download_url, purpose=f"update download for version {latest}")
         else:
             suffix = f"\n\n{blocked_reason}" if blocked_reason else ""
             self._show_app_modal_dialog(
@@ -6062,6 +6110,10 @@ class SuiteApp:
 
     def run_process(self, cmd: list[str], cwd: Path | None = None) -> None:
         self.log(f"$ {quote_cmd(cmd)}")
+        owner = threading.get_ident()
+        popen_kwargs: dict[str, Any] = hidden_console_process_kwargs()
+        if os.name != "nt":
+            popen_kwargs["start_new_session"] = True
         proc = subprocess.Popen(
             cmd,
             cwd=str(cwd) if cwd else None,
@@ -6071,24 +6123,94 @@ class SuiteApp:
             universal_newlines=True,
             encoding="utf-8",
             errors="replace",
-            **hidden_console_process_kwargs(),
+            **popen_kwargs,
         )
+        self._register_process(owner, proc)
         tail: list[str] = []
-        assert proc.stdout is not None
-        for raw_line in proc.stdout:
-            line = raw_line.strip()
-            if not line:
-                continue
-            tail.append(line)
-            if len(tail) > 30:
-                tail.pop(0)
-            lowered = line.lower()
-            if any(key in lowered for key in ("error", "fail", "invalid", "warning")):
-                self.log(line)
-        code = proc.wait()
-        if code != 0:
-            detail = tail[-1] if tail else f"Process exited with code {code}"
-            raise RuntimeError(detail)
+        try:
+            assert proc.stdout is not None
+            for raw_line in proc.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                tail.append(line)
+                if len(tail) > 30:
+                    tail.pop(0)
+                lowered = line.lower()
+                if any(key in lowered for key in ("error", "fail", "invalid", "warning")):
+                    self.log(line)
+            code = proc.wait()
+            cancel_event = self._task_cancel_events.get(owner)
+            if cancel_event is not None and cancel_event.is_set():
+                raise OperationCanceledError("Operation canceled by user.")
+            if code != 0:
+                detail = tail[-1] if tail else f"Process exited with code {code}"
+                raise RuntimeError(detail)
+        finally:
+            self._unregister_process(owner, proc)
+
+    def _register_task_cancel_event(self, owner: int, cancel_event: threading.Event) -> None:
+        with self._process_lock:
+            self._task_cancel_events[owner] = cancel_event
+
+    def _unregister_task_cancel_event(self, owner: int) -> None:
+        with self._process_lock:
+            self._task_cancel_events.pop(owner, None)
+
+    def _register_process(self, owner: int, process: subprocess.Popen[Any]) -> None:
+        with self._process_lock:
+            self._active_processes.setdefault(owner, set()).add(process)
+
+    def _unregister_process(self, owner: int, process: subprocess.Popen[Any]) -> None:
+        with self._process_lock:
+            processes = self._active_processes.get(owner)
+            if not processes:
+                return
+            processes.discard(process)
+            if not processes:
+                self._active_processes.pop(owner, None)
+
+    def _terminate_process_tree(self, process: subprocess.Popen[Any]) -> None:
+        if process.poll() is not None:
+            return
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                    **hidden_console_process_kwargs(),
+                )
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+        except Exception:
+            try:
+                process.terminate()
+                process.wait(timeout=2)
+            except Exception:
+                try:
+                    process.kill()
+                except Exception:
+                    pass
+
+    def _terminate_processes_for_thread(self, owner: int | None) -> None:
+        if owner is None:
+            return
+        with self._process_lock:
+            processes = list(self._active_processes.get(owner, set()))
+        for process in processes:
+            self._terminate_process_tree(process)
+
+    def _terminate_all_processes(self) -> None:
+        with self._process_lock:
+            processes = [process for group in self._active_processes.values() for process in group]
+        for process in processes:
+            self._terminate_process_tree(process)
 
 
 class ModuleTab(ttk.Frame):
@@ -6195,6 +6317,10 @@ class ModuleTab(ttk.Frame):
         super().__init__(master)
         self.app = app
         self.worker: threading.Thread | None = None
+        self.cancel_event = threading.Event()
+        self._folder_loader_thread: threading.Thread | None = None
+        self._folder_loader_cancel_event = threading.Event()
+        self.module_cancel_button: ttk.Button | None = None
         self.hover_cards: list[HoverCard] = []
         self._module_hero_accent: ttk.Frame | None = None
         self._module_hero_after: str | None = None
@@ -6207,16 +6333,25 @@ class ModuleTab(ttk.Frame):
             messagebox.showwarning(APP_TITLE, f"{self.tab_name} is already running.")
             return
 
+        self.cancel_event.clear()
+        self._set_cancel_button_running(True)
+
         def runner() -> None:
-            execute_action(
-                action,
-                task_name=self.tab_name,
-                cancel_exception_type=OperationCanceledError,
-                done_message=done_message,
-                info_cb=self.app.info,
-                error_cb=self.app.error,
-                log_cb=self.log,
-            )
+            owner = threading.get_ident()
+            self.app._register_task_cancel_event(owner, self.cancel_event)
+            try:
+                execute_action(
+                    lambda: self._run_cancelable_action(action),
+                    task_name=self.tab_name,
+                    cancel_exception_type=OperationCanceledError,
+                    done_message=done_message,
+                    info_cb=self.app.info,
+                    error_cb=self.app.error,
+                    log_cb=self.log,
+                )
+            finally:
+                self.app._unregister_task_cancel_event(owner)
+                self.app.call_ui(lambda: self._set_cancel_button_running(False))
 
         self.worker = threading.Thread(target=runner, daemon=True)
         self.worker.start()
@@ -6235,23 +6370,75 @@ class ModuleTab(ttk.Frame):
             messagebox.showwarning(APP_TITLE, f"{self.tab_name} is already running.")
             return
 
+        self.cancel_event.clear()
+        self._set_cancel_button_running(True)
+
         def runner() -> None:
-            execute_action(
-                action,
-                task_name=self.tab_name,
-                cancel_exception_type=OperationCanceledError,
-                done_message=done_message,
-                on_success=on_success,
-                on_cancel=on_cancel,
-                on_error=on_error,
-                on_finally=on_finally,
-                info_cb=self.app.info,
-                error_cb=self.app.error,
-                log_cb=self.log,
-            )
+            owner = threading.get_ident()
+            self.app._register_task_cancel_event(owner, self.cancel_event)
+
+            def finish() -> None:
+                try:
+                    if on_finally is not None:
+                        on_finally()
+                finally:
+                    self.app.call_ui(lambda: self._set_cancel_button_running(False))
+
+            try:
+                execute_action(
+                    lambda: self._run_cancelable_action(action),
+                    task_name=self.tab_name,
+                    cancel_exception_type=OperationCanceledError,
+                    done_message=done_message,
+                    on_success=on_success,
+                    on_cancel=on_cancel,
+                    on_error=on_error,
+                    on_finally=finish,
+                    info_cb=self.app.info,
+                    error_cb=self.app.error,
+                    log_cb=self.log,
+                )
+            finally:
+                self.app._unregister_task_cancel_event(owner)
 
         self.worker = threading.Thread(target=runner, daemon=True)
         self.worker.start()
+
+    def _run_cancelable_action(self, action) -> None:
+        self.check_cancelled()
+        action()
+        self.check_cancelled()
+
+    def check_cancelled(self) -> None:
+        if self.cancel_event.is_set():
+            raise OperationCanceledError("Operation canceled by user.")
+
+    def _set_cancel_button_running(self, running: bool) -> None:
+        if self.module_cancel_button is not None and self.module_cancel_button.winfo_exists():
+            self.module_cancel_button.configure(state="normal" if running else "disabled")
+
+    def request_cancel(self, silent: bool = False) -> None:
+        worker = self.worker
+        loader = self._folder_loader_thread
+        worker_running = worker is not None and worker.is_alive()
+        loader_running = loader is not None and loader.is_alive()
+        if not worker_running and not loader_running:
+            return
+        self.cancel_event.set()
+        self._folder_loader_cancel_event.set()
+        specialized_event = getattr(self, "cancel_scan_event", None)
+        if isinstance(specialized_event, threading.Event):
+            specialized_event.set()
+        for method_name in ("cancel_download", "cancel_scan", "cancel_analysis"):
+            specialized_cancel = getattr(self, method_name, None)
+            if callable(specialized_cancel):
+                specialized_cancel()
+                break
+        if worker_running:
+            self.app._terminate_processes_for_thread(worker.ident)
+        if not silent:
+            self._set_drop_feedback("Stopping after the current safe step...")
+            self.log("Stop requested by user.")
 
     def add_files_to_queue(self, files: list[Path], listbox: tk.Listbox, title: str = "Select files") -> None:
         chosen = filedialog.askopenfilenames(title=title)
@@ -6265,11 +6452,93 @@ class ModuleTab(ttk.Frame):
         raw = filedialog.askdirectory(title=title)
         if not raw:
             return
-        folder = Path(raw)
-        for path in folder.rglob("*"):
-            if path.is_file() and path not in files:
-                files.append(path)
-                listbox.insert(END, str(path))
+        self._enumerate_files_async(
+            [Path(raw)],
+            on_batch=lambda batch: self._append_paths_to_queue(files, listbox, batch),
+            source_label="folder",
+        )
+
+    def _enumerate_files_async(
+        self,
+        paths: list[Path],
+        *,
+        on_batch: Callable[[list[Path]], Any],
+        source_label: str,
+        on_done: Callable[[int, bool], Any] | None = None,
+        batch_size: int = 250,
+    ) -> bool:
+        if self._folder_loader_thread and self._folder_loader_thread.is_alive():
+            self._set_drop_feedback("A folder scan is already running. Stop it before adding another folder.")
+            return False
+        roots = self._dedupe_paths(paths)
+        if not roots:
+            return False
+        self._folder_loader_cancel_event.clear()
+        self._set_drop_feedback(f"Scanning {source_label} in the background...")
+        self._set_cancel_button_running(True)
+
+        def worker() -> None:
+            batch: list[Path] = []
+            discovered = 0
+            canceled = False
+
+            def flush() -> None:
+                nonlocal batch
+                if not batch:
+                    return
+                pending = batch
+                batch = []
+                self.app.call_ui(lambda items=pending: on_batch(items))
+
+            try:
+                for candidate in roots:
+                    if self._folder_loader_cancel_event.is_set():
+                        canceled = True
+                        break
+                    if candidate.is_file():
+                        batch.append(candidate)
+                        discovered += 1
+                        continue
+                    if not candidate.is_dir():
+                        continue
+                    for current_root, _, names in os.walk(candidate):
+                        if self._folder_loader_cancel_event.is_set():
+                            canceled = True
+                            break
+                        root_path = Path(current_root)
+                        for name in names:
+                            if self._folder_loader_cancel_event.is_set():
+                                canceled = True
+                                break
+                            batch.append(root_path / name)
+                            discovered += 1
+                            if len(batch) >= batch_size:
+                                flush()
+                                self.app.call_ui(
+                                    lambda count=discovered: self._set_drop_feedback(
+                                        f"Scanning {source_label}... {count} files found"
+                                    )
+                                )
+                        if canceled:
+                            break
+                    if canceled:
+                        break
+                flush()
+            finally:
+                def finish() -> None:
+                    self._set_cancel_button_running(False)
+                    if on_done is not None:
+                        on_done(discovered, canceled)
+                    elif canceled:
+                        self._set_drop_feedback(f"Folder scan stopped after {discovered} files.")
+                    else:
+                        self._set_drop_feedback(f"Folder scan complete: {discovered} files found.")
+
+                self.app.call_ui(finish)
+
+        self._folder_loader_thread = threading.Thread(target=worker, daemon=True, name=f"{self.tab_name}-folder-scan")
+        self._folder_loader_thread.start()
+        return True
 
     def remove_selected(self, files: list[Path], listbox: tk.Listbox) -> None:
         selected = list(listbox.curselection())
@@ -6376,8 +6645,6 @@ class ModuleTab(ttk.Frame):
     def build_module_shell(self) -> ttk.Frame:
         copy = self.MODULE_COPY.get(self.tab_name, {})
         summary = str(copy.get("summary", "")).strip()
-        highlights = [str(item).strip() for item in copy.get("highlights", []) if str(item).strip()]
-        workflow = str(copy.get("workflow", "")).strip()
 
         viewport = ttk.Frame(self, style="Surface.TFrame")
         viewport.pack(fill="both", expand=True)
@@ -6414,20 +6681,25 @@ class ModuleTab(ttk.Frame):
         self.after(0, sync_shell_viewport)
 
         hero = ttk.Frame(shell, style="ModuleHero.TFrame", padding=(0, 0))
-        hero.pack(fill="x", pady=(0, 10))
+        hero.pack(fill="x", pady=(0, 8))
         accent = ttk.Frame(hero, style="ModuleHeroAccent.TFrame")
         accent.place(relx=0.0, rely=0.0, relwidth=1.0, height=self.app._scaled(4))
         self._module_hero_accent = accent
 
-        hero_inner = ttk.Frame(hero, style="ModuleHeroBody.TFrame", padding=(14, 14))
+        hero_inner = ttk.Frame(hero, style="ModuleHeroBody.TFrame", padding=(14, 10))
         hero_inner.pack(fill="x")
 
         title_row = ttk.Frame(hero_inner, style="ModuleHeroBody.TFrame")
         title_row.pack(fill="x")
-        ttk.Label(title_row, text="Workflow module", style="ModuleEyebrow.TLabel").pack(side="left")
-        ttk.Label(title_row, text="Active workspace", style="ModuleBadge.TLabel").pack(side="right")
-
-        ttk.Label(hero_inner, text=self.tab_name, style="ModuleTitle.TLabel").pack(anchor="w", pady=(10, 0))
+        ttk.Label(title_row, text=self.tab_name, style="ModuleTitle.TLabel").pack(side="left", anchor="w")
+        self.module_cancel_button = ttk.Button(
+            title_row,
+            text="Stop",
+            style="QuietApp.TButton",
+            command=self.request_cancel,
+            state="disabled",
+        )
+        self.module_cancel_button.pack(side="right")
 
         if summary:
             summary_label = ttk.Label(
@@ -6437,36 +6709,8 @@ class ModuleTab(ttk.Frame):
                 wraplength=1180,
                 justify="left",
             )
-            summary_label.pack(anchor="w", pady=(6, 0))
+            summary_label.pack(anchor="w", pady=(4, 0))
             self.app._bind_responsive_wrap(summary_label, padding=24, minimum=320)
-
-        if highlights:
-            chips = ttk.Frame(hero_inner, style="ModuleHeroBody.TFrame")
-            chips.pack(fill="x", pady=(10, 0))
-            for index, item in enumerate(highlights):
-                ttk.Label(chips, text=item, style="ModuleChip.TLabel").pack(side="left", padx=(0 if index == 0 else 8, 0))
-
-        workflow_panel = ttk.Frame(hero_inner, style="ModuleHeroPanel.TFrame", padding=(12, 10))
-        workflow_panel.pack(fill="x", pady=(10, 0))
-        ttk.Label(workflow_panel, text="Recommended flow", style="ModuleWorkflow.TLabel").pack(anchor="w")
-        workflow_label = ttk.Label(
-            workflow_panel,
-            text=workflow or "Add the source, configure the target behavior, and run the queue from this module.",
-            style="ModuleLead.TLabel",
-            wraplength=1180,
-            justify="left",
-        )
-        workflow_label.pack(anchor="w", pady=(4, 0))
-        self.app._bind_responsive_wrap(workflow_label, padding=20, minimum=320)
-
-        if workflow:
-            detail_label = ttk.Label(
-                workflow_panel,
-                text="Designed to stay readable while jobs are in flight.",
-                style="ModuleLead.TLabel",
-            )
-            detail_label.pack(anchor="w", pady=(6, 0))
-            self.app._bind_responsive_wrap(detail_label, padding=20, minimum=260)
 
         content = ttk.Frame(shell, style="Surface.TFrame")
         content.pack(fill="both", expand=True)
@@ -6519,6 +6763,15 @@ class ModuleTab(ttk.Frame):
     def _add_dropped_file_paths(
         self, files: list[Path], listbox: tk.Listbox, dropped_paths: list[Path], expand_directories: bool = True
     ) -> bool:
+        if expand_directories and any(path.is_dir() for path in dropped_paths):
+            direct_files = [path for path in dropped_paths if path.is_file()]
+            if direct_files:
+                self._append_paths_to_queue(files, listbox, direct_files)
+            return self._enumerate_files_async(
+                [path for path in dropped_paths if path.is_dir()],
+                on_batch=lambda batch: self._append_paths_to_queue(files, listbox, batch),
+                source_label="dropped folders",
+            )
         candidates = self._collect_drop_files(dropped_paths, expand_directories=expand_directories)
         if not candidates:
             self._set_drop_feedback("No valid files were found in the dropped selection.")
@@ -6543,6 +6796,31 @@ class ModuleTab(ttk.Frame):
         kind_label: str,
         expand_directories: bool = True,
     ) -> bool:
+        if expand_directories and any(path.is_dir() for path in raw_paths):
+            direct_files = [path for path in raw_paths if path.is_file()]
+            if direct_files:
+                self._enqueue_paths_by_extension(
+                    files,
+                    listbox,
+                    direct_files,
+                    allowed_exts,
+                    source_label,
+                    kind_label,
+                    expand_directories=False,
+                )
+            return self._enumerate_files_async(
+                [path for path in raw_paths if path.is_dir()],
+                on_batch=lambda batch: self._enqueue_paths_by_extension(
+                    files,
+                    listbox,
+                    batch,
+                    allowed_exts,
+                    source_label,
+                    kind_label,
+                    expand_directories=False,
+                ),
+                source_label=source_label,
+            )
         candidates = self._collect_drop_files(raw_paths, expand_directories=expand_directories)
         if not candidates:
             self._set_drop_feedback("No valid files were found in the selected input.")
@@ -6637,7 +6915,7 @@ class BackendLinksTab(ModuleTab):
         self.status_var = StringVar(value="Select a backend to view links.")
         self.inline_help_labels: list[ttk.Label] = []
         self._build()
-        self._populate()
+        self.render_backend_detection()
 
     def _build(self) -> None:
         outer = self.build_module_shell()
@@ -6655,7 +6933,7 @@ class BackendLinksTab(ModuleTab):
 
         top_controls = ttk.Frame(outer)
         top_controls.pack(fill="x", pady=(0, 8))
-        refresh_button = ttk.Button(top_controls, text="Refresh Detection", command=self._populate)
+        refresh_button = ttk.Button(top_controls, text="Refresh Detection", command=self.refresh_detection)
         refresh_button.pack(side="left")
         open_homepage_button = ttk.Button(top_controls, text="Open Homepage", command=lambda: self._open_url(self.homepage_var.get()))
         open_homepage_button.pack(side="left", padx=(8, 0))
@@ -6783,7 +7061,7 @@ class BackendLinksTab(ModuleTab):
         support_box.pack(fill="x", pady=(10, 0))
         support_actions = ttk.Frame(support_box)
         support_actions.pack(fill="x", padx=8, pady=(8, 4))
-        ttk.Button(support_actions, text="Refresh Support Snapshot", command=self._populate).pack(side="left")
+        ttk.Button(support_actions, text="Refresh Support Snapshot", command=self.refresh_detection).pack(side="left")
         ttk.Button(support_actions, text="Copy Environment", command=self.app._copy_environment_snapshot).pack(side="left", padx=(8, 0))
         ttk.Button(support_actions, text="Export Bug Report", command=self.app._export_bug_report).pack(side="left", padx=(8, 0))
         ttk.Label(
@@ -6814,19 +7092,29 @@ class BackendLinksTab(ModuleTab):
         super().refresh_hover_tooltip_preference()
         self.apply_inline_help_visibility(self.inline_help_labels)
 
-    def _populate(self) -> None:
-        runtime_details = self.app._refresh_backend_runtime_details(force_refresh=True)
+    def show_backend_detection_pending(self) -> None:
+        self.status_var.set("Detecting backends and versions in the background...")
+
+    def refresh_detection(self) -> None:
+        if not self.app._refresh_backend_runtime_details_async(force_refresh=True):
+            self.status_var.set("Backend detection is already running.")
+
+    def render_backend_detection(self) -> None:
+        runtime_details = self.app.backend_runtime_details
         rows = self.app.backends.as_rows()
         self.backend_data.clear()
         for item in self.tree.get_children():
             self.tree.delete(item)
         for backend_name, path_value in rows:
-            status = "Detected" if path_value != "Not found" else "Missing"
+            detection_complete = bool(runtime_details)
+            status = "Detected" if path_value != "Not found" else ("Missing" if detection_complete else "Checking")
             backend_key = BACKEND_NAME_TO_KEY.get(backend_name, "")
             detail = runtime_details.get(backend_key, {})
             version_value = str(detail.get("version", "")).strip()
             if not version_value and path_value != "Not found":
                 version_value = "Unknown"
+            elif not version_value and not detection_complete:
+                version_value = "Checking"
             self.tree.insert("", "end", values=(backend_name, status, version_value, path_value))
             links = BACKEND_LINKS.get(backend_name, {})
             self.backend_data[backend_name] = {
@@ -6843,8 +7131,12 @@ class BackendLinksTab(ModuleTab):
             self.tree.focus(first)
             self._on_select()
         available = sum(1 for _, value in rows if value != "Not found")
-        self.environment_summary_var.set(self.app._environment_summary_text())
-        self.status_var.set(f"Detected {available}/{len(rows)} backends.")
+        if runtime_details:
+            self.environment_summary_var.set(self.app._environment_summary_text())
+            self.status_var.set(f"Detected {available}/{len(rows)} backends.")
+        else:
+            self.environment_summary_var.set("Backend and compatibility details are loading...")
+            self.status_var.set("Detecting backends and versions in the background...")
 
     def _on_select(self, _event=None) -> None:
         selected = self.tree.selection()
@@ -7079,10 +7371,16 @@ class ConvertTab(ModuleTab):
         }
 
     def handle_external_drop(self, paths: list[Path]) -> bool:
-        candidates = self._collect_drop_files(paths, expand_directories=True)
+        directories = [path for path in paths if path.is_dir()]
+        candidates = [path for path in paths if path.is_file()]
+        if directories:
+            self._enumerate_files_async(
+                directories,
+                on_batch=lambda batch: self._enqueue_candidates(batch, show_warning=False),
+                source_label="dropped folders",
+            )
         if not candidates:
-            self._set_drop_feedback("No valid files were found in the dropped selection.")
-            return False
+            return bool(directories)
         self._enqueue_candidates(candidates)
         return True
 
@@ -7147,7 +7445,7 @@ class ConvertTab(ModuleTab):
             self.target_format.set(targets[0])
         self.target_format_combo.configure(state="readonly")
 
-    def _enqueue_candidates(self, candidates: list[Path]) -> None:
+    def _enqueue_candidates(self, candidates: list[Path], *, show_warning: bool = True) -> None:
         if not candidates:
             return
 
@@ -7191,7 +7489,7 @@ class ConvertTab(ModuleTab):
             skipped_parts.append(f"{skipped_unsupported} unsupported type")
         if skipped_duplicate:
             skipped_parts.append(f"{skipped_duplicate} duplicate")
-        if skipped_parts:
+        if skipped_parts and show_warning:
             lock_text = self.source_ext_lock or "a single type"
             messagebox.showwarning(
                 APP_TITLE,
@@ -7207,8 +7505,11 @@ class ConvertTab(ModuleTab):
         raw = filedialog.askdirectory(title="Select folder")
         if not raw:
             return
-        folder = Path(raw)
-        self._enqueue_candidates([path for path in folder.rglob("*") if path.is_file()])
+        self._enumerate_files_async(
+            [Path(raw)],
+            on_batch=lambda batch: self._enqueue_candidates(batch, show_warning=False),
+            source_label="folder",
+        )
 
     def _remove_selected_filtered(self) -> None:
         self.remove_selected(self.files, self.listbox)
@@ -7374,6 +7675,7 @@ class ConvertTab(ModuleTab):
                 )
             )
             for index, file_path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name: (
                         self._queue_progress_set_target((i - 1) + 0.9, immediate=False),
@@ -7607,6 +7909,7 @@ class CompressTab(ModuleTab):
 
             failures = []
             for index, file_path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 try:
                     out_path = self.app.engine.compress_file(file_path, out_dir, mode_key, preset)
                     self.log(f"{file_path.name} -> {out_path.name}")
@@ -7728,6 +8031,16 @@ class ExtractTab(ModuleTab):
                 self.app.status_left_var.set("Archive files were redirected to the Archives tab.")
 
     def _enqueue_media_candidates(self, raw_paths: list[Path], source_label: str) -> bool:
+        directories = [path for path in raw_paths if path.is_dir()]
+        if directories:
+            direct_files = [path for path in raw_paths if path.is_file()]
+            if direct_files:
+                self._enqueue_media_candidates(direct_files, source_label)
+            return self._enumerate_files_async(
+                directories,
+                on_batch=lambda batch: self._enqueue_media_candidates(batch, source_label),
+                source_label=source_label,
+            )
         candidates = self._collect_drop_files(raw_paths, expand_directories=True)
         if not candidates:
             self._set_drop_feedback("No valid files were found in the dropped selection.")
@@ -7808,6 +8121,7 @@ class ExtractTab(ModuleTab):
             self.app.call_ui(lambda: self.progress.configure(value=0, maximum=total))
             failures = []
             for index, file_path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 try:
                     output = self.app.engine.extract_from_media(file_path, out_dir, operation_key, preset)
                     self.log(f"{file_path.name} -> {output}")
@@ -7984,6 +8298,7 @@ class DocumentsTab(ModuleTab):
         def work() -> None:
             failures = []
             for index, path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 try:
                     output = self.app.engine.convert_document(path, out_dir, target)
                     self.log(f"{path.name} -> {output.name}")
@@ -8270,6 +8585,7 @@ class ImagesTab(ModuleTab):
             self.app.call_ui(lambda: (self.progress.configure(value=0, maximum=total), self.progress_percent_var.set("0%")))
             failures = []
             for index, file_path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 try:
                     result = self.app.engine.process_image_file(file_path, out_dir, options)
                     self.log(f"{file_path.name} -> {result.name}")
@@ -8450,6 +8766,7 @@ class AudioTab(ModuleTab):
             self.app.call_ui(lambda: (self.progress.configure(value=0, maximum=total), self.progress_percent_var.set("0%")))
             failures = []
             for index, file_path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 try:
                     result = self.app.engine.process_audio_file(file_path, out_dir, options)
                     self.log(f"{file_path.name} -> {result.name}")
@@ -8732,6 +9049,7 @@ class VideoTab(ModuleTab):
             self.app.call_ui(lambda: (self.progress.configure(value=0, maximum=total), self.progress_percent_var.set("0%")))
             failures = []
             for index, file_path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 try:
                     result = self.app.engine.process_video_file(file_path, out_dir, mode_key, options)
                     self.log(f"{file_path.name} -> {result.name}")
@@ -9743,93 +10061,82 @@ class StorageAnalyzerTab(ModuleTab):
                         self.status_var.set("Indexing files..."),
                     )
                 )
-                discovered_files: list[Path] = []
+                folder_sizes: dict[Path, int] = {}
+                top_level_sizes: dict[Path, int] = {}
+                largest_file_heap: list[tuple[int, int, Path]] = []
+                root_total = 0
+                scanned_files = 0
+                skipped_errors = 0
                 scanned_directories = 0
+                sequence = 0
+
                 for current_root, _, files in os.walk(root):
                     self._check_cancel_scan()
                     scanned_directories += 1
                     root_path = Path(current_root)
                     for name in files:
-                        discovered_files.append(root_path / name)
-                    if scanned_directories % 50 == 0:
+                        self._check_cancel_scan()
+                        path = root_path / name
+                        try:
+                            size = path.stat().st_size
+                        except Exception:
+                            skipped_errors += 1
+                            continue
+                        scanned_files += 1
+                        sequence += 1
+                        root_total += size
+                        row = (size, sequence, path)
+                        if len(largest_file_heap) < top_n:
+                            heapq.heappush(largest_file_heap, row)
+                        elif size > largest_file_heap[0][0]:
+                            heapq.heapreplace(largest_file_heap, row)
+
+                        try:
+                            relative_parts = path.relative_to(root).parts
+                            if relative_parts:
+                                top_level_path = root / relative_parts[0]
+                                top_level_sizes[top_level_path] = top_level_sizes.get(top_level_path, 0) + size
+                        except ValueError:
+                            pass
+
+                        cursor = path.parent
+                        while True:
+                            folder_sizes[cursor] = folder_sizes.get(cursor, 0) + size
+                            if cursor == root:
+                                break
+                            if root not in cursor.parents and cursor != root:
+                                break
+                            cursor = cursor.parent
+
+                    if scanned_directories % 25 == 0:
                         self.app.call_ui(
-                            lambda found=len(discovered_files): self.status_var.set(f"Indexing files... {found} found")
-                        )
-
-                total_files = len(discovered_files)
-                self.app.call_ui(
-                    lambda total=total_files: (
-                        self._set_progress_percent(0 if total > 0 else 100),
-                        self.status_var.set(
-                            "No files found. Preparing empty views." if total == 0 else f"Analyzing file sizes... 0/{total}"
-                        ),
-                    )
-                )
-
-                file_sizes: list[tuple[Path, int]] = []
-                folder_sizes: dict[Path, int] = {}
-                top_level_sizes: dict[Path, int] = {}
-                scanned_files = 0
-                skipped_errors = 0
-
-                for index, path in enumerate(discovered_files, start=1):
-                    self._check_cancel_scan()
-                    try:
-                        size = path.stat().st_size
-                    except Exception:
-                        skipped_errors += 1
-                        continue
-                    scanned_files += 1
-                    file_sizes.append((path, size))
-
-                    try:
-                        relative_parts = path.relative_to(root).parts
-                        if relative_parts:
-                            top_level_path = root / relative_parts[0]
-                            top_level_sizes[top_level_path] = top_level_sizes.get(top_level_path, 0) + size
-                    except ValueError:
-                        pass
-
-                    cursor = path.parent
-                    while True:
-                        folder_sizes[cursor] = folder_sizes.get(cursor, 0) + size
-                        if cursor == root:
-                            break
-                        if root not in cursor.parents and cursor != root:
-                            break
-                        cursor = cursor.parent
-
-                    if index % 200 == 0 or index == total_files:
-                        percent = int((index / max(1, total_files)) * 100)
-                        self.app.call_ui(
-                            lambda done=index, total=total_files, pct=percent: (
-                                self._set_progress_percent(pct),
-                                self.status_var.set(f"Analyzing file sizes... {done}/{total}"),
+                            lambda found=scanned_files, dirs=scanned_directories: (
+                                self._set_progress_percent(0),
+                                self.status_var.set(f"Scanning... {found} files across {dirs} folders"),
                             )
                         )
 
-                root_total = folder_sizes.get(root, sum(size for _, size in file_sizes))
-                largest_file_rows = sorted(file_sizes, key=lambda row: row[1], reverse=True)
-                largest_folder_rows = sorted(
+                largest_file_rows = [(path, size) for size, _, path in sorted(largest_file_heap, reverse=True)]
+                largest_folder_rows = heapq.nlargest(
+                    top_n,
                     [(folder_path, size) for folder_path, size in folder_sizes.items() if folder_path != root and size > 0],
                     key=lambda row: row[1],
-                    reverse=True,
                 )
-                top_level_rows = sorted(top_level_sizes.items(), key=lambda row: row[1], reverse=True)
+                top_level_rows = heapq.nlargest(top_n, top_level_sizes.items(), key=lambda row: row[1])
 
                 top_level_table_entries = [self._make_storage_entry(path, size) for path, size in top_level_rows[:top_n]]
                 top_level_graph_entries = list(top_level_table_entries)
-                if len(top_level_rows) > top_n:
-                    remaining_size = sum(size for _, size in top_level_rows[top_n:])
-                    if remaining_size > 0:
-                        top_level_graph_entries.append(
-                            StorageViewEntry(
-                                label=f"Other ({len(top_level_rows) - top_n} more)",
-                                path=None,
-                                size=remaining_size,
-                                kind="other",
-                            )
+                remaining_size = max(0, root_total - sum(size for _, size in top_level_rows))
+                remaining_top_level_count = max(0, len(top_level_sizes) - len(top_level_rows))
+                if remaining_size > 0:
+                    top_level_graph_entries.append(
+                        StorageViewEntry(
+                            label=f"Other ({remaining_top_level_count} more)",
+                            path=None,
+                            size=remaining_size,
+                            kind="other",
                         )
+                    )
 
                 largest_file_table_entries = [
                     StorageViewEntry(label=path.name or str(path), path=path, size=size, kind="file")
@@ -9840,7 +10147,7 @@ class StorageAnalyzerTab(ModuleTab):
                 if remaining_file_size > 0:
                     largest_file_graph_entries.append(
                         StorageViewEntry(
-                            label=f"Other ({max(0, len(largest_file_rows) - top_n)} more)",
+                            label=f"Other ({max(0, scanned_files - len(largest_file_rows))} more)",
                             path=None,
                             size=remaining_file_size,
                             kind="other",
@@ -9855,7 +10162,7 @@ class StorageAnalyzerTab(ModuleTab):
                     self._populate_view("top_level", top_level_table_entries, top_level_graph_entries)
                     self._populate_view("largest_files", largest_file_table_entries, largest_file_graph_entries)
                     self._populate_view("largest_folders", largest_folder_table_entries, largest_folder_graph_entries)
-                    self._set_progress_percent(100 if total_files > 0 else 0)
+                    self._set_progress_percent(100 if scanned_files > 0 else 0)
                     if scanned_files == 0:
                         self.status_var.set("No files were found in the selected folder.")
                     else:
@@ -9943,6 +10250,7 @@ class ChecksumsTab(ModuleTab):
         def work() -> None:
             rows = []
             for index, path in enumerate(self.files, start=1):
+                self.check_cancelled()
                 digest = hash_file(path, algorithm)
                 rows.append((str(path), digest))
                 self.app.call_ui(lambda i=index, total_files=total: self.status_var.set(f"Hashing {i}/{total_files}..."))
@@ -10071,6 +10379,7 @@ class SubtitlesTab(ModuleTab):
         def work() -> None:
             failures = []
             for index, path in enumerate(list(self.files), start=1):
+                self.check_cancelled()
                 suffix = path.suffix.lower()
                 out_path = out_dir / f"{path.stem}.{target_fmt}"
                 try:
@@ -11444,6 +11753,16 @@ class PresetsBatchTab(ModuleTab):
         if not preset_name or preset_name not in self.presets:
             messagebox.showwarning(APP_TITLE, "Select a valid preset before adding jobs.")
             return False
+        directories = [path for path in paths if path.is_dir()]
+        if directories:
+            direct_files = [path for path in paths if path.is_file()]
+            if direct_files:
+                self._add_job_paths(direct_files)
+            return self._enumerate_files_async(
+                directories,
+                on_batch=self._add_job_paths,
+                source_label="batch folders",
+            )
         output_dir = self.queue_output_var.get().strip()
         candidates = self._collect_drop_files(paths, expand_directories=True)
         if not candidates:
@@ -11572,7 +11891,7 @@ def _run_cli_mode() -> int | None:
     if unknown:
         parser.error(f"unrecognized arguments: {' '.join(unknown)}")
     if args.version:
-        print(f"{APP_TITLE} {APP_VERSION}")
+        print(f"{APP_TITLE} {APP_VERSION_LABEL} ({APP_VERSION})")
         return 0
     if args.smoke_test:
         script_dir = Path(__file__).resolve().parent

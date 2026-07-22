@@ -81,13 +81,14 @@ Each module should be independently testable, replaceable, and extensible.
 - Two isolated built-in add-ons that are bundled but disabled by default
 
 ## Next Recommended Upgrades
+Detailed execution order and release gates are maintained in `docs/POST_BETA_ROADMAP.md`.
+
 1. Gradually split the main shell, shared widgets, stores, and module tabs into independently testable files.
 2. Expand the shared cancellable-task abstraction across every long-running module.
 3. Virtualize very large queue and directory-result views.
 4. Add manual Narrator, Orca, keyboard-only, and real Ubuntu desktop install/launcher/uninstall checks to release sign-off.
 5. Configure a publicly trusted Azure Artifact Signing or CA-issued certificate identity before publishing Beta binaries.
 6. Keep third-party add-on loading disabled until signed manifests, compatibility rules, consent, and isolation are implemented.
-
 
 
 

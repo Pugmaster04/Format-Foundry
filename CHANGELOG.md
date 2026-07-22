@@ -20,6 +20,7 @@ This changelog includes:
 - Added deterministic Devpost media packaging with a real Idea Bank gallery capture, automatic integrity verification, and cache-file exclusion.
 
 ### Fixed
+- Windows and Linux packages now carry local license terms; the Windows installer presents them before installation, portable bundles include `LICENSE`, and Debian packages provide the conventional `/usr/share/doc/format-foundry/copyright` file.
 - Removed a developer-specific GitHub Desktop executable path from the updater and replaced it with portable standard-install and version-independent GitHub Desktop discovery.
 - Nested text, list, and tree controls now consume mouse-wheel input only while they can scroll, allowing the surrounding module or settings page to continue at control boundaries.
 - Default queue density and scrollbar sizing now keep more workflow controls reachable on compact displays.

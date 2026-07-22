@@ -21,6 +21,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import BooleanVar, StringVar, filedialog, messagebox, ttk
 
+from app_identity import DISPLAY_VERSION, LEGACY_PRODUCT_SLUGS, PACKAGE_VERSION, PRODUCT_NAME, PRODUCT_SLUG
 from backend_support import (
     BACKEND_DEFINITIONS,
     BACKENDS_BY_NAME,
@@ -29,12 +30,16 @@ from backend_support import (
     detect_backend_paths,
     unique_install_targets,
 )
+from format_foundry_provenance import runtime_provenance_json
+from settings_support import load_settings_document, save_settings_document
 from support_runtime import (
     DEFAULT_GITHUB_REPO,
     DEFAULT_GITHUB_REPO_URL,
     DEFAULT_TRUSTED_UPDATE_HOSTS,
+    atomic_write_json,
     build_environment_snapshot,
     collect_backend_details,
+    display_path_with_home_alias,
     evaluate_manifest_compatibility,
     format_release_label,
     is_release_newer,
@@ -45,11 +50,11 @@ from support_runtime import (
 )
 
 
-APP_TITLE = "Format Foundry Updater"
-CURRENT_VERSION = "0.5.0-beta"
-CURRENT_VERSION_LABEL = "Beta 0.5"
-APP_SLUG = "FormatFoundry"
-LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
+APP_TITLE = f"{PRODUCT_NAME} Updater"
+CURRENT_VERSION = PACKAGE_VERSION
+CURRENT_VERSION_LABEL = DISPLAY_VERSION
+APP_SLUG = PRODUCT_SLUG
+LEGACY_APP_SLUGS = LEGACY_PRODUCT_SLUGS
 LEGACY_GITHUB_REPOS = ("Pugmaster04/Universal-File-Conversion",)
 SINGLE_INSTANCE_MUTEX_NAMES = (
     "Local\\FormatFoundryUpdater_SingleInstanceMutex",
@@ -88,19 +93,44 @@ def hidden_console_process_kwargs() -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def resolve_git_executable() -> str:
-    candidates: list[str] = ["git"]
+    candidates: list[str] = []
+    configured = os.environ.get("GIT_EXECUTABLE", "").strip()
+    if configured:
+        candidates.append(configured)
     if os.name == "nt":
-        candidates.extend(
-            [
-                r"C:\Program Files\Git\cmd\git.exe",
-                r"C:\Program Files\Git\bin\git.exe",
-                r"C:\Users\Pugma\AppData\Local\GitHubDesktop\app-3.5.6\resources\app\git\cmd\git.exe",
-            ]
-        )
-    for git_cmd in candidates:
+        discovered = shutil.which("git.exe")
+        if discovered:
+            candidates.append(discovered)
+        for environment_name in ("ProgramFiles", "ProgramFiles(x86)"):
+            program_files = os.environ.get(environment_name, "").strip()
+            if program_files:
+                candidates.extend(
+                    [
+                        str(Path(program_files) / "Git" / "cmd" / "git.exe"),
+                        str(Path(program_files) / "Git" / "bin" / "git.exe"),
+                    ]
+                )
+        local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+        if local_app_data:
+            candidates.extend(
+                str(path)
+                for path in sorted(
+                    (Path(local_app_data) / "GitHubDesktop").glob("app-*/resources/app/git/cmd/git.exe"),
+                    reverse=True,
+                )
+            )
+    else:
+        discovered = shutil.which("git")
+        if discovered:
+            candidates.append(discovered)
+
+    for git_cmd in dict.fromkeys(candidates):
+        candidate = Path(git_cmd).expanduser()
+        if not candidate.is_file() or (os.name == "nt" and candidate.suffix.lower() != ".exe"):
+            continue
         try:
             probe = subprocess.run(
-                [git_cmd, "--version"],
+                [str(candidate), "--version"],
                 capture_output=True,
                 text=True,
                 timeout=8,
@@ -110,7 +140,7 @@ def resolve_git_executable() -> str:
         except Exception:
             continue
         if int(probe.returncode) == 0:
-            return git_cmd
+            return str(candidate)
     return ""
 
 
@@ -340,6 +370,8 @@ class UpdaterApp:
         self._window_icon_photo = None
         self.appdata_dir = self._resolve_appdata_dir()
         self.settings_path = self.appdata_dir / "updater_settings.json"
+        self.settings_load_notice = ""
+        self.settings_read_only = False
         self.settings = self._load_settings()
         self._mousewheel_targets: dict[str, Callable[[int], None]] = {}
         self._body_canvas: tk.Canvas | None = None
@@ -353,7 +385,7 @@ class UpdaterApp:
         self.source_var = StringVar(value=saved_source or self._default_manifest_source())
         self.version_var = StringVar(value=CURRENT_VERSION_LABEL)
         self.output_dir_var = StringVar(value=str(self.settings.get("output_dir", str(default_download_dir()))))
-        self.status_var = StringVar(value="Ready.")
+        self.status_var = StringVar(value=self.settings_load_notice or "Ready.")
         self.latest_var = StringVar(value="Latest version: (not checked)")
         self.download_var = StringVar(value="Download URL: (not checked)")
         self.sha256_var = StringVar(value="SHA256: (not provided)")
@@ -546,13 +578,7 @@ class UpdaterApp:
             return None
 
         try:
-            if isinstance(widget, tk.Text):
-                widget.yview_scroll(delta_units, "units")
-                return "break"
-            if isinstance(widget, tk.Listbox):
-                widget.yview_scroll(delta_units, "units")
-                return "break"
-            if isinstance(widget, ttk.Treeview):
+            if isinstance(widget, (tk.Text, tk.Listbox, ttk.Treeview)):
                 first, last = widget.yview()
                 can_scroll_up = delta_units < 0 and first > 0.0
                 can_scroll_down = delta_units > 0 and last < 1.0
@@ -560,7 +586,7 @@ class UpdaterApp:
                     widget.yview_scroll(delta_units, "units")
                     return "break"
         except Exception:
-            return None
+            pass
 
         current = widget
         while current is not None:
@@ -637,6 +663,7 @@ class UpdaterApp:
         self.root.option_add("*Font", f"{{{self._preferred_font_family()}}} {base_font_size}")
 
         self.style.configure(".", background=palette["window_bg"], foreground=palette["text_fg"], font=self._font(10))
+        self.style.configure("Vertical.TScrollbar", width=self._scaled(16), arrowsize=self._scaled(16))
         self.style.configure("TFrame", background=palette["window_bg"])
         self.style.configure("TLabel", background=palette["window_bg"], foreground=palette["text_fg"])
         self.style.configure(
@@ -734,20 +761,12 @@ class UpdaterApp:
 
     def _load_settings(self) -> dict[str, Any]:
         defaults = self._default_settings()
-        if not self.settings_path.exists():
-            return defaults
-        try:
-            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                return defaults
-            merged = dict(defaults)
-            merged.update(data)
-            return merged
-        except Exception:
-            return defaults
+        result = load_settings_document(self.settings_path, defaults)
+        self.settings_load_notice = result.notice
+        self.settings_read_only = result.read_only
+        return result.data
 
     def _save_settings(self) -> None:
-        self.appdata_dir.mkdir(parents=True, exist_ok=True)
         self.settings["require_https_manifest"] = bool(self.require_https_manifest_var.get())
         self.settings["require_https_download"] = bool(self.require_https_download_var.get())
         self.settings["require_sha256_verification"] = bool(self.require_sha256_var.get())
@@ -756,7 +775,8 @@ class UpdaterApp:
         self.settings["trusted_update_hosts"] = str(self.trusted_hosts_var.get()).strip() or ", ".join(DEFAULT_TRUSTED_UPDATE_HOSTS)
         self.settings["source"] = str(self.source_var.get()).strip()
         self.settings["output_dir"] = str(self.output_dir_var.get()).strip()
-        self.settings_path.write_text(json.dumps(self.settings, indent=2, ensure_ascii=False), encoding="utf-8")
+        if not self.settings_read_only:
+            save_settings_document(self.settings_path, self.settings)
 
     def _all_security_options_enabled(self) -> bool:
         return all(
@@ -1483,7 +1503,7 @@ class UpdaterApp:
         backend_actions = ttk.Frame(backend_card, style="UpdaterCard.TFrame")
         backend_actions.pack(fill="x", pady=(self._scaled(10), 0))
         backend_buttons = [
-            ("Refresh", self._refresh_backends_clicked),
+            ("Refresh", lambda: self._refresh_backends_clicked(force_refresh=True)),
             ("Install Selected", self._install_selected_backend),
             ("Install Missing", self._install_missing_backends),
             ("Official Page", lambda: self._open_selected_backend_link("homepage")),
@@ -1630,7 +1650,7 @@ class UpdaterApp:
         if detected:
             version = str(detail.get("version") or "").strip()
             version_text = f"Version {version}. " if version else ""
-            path_text = str(detail.get("path") or self.backend_paths.get(definition.key) or "").strip()
+            path_text = display_path_with_home_alias(detail.get("path") or self.backend_paths.get(definition.key))
             self.backend_detail_var.set(
                 f"{definition.name}: detected. {version_text}{definition.enables}. Installed at {path_text or '(path unavailable)'}."
             )
@@ -1676,7 +1696,7 @@ class UpdaterApp:
         self.backend_tree.see(target)
         self._on_backend_selection()
 
-    def _refresh_backends_clicked(self) -> None:
+    def _refresh_backends_clicked(self, force_refresh: bool = False) -> None:
         if self.backend_checking or self.backend_installing:
             return
         self.backend_checking = True
@@ -1686,7 +1706,12 @@ class UpdaterApp:
         def worker() -> None:
             try:
                 paths = detect_backend_paths()
-                details = collect_backend_details(paths, popen_kwargs=hidden_console_process_kwargs())
+                details = collect_backend_details(
+                    paths,
+                    popen_kwargs=hidden_console_process_kwargs(),
+                    cache_path=self.appdata_dir / "backend_versions.json",
+                    force_refresh=force_refresh,
+                )
 
                 def apply() -> None:
                     self.backend_paths = paths
@@ -2193,6 +2218,7 @@ class UpdaterApp:
 def _run_cli_mode() -> tuple[int | None, bool]:
     parser = argparse.ArgumentParser(add_help=True, prog=APP_SLUG)
     parser.add_argument("--version", action="store_true", help="Print updater version and exit.")
+    parser.add_argument("--provenance", action="store_true", help="Print canonical project provenance and exit.")
     parser.add_argument("--smoke-test", action="store_true", help="Run a headless updater probe and exit.")
     parser.add_argument("--backends", action="store_true", help="Open directly to the optional feature tools center.")
     args, unknown = parser.parse_known_args()
@@ -2200,6 +2226,9 @@ def _run_cli_mode() -> tuple[int | None, bool]:
         parser.error(f"unrecognized arguments: {' '.join(unknown)}")
     if args.version:
         print(f"{APP_TITLE} {CURRENT_VERSION_LABEL} ({CURRENT_VERSION})")
+        return 0, bool(args.backends)
+    if args.provenance:
+        print(runtime_provenance_json(component="updater", version=CURRENT_VERSION))
         return 0, bool(args.backends)
     if args.smoke_test:
         script_dir = Path(__file__).resolve().parent
@@ -2242,8 +2271,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
-

@@ -9,7 +9,10 @@ Each module should be independently testable, replaceable, and extensible.
 - Shared backend/task engine for processing
 - Module-specific tabs for workflows and UI
 - Preset and batch system for repeatable operations
-- External-backend detection at startup (FFmpeg, Pandoc, LibreOffice, 7-Zip, ImageMagick)
+- Cached, background external-backend detection (FFmpeg, FFprobe, Pandoc, LibreOffice, 7-Zip, ImageMagick, Aria2)
+- Built-in optional add-ons that remain isolated from processing and are disabled by default
+- Versioned settings migrations, atomic persistence, and a SQLite job ledger
+- Shared accessibility, responsive-layout, task, security, and provenance foundations
 
 ## Phases
 
@@ -42,6 +45,9 @@ Each module should be independently testable, replaceable, and extensible.
   - `FormatFoundry.exe`
   - `FormatFoundry_Updater.exe`
   - `FormatFoundry_Setup.exe`
+  - `FormatFoundry_Portable_<version>_windows_x86_64.zip`
+  - `format-foundry_<version>_amd64.deb`
+  - `FormatFoundry_linux_<version>_x86_64.AppImage`
 - Includes all requested module tabs:
   - Convert
   - Compress
@@ -58,23 +64,29 @@ Each module should be independently testable, replaceable, and extensible.
   - Checksums / Integrity
   - Subtitles
   - Presets / Batch Jobs
+- Optional Idea Bank workspace
+- Optional read-only PC Health Snapshot workspace
 
 ## Current Release Target
-- Canonical coordinated release: `1.8.15`
-- This milestone combines the Windows installer path, Linux packaging path, shared UX redesign work, and the cross-platform audit pass in one release line.
-- App version, updater version, installer metadata, manifest version, and public install docs should stay aligned to the same release target.
+- Canonical coordinated release: `Beta 0.5` (`0.5.0-beta` package version)
+- Migration transport tag: `v1.8.18` for installed Alpha `1.8.17` clients
+- App version, updater version, installer metadata, manifest version, and public install docs must stay aligned through release-contract tests.
+
+## Completed Beta Foundations
+- Persistent SQLite job history and versioned settings migrations
+- Capability-aware backend center with cached versions and direct/package-manager guidance
+- Unit, contract, real-backend, responsive-layout, vulnerability, SBOM, and performance gates
+- Windows installer, single-file executable, fast-start portable ZIP, Debian package, AppImage, and tarball
+- Fail-closed tagged Windows signing, release checksums, provenance manifests, and GitHub attestations
+- Two isolated built-in add-ons that are bundled but disabled by default
 
 ## Next Recommended Upgrades
-1. Add persistent job database (SQLite) for resumable queues.
-2. Add plugin adapters for optional backends and per-module capability flags.
-3. Add structured testing:
-   - unit tests for conversion engines
-   - smoke tests per module
-   - backend integration tests
-4. Add expanded packaging and distribution profiles:
-   - Linux release packaging
-   - code signing
-   - automated release publishing
+1. Gradually split the main shell, shared widgets, stores, and module tabs into independently testable files.
+2. Expand the shared cancellable-task abstraction across every long-running module.
+3. Virtualize very large queue and directory-result views.
+4. Add manual Narrator, Orca, keyboard-only, and real Ubuntu desktop install/launcher/uninstall checks to release sign-off.
+5. Configure a publicly trusted Azure Artifact Signing or CA-issued certificate identity before publishing Beta binaries.
+6. Keep third-party add-on loading disabled until signed manifests, compatibility rules, consent, and isolation are implemented.
 
 
 

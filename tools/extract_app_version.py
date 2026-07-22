@@ -1,17 +1,14 @@
-import re
 import sys
 from pathlib import Path
 
 
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
-    app_file = root / "modular_file_utility_suite.py"
-    text = app_file.read_text(encoding="utf-8", errors="replace")
-    match = re.search(r'^APP_VERSION = "([^"]+)"', text, re.MULTILINE)
-    if not match:
-        print("APP_VERSION not found in modular_file_utility_suite.py", file=sys.stderr)
-        return 1
-    print(match.group(1))
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from app_identity import PACKAGE_VERSION
+
+    print(PACKAGE_VERSION)
     return 0
 
 

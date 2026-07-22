@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+import ctypes
+import json
 import os
 import platform
 import re
 import subprocess
-import sys
+import tempfile
 import time
 import urllib.parse
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
+from app_identity import GITHUB_RELEASE_API_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_URL, MIGRATION_RELEASE_TAG
 
-DEFAULT_GITHUB_REPO = "Pugmaster04/Format-Foundry"
-DEFAULT_GITHUB_REPO_URL = f"https://github.com/{DEFAULT_GITHUB_REPO}"
-DEFAULT_GITHUB_RELEASE_API_URL = f"https://api.github.com/repos/{DEFAULT_GITHUB_REPO}/releases/latest"
-RELEASE_TRANSPORT_TAG = "v1.8.18"
+DEFAULT_GITHUB_REPO = GITHUB_REPOSITORY
+DEFAULT_GITHUB_REPO_URL = GITHUB_REPOSITORY_URL
+DEFAULT_GITHUB_RELEASE_API_URL = GITHUB_RELEASE_API_URL
+RELEASE_TRANSPORT_TAG = MIGRATION_RELEASE_TAG
 DEFAULT_TRUSTED_UPDATE_HOSTS = (
     "github.com",
     "api.github.com",
@@ -48,6 +53,68 @@ BACKEND_VERSION_PROBES: dict[str, tuple[list[str], str]] = {
 }
 
 
+class _WindowsFixedFileInfo(ctypes.Structure):
+    _fields_ = [
+        ("signature", ctypes.c_uint32),
+        ("structure_version", ctypes.c_uint32),
+        ("file_version_ms", ctypes.c_uint32),
+        ("file_version_ls", ctypes.c_uint32),
+        ("product_version_ms", ctypes.c_uint32),
+        ("product_version_ls", ctypes.c_uint32),
+        ("file_flags_mask", ctypes.c_uint32),
+        ("file_flags", ctypes.c_uint32),
+        ("file_os", ctypes.c_uint32),
+        ("file_type", ctypes.c_uint32),
+        ("file_subtype", ctypes.c_uint32),
+        ("file_date_ms", ctypes.c_uint32),
+        ("file_date_ls", ctypes.c_uint32),
+    ]
+
+
+def atomic_write_text(path: Path, content: str, *, encoding: str = "utf-8") -> None:
+    """Replace a text file atomically so interrupted writes do not corrupt settings."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=str(target.parent),
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding=encoding, newline="\n") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, target)
+    except Exception:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_json(path: Path, payload: Any) -> None:
+    atomic_write_text(path, json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+
+
+def display_path_with_home_alias(path_value: str | os.PathLike[str] | None) -> str:
+    """Hide the current profile prefix in UI text without changing the real path."""
+    text = str(path_value or "").strip()
+    if not text:
+        return ""
+    home_text = str(Path.home())
+    normalized_text = os.path.normcase(os.path.normpath(text))
+    normalized_home = os.path.normcase(os.path.normpath(home_text))
+    if normalized_text == normalized_home:
+        return "~"
+    home_prefix = normalized_home.rstrip("\\/") + os.sep
+    if normalized_text.startswith(home_prefix):
+        return "~" + text[len(home_text) :]
+    return text
+
+
 def _normalize_probe_output(*parts: Any) -> str:
     values: list[str] = []
     for part in parts:
@@ -61,9 +128,10 @@ def _normalize_probe_output(*parts: Any) -> str:
 
 
 def current_platform_key() -> str:
-    if os.name == "nt":
+    system_name = platform.system().casefold()
+    if system_name == "windows":
         return "windows"
-    if sys.platform.startswith("linux"):
+    if system_name == "linux":
         return "linux"
     return "other"
 
@@ -299,6 +367,14 @@ def _probe_backend_version(
         "error": "",
         "note": "",
     }
+    if backend_key == "libreoffice" and current_platform_key() == "windows":
+        version = _windows_file_version(path_value)
+        if version:
+            result["version"] = version
+            result["raw"] = f"LibreOffice {version} (Windows file metadata)"
+        else:
+            result["note"] = "Version metadata unavailable; backend remains usable."
+        return result
     try:
         timeout_seconds = 3 if backend_key == "libreoffice" else 8
         completed = subprocess.run(
@@ -337,11 +413,68 @@ def _probe_backend_version(
     return result
 
 
+def _windows_file_version(path_value: str) -> str:
+    """Read a PE file version without launching the executable."""
+    if current_platform_key() != "windows":
+        return ""
+    try:
+        windll: Any = getattr(ctypes, "windll", None)
+        if windll is None:
+            return ""
+        version_api: Any = windll.version
+        ignored_handle = ctypes.c_uint32(0)
+        size = int(version_api.GetFileVersionInfoSizeW(path_value, ctypes.byref(ignored_handle)))
+        if size <= 0:
+            return ""
+        buffer = ctypes.create_string_buffer(size)
+        if not version_api.GetFileVersionInfoW(path_value, 0, size, buffer):
+            return ""
+        value_pointer = ctypes.c_void_p()
+        value_length = ctypes.c_uint32(0)
+        if not version_api.VerQueryValueW(buffer, "\\", ctypes.byref(value_pointer), ctypes.byref(value_length)):
+            return ""
+        if value_length.value < ctypes.sizeof(_WindowsFixedFileInfo) or not value_pointer.value:
+            return ""
+        info = ctypes.cast(value_pointer, ctypes.POINTER(_WindowsFixedFileInfo)).contents
+        parts = (
+            info.file_version_ms >> 16,
+            info.file_version_ms & 0xFFFF,
+            info.file_version_ls >> 16,
+            info.file_version_ls & 0xFFFF,
+        )
+        return ".".join(str(part) for part in parts)
+    except (AttributeError, OSError, TypeError, ValueError):
+        return ""
+
+
 def collect_backend_details(
     backend_paths: dict[str, str | None],
     popen_kwargs: dict[str, Any] | None = None,
+    *,
+    cache_path: Path | None = None,
+    force_refresh: bool = False,
+    cache_ttl_seconds: float = 86400.0,
+    cache_limit: int = 32,
 ) -> dict[str, dict[str, Any]]:
     details: dict[str, dict[str, Any]] = {}
+    pending: list[tuple[str, str]] = []
+    now = time.time()
+    detected_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+    cache_entries: dict[str, Any] = {}
+    if cache_path is not None and Path(cache_path).is_file():
+        try:
+            cache_payload = json.loads(Path(cache_path).read_text(encoding="utf-8"))
+            if isinstance(cache_payload, dict) and isinstance(cache_payload.get("entries"), dict):
+                cache_entries = dict(cache_payload["entries"])
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            cache_entries = {}
+
+    def path_mtime_ns(path_value: str) -> int:
+        try:
+            return int(Path(path_value).stat().st_mtime_ns)
+        except OSError:
+            return 0
+
     for backend_key, path_value in backend_paths.items():
         value = str(path_value or "").strip()
         if not value or value == "Not found":
@@ -351,10 +484,62 @@ def collect_backend_details(
                 "version": "",
                 "raw": "",
                 "error": "Not found",
+                "detected_at_utc": detected_at,
+                "cache_hit": False,
             }
             continue
-        details[backend_key] = _probe_backend_version(backend_key, value, popen_kwargs=popen_kwargs)
-    return details
+        cache_key = f"{backend_key}|{os.path.normcase(os.path.abspath(value))}"
+        cached = cache_entries.get(cache_key)
+        if not force_refresh and isinstance(cached, dict):
+            checked_at = float(cached.get("checked_at_epoch", 0.0) or 0.0)
+            cached_detail = cached.get("detail")
+            same_executable = int(cached.get("path_mtime_ns", -1)) == path_mtime_ns(value)
+            if same_executable and now - checked_at <= max(0.0, float(cache_ttl_seconds)) and isinstance(cached_detail, dict):
+                details[backend_key] = dict(cached_detail)
+                details[backend_key]["cache_hit"] = True
+                continue
+        pending.append((backend_key, value))
+
+    if pending:
+        worker_count = min(4, len(pending))
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="backend-probe") as executor:
+            futures = {
+                backend_key: executor.submit(
+                    _probe_backend_version,
+                    backend_key,
+                    value,
+                    popen_kwargs,
+                )
+                for backend_key, value in pending
+            }
+            for backend_key, value in pending:
+                detail = futures[backend_key].result()
+                detail["detected_at_utc"] = detected_at
+                detail["cache_hit"] = False
+                details[backend_key] = detail
+                cache_key = f"{backend_key}|{os.path.normcase(os.path.abspath(value))}"
+                cache_entries[cache_key] = {
+                    "backend_key": backend_key,
+                    "path": value,
+                    "path_mtime_ns": path_mtime_ns(value),
+                    "checked_at_epoch": now,
+                    "detail": detail,
+                }
+
+    if cache_path is not None:
+        bounded_entries = dict(
+            sorted(
+                cache_entries.items(),
+                key=lambda item: float(item[1].get("checked_at_epoch", 0.0)) if isinstance(item[1], dict) else 0.0,
+                reverse=True,
+            )[: max(1, int(cache_limit))]
+        )
+        try:
+            atomic_write_json(Path(cache_path), {"schema_version": 1, "entries": bounded_entries})
+        except OSError:
+            pass
+
+    return {backend_key: details[backend_key] for backend_key in backend_paths}
 
 
 def evaluate_runtime_support(snapshot: dict[str, Any]) -> dict[str, Any]:

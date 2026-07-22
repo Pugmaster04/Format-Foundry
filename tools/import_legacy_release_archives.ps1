@@ -21,7 +21,13 @@ function Get-DefaultArchiveRoot {
 }
 
 if ([string]::IsNullOrWhiteSpace($LegacyArchiveRoot)) {
-    $LegacyArchiveRoot = "C:\Users\Pugma\Downloads\New Python Script Suite\archive"
+    $LegacyArchiveRoot = [Environment]::GetEnvironmentVariable("FORMAT_FOUNDRY_LEGACY_ARCHIVE_ROOT", "Process")
+}
+if ([string]::IsNullOrWhiteSpace($LegacyArchiveRoot)) {
+    $LegacyArchiveRoot = [Environment]::GetEnvironmentVariable("FORMAT_FOUNDRY_LEGACY_ARCHIVE_ROOT", "User")
+}
+if ([string]::IsNullOrWhiteSpace($LegacyArchiveRoot)) {
+    throw "Pass -LegacyArchiveRoot or set FORMAT_FOUNDRY_LEGACY_ARCHIVE_ROOT to import legacy snapshots."
 }
 if (-not (Test-Path $LegacyArchiveRoot)) {
     throw "Legacy archive root not found: $LegacyArchiveRoot"

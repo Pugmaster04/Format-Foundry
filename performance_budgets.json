@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "source_main_import_seconds": 1.5,
+  "source_updater_import_seconds": 1.0,
+  "backend_detection_seconds": 3.0,
+  "frozen_app_smoke_seconds": 20.0,
+  "frozen_updater_smoke_seconds": 10.0,
+  "frozen_app_max_bytes": 94371840,
+  "frozen_updater_max_bytes": 31457280,
+  "windows_installer_max_bytes": 125829120
+}

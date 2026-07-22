@@ -1,0 +1,58 @@
+{
+  "event_period": {
+    "source": "https://openai.devpost.com/rules",
+    "submission_closes": "2026-07-22T00:00:00Z",
+    "submission_opens": "2026-07-13T16:00:00Z"
+  },
+  "evidence_files": [
+    {
+      "bytes": 13088,
+      "path": "docs/OPTIMIZATION_AUDIT.md",
+      "sha256": "6cdab903a6a87367425a60971800f68ac2be57737331dfa098d176cc466424a5"
+    },
+    {
+      "bytes": 6822,
+      "path": "hackathon-audit/HACKATHON_WEEK_AUDIT.md",
+      "sha256": "0e2eb8c1fcd467c25d141a30666f12145e371408a5ce5e5ee2d5dab10cd57350"
+    },
+    {
+      "bytes": 326,
+      "path": "release_bins/SHA256SUMS-linux",
+      "sha256": "92b93c81cdfd97d5f3a946a08f15716f09bdb75dbb4e9ff9392e9efc64f1c78a"
+    },
+    {
+      "bytes": 422,
+      "path": "release_bins/SHA256SUMS-windows",
+      "sha256": "74117912b6c7142e994210d392d3448e2c55a9370ef0bf7d8285300dc234e200"
+    },
+    {
+      "bytes": 104,
+      "path": "submission-media/Format-Foundry-Devpost-Media-Kit.zip.sha256",
+      "sha256": "16d7461613669a612f9482443c0abec4d2e6ea6f023c7e3f44d5984442beb5ad"
+    },
+    {
+      "bytes": 7674,
+      "path": "submission-media/MEDIA_MANIFEST.json",
+      "sha256": "73192f0a5eb2f6f20caaab3e414766d523533861a1a7802776b8e5bc0f2a5584"
+    }
+  ],
+  "generated_at_utc": "2026-07-22T06:30:00Z",
+  "ledger": {
+    "event_count": 12,
+    "head_hash": "cba1b7fa33fa301595e3794f497cc558d0e729fb63ae00f95e4abb68c478e353",
+    "log": "hackathon-audit/events.jsonl",
+    "ok": true
+  },
+  "repository": {
+    "branch": "codex/beta-0.5-hardening",
+    "head_commit": "85fde26435ff9f98badfb0cd89e5d6aa94995b90",
+    "origin": "https://github.com/Pugmaster04/Format-Foundry",
+    "working_tree_dirty": true,
+    "working_tree_entries": [
+      "M  hackathon-audit/AUDIT_SNAPSHOT.json",
+      "M  tests/test_hackathon_audit.py",
+      " M tools/hackathon_audit.py"
+    ]
+  },
+  "schema": "format-foundry/hackathon-audit-snapshot/v1"
+}

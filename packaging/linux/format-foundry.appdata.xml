@@ -37,12 +37,14 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="0.5.0-beta" type="development" date="2026-07-17">
+    <release version="0.5.0-beta" type="development" date="2026-07-18">
       <description>
         <ul>
           <li>Introduced the Beta 0.5 lifecycle and classified all earlier builds as Alpha.</li>
           <li>Added an updater-based backend center with feature-impact guidance, official links, and package-manager installation.</li>
           <li>Hardened clean installation and upgrade discovery for normal consumer computers.</li>
+          <li>Added responsive optional Idea Bank and read-only PC Health Snapshot workspaces.</li>
+          <li>Validated Debian and AppImage builds with real Ubuntu backends, security evidence, and performance budgets.</li>
         </ul>
       </description>
     </release>

@@ -1,7 +1,7 @@
 import unittest
 
-from modular_file_utility_suite import OperationCanceledError
 import task_runner_support
+from modular_file_utility_suite import OperationCanceledError
 
 
 class TaskRunnerSupportTests(unittest.TestCase):

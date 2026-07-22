@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import glob
 import os
+import platform
 import shlex
 import shutil
-import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 
 @dataclass(frozen=True)
@@ -154,16 +154,28 @@ BACKEND_LINKS = {
 def current_platform_key() -> str:
     if os.name == "nt":
         return "windows"
-    if sys.platform.startswith("linux"):
+    if platform.system().casefold() == "linux":
         return "linux"
     return "other"
 
 
 def detect_linux_package_manager() -> str:
     for manager in ("apt-get", "apt", "dnf", "pacman", "zypper"):
-        if shutil.which(manager):
+        if _native_which(manager):
             return "apt" if manager in {"apt", "apt-get"} else manager
     return ""
+
+
+def _native_which(*names: str) -> str | None:
+    """Resolve a command without crossing into Windows binaries from WSL."""
+    for name in names:
+        candidate = shutil.which(name)
+        if not candidate:
+            continue
+        if current_platform_key() == "linux" and Path(candidate).suffix.casefold() in {".bat", ".cmd", ".com", ".exe"}:
+            continue
+        return candidate
+    return None
 
 
 def _existing(value: str | os.PathLike[str] | None) -> str | None:
@@ -203,13 +215,26 @@ def _env_path(name: str, *parts: str) -> Path | None:
     return Path(root).joinpath(*parts) if root else None
 
 
-def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | None]:
+def detect_backend_paths(
+    ffmpeg_fallback: str | None = None,
+    *,
+    runtime_search_roots: Iterable[str | os.PathLike[str]] = (),
+) -> dict[str, str | None]:
     local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
     winget_packages = Path(local_appdata) / "Microsoft" / "WinGet" / "Packages" if local_appdata else None
+    local_roots: list[Path] = []
+    seen_roots: set[str] = set()
+    for raw_root in runtime_search_roots:
+        root = Path(raw_root).expanduser()
+        key = os.path.normcase(str(root.resolve(strict=False)))
+        if key in seen_roots:
+            continue
+        seen_roots.add(key)
+        local_roots.append(root)
 
     ffmpeg = _first_existing(
         [
-            shutil.which("ffmpeg") or shutil.which("ffmpeg.exe"),
+            _native_which("ffmpeg", "ffmpeg.exe"),
             _env_path("ProgramFiles", "ffmpeg", "bin", "ffmpeg.exe"),
             _env_path("ProgramFiles(x86)", "ffmpeg", "bin", "ffmpeg.exe"),
             "/usr/bin/ffmpeg",
@@ -227,7 +252,7 @@ def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | 
     ffmpeg = ffmpeg or _existing(ffmpeg_fallback)
 
     ffprobe_candidates: list[str | os.PathLike[str] | None] = [
-        shutil.which("ffprobe") or shutil.which("ffprobe.exe"),
+        _native_which("ffprobe", "ffprobe.exe"),
         Path(ffmpeg).with_name("ffprobe.exe") if ffmpeg else None,
         Path(ffmpeg).with_name("ffprobe") if ffmpeg else None,
         "/usr/bin/ffprobe",
@@ -244,7 +269,7 @@ def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | 
 
     pandoc = _first_existing(
         [
-            shutil.which("pandoc") or shutil.which("pandoc.exe"),
+            _native_which("pandoc", "pandoc.exe"),
             _env_path("ProgramFiles", "Pandoc", "pandoc.exe"),
             _env_path("ProgramFiles(x86)", "Pandoc", "pandoc.exe"),
             _env_path("LOCALAPPDATA", "Pandoc", "pandoc.exe"),
@@ -258,7 +283,7 @@ def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | 
 
     libreoffice = _first_existing(
         [
-            shutil.which("soffice") or shutil.which("soffice.exe"),
+            _native_which("soffice", "soffice.exe"),
             _env_path("ProgramFiles", "LibreOffice", "program", "soffice.exe"),
             _env_path("ProgramFiles(x86)", "LibreOffice", "program", "soffice.exe"),
             "/usr/bin/soffice",
@@ -269,7 +294,7 @@ def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | 
 
     sevenzip = _first_existing(
         [
-            shutil.which("7z") or shutil.which("7zz") or shutil.which("7z.exe"),
+            _native_which("7z", "7zz", "7z.exe"),
             _env_path("ProgramFiles", "7-Zip", "7z.exe"),
             _env_path("ProgramFiles(x86)", "7-Zip", "7z.exe"),
             _env_path("LOCALAPPDATA", "Programs", "7-Zip", "7z.exe"),
@@ -281,8 +306,8 @@ def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | 
 
     imagemagick = _first_existing(
         [
-            shutil.which("magick") or shutil.which("magick.exe"),
-            shutil.which("convert") if current_platform_key() == "linux" else None,
+            _native_which("magick", "magick.exe"),
+            _native_which("convert") if current_platform_key() == "linux" else None,
             "/usr/bin/magick",
             "/usr/local/bin/magick",
             "/usr/bin/convert",
@@ -300,7 +325,7 @@ def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | 
 
     aria2 = _first_existing(
         [
-            shutil.which("aria2c") or shutil.which("aria2c.exe"),
+            _native_which("aria2c", "aria2c.exe"),
             _env_path("ProgramFiles", "aria2", "aria2c.exe"),
             _env_path("ProgramFiles(x86)", "aria2", "aria2c.exe"),
             _env_path("LOCALAPPDATA", "Programs", "aria2", "aria2c.exe"),
@@ -308,10 +333,21 @@ def detect_backend_paths(ffmpeg_fallback: str | None = None) -> dict[str, str | 
             "/usr/bin/aria2c",
             "/usr/local/bin/aria2c",
             "/snap/bin/aria2c",
+            *[root / "aria2c.exe" for root in local_roots],
+            *[root / "aria2c" for root in local_roots],
+            *[root / "aria2" / "aria2c.exe" for root in local_roots],
+            *[root / "aria2" / "aria2c" for root in local_roots],
         ]
     )
     if not aria2 and winget_packages:
         aria2 = _first_glob([str(winget_packages / "aria2.aria2_Microsoft.Winget.Source_*" / "**" / "aria2c.exe")])
+    if not aria2 and local_roots:
+        aria2 = _first_glob(
+            [
+                *[str(root / "aria2*" / "aria2c.exe") for root in local_roots],
+                *[str(root / "aria2*" / "aria2c") for root in local_roots],
+            ]
+        )
 
     return {
         "ffmpeg": ffmpeg,
@@ -367,7 +403,7 @@ def backend_install_process_args(
         return [], "Unknown backend."
     platform_value = platform_key or current_platform_key()
     if platform_value == "windows":
-        winget = executable_override or shutil.which("winget") or shutil.which("winget.exe")
+        winget = executable_override or _native_which("winget", "winget.exe")
         if not winget:
             return [], "Windows Package Manager (winget) is not available. Use the official download link instead."
         return [
@@ -389,11 +425,11 @@ def backend_install_process_args(
     packages = definition.linux_packages.get(manager, ())
     if not manager or not packages:
         return [], "No supported Linux package manager was detected. Use the official download link instead."
-    pkexec = privilege_helper_override or shutil.which("pkexec")
+    pkexec = privilege_helper_override or _native_which("pkexec")
     if not pkexec:
         return [], "Graphical administrator approval (pkexec) is unavailable. Copy the install command and run it in a terminal."
     manager_binary_name = "apt-get" if manager == "apt" else manager
-    manager_path = executable_override or shutil.which(manager_binary_name) or shutil.which(manager)
+    manager_path = executable_override or _native_which(manager_binary_name, manager)
     if not manager_path:
         return [], f"The {manager} package manager executable was not found."
     if manager == "apt":

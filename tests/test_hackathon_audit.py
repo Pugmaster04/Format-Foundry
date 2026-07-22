@@ -46,11 +46,11 @@ class HackathonAuditTests(unittest.TestCase):
     def test_secret_like_values_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log_path = Path(tmp) / "events.jsonl"
-            synthetic_secret = "sk-" + "examplecredentialvalue123456789"
+            blocked_value = "sk-" + "examplecredentialvalue123456789"
             with self.assertRaises(hackathon_audit.AuditError):
                 hackathon_audit.append_event(
                     category="configuration",
-                    summary=f"Used {synthetic_secret}",
+                    summary=f"Used {blocked_value}",
                     log_path=log_path,
                 )
             self.assertFalse(log_path.exists())

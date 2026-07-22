@@ -9,10 +9,10 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOG = ROOT / "hackathon-audit" / "events.jsonl"
@@ -33,7 +33,7 @@ class AuditError(RuntimeError):
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def canonical_event_bytes(event: dict[str, Any]) -> bytes:

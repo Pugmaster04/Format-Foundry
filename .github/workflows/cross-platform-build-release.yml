@@ -372,7 +372,9 @@ jobs:
           test -x deb-smoke/usr/bin/format-foundry-updater
           test -x deb-smoke/opt/format-foundry/FormatFoundry
           test -x deb-smoke/opt/format-foundry/FormatFoundry_Updater
+          test -f deb-smoke/opt/format-foundry/LICENSE
           test -f deb-smoke/usr/share/applications/io.github.pugmaster04.formatfoundry.desktop
+          test -f deb-smoke/usr/share/doc/format-foundry/copyright
           test -f deb-smoke/usr/share/metainfo/io.github.pugmaster04.formatfoundry.appdata.xml
           test -f deb-smoke/usr/share/pixmaps/format-foundry.png
           test -f "$DEB_PACKAGE"

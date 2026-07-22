@@ -15,6 +15,7 @@ AppPublisherURL=https://pugmaster04.github.io/Format-Foundry/index.html
 AppSupportURL=https://github.com/Pugmaster04/Format-Foundry/issues
 AppUpdatesURL=https://pugmaster04.github.io/Format-Foundry/downloads.html
 AppComments=Self-contained desktop application. Optional third-party feature tools are managed through the updater.
+LicenseFile=..\LICENSE
 DefaultDirName={autopf}\Format Foundry
 UsePreviousAppDir=yes
 DisableDirPage=auto
@@ -50,6 +51,7 @@ Source: "..\dist\FormatFoundry_Updater.exe"; DestDir: "{app}"; Flags: ignorevers
 Source: "..\PROJECT_PLAN.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\update_manifest.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\Format Foundry"; Filename: "{app}\{#MyAppExeName}"

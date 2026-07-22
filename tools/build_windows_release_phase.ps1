@@ -206,6 +206,11 @@ function Stage-Release {
     if (-not (Test-Path -LiteralPath $portableDirectory -PathType Container)) {
         throw "Portable release directory is missing: $portableDirectory"
     }
+    $licensePath = Join-Path $RepoRoot "LICENSE"
+    if (-not (Test-Path -LiteralPath $licensePath -PathType Leaf)) {
+        throw "Release license is missing: $licensePath"
+    }
+    Copy-Item -LiteralPath $licensePath -Destination (Join-Path $portableDirectory "LICENSE") -Force
     if (Test-Path -LiteralPath $portableArchivePath -PathType Leaf) {
         Remove-Item -LiteralPath $portableArchivePath -Force
     }

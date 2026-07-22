@@ -238,6 +238,7 @@ cp -f "dist/${UPDATER_BINARY_NAME}" "$TAR_DIR/${UPDATER_BINARY_NAME}"
 cp -f "README.md" "$TAR_DIR/README.md"
 cp -f "PROJECT_PLAN.md" "$TAR_DIR/PROJECT_PLAN.md"
 cp -f "update_manifest.example.json" "$TAR_DIR/update_manifest.example.json"
+cp -f "LICENSE" "$TAR_DIR/LICENSE"
 chmod +x "$TAR_DIR/${APP_BINARY_NAME}" "$TAR_DIR/${UPDATER_BINARY_NAME}"
 tar -czf "$TAR_PACKAGE" -C release_bins "$TAR_BASENAME"
 
@@ -248,6 +249,7 @@ mkdir -p \
   "${DEB_ROOT}/opt/${PACKAGE_NAME}" \
   "${DEB_ROOT}/usr/bin" \
   "${DEB_ROOT}/usr/share/applications" \
+  "${DEB_ROOT}/usr/share/doc/${PACKAGE_NAME}" \
   "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps" \
   "${DEB_ROOT}/usr/share/pixmaps" \
   "${DEB_ROOT}/usr/share/metainfo"
@@ -256,6 +258,8 @@ cp -f "dist/${UPDATER_BINARY_NAME}" "${DEB_ROOT}/opt/${PACKAGE_NAME}/${UPDATER_B
 cp -f "README.md" "${DEB_ROOT}/opt/${PACKAGE_NAME}/README.md"
 cp -f "PROJECT_PLAN.md" "${DEB_ROOT}/opt/${PACKAGE_NAME}/PROJECT_PLAN.md"
 cp -f "update_manifest.example.json" "${DEB_ROOT}/opt/${PACKAGE_NAME}/update_manifest.example.json"
+cp -f "LICENSE" "${DEB_ROOT}/opt/${PACKAGE_NAME}/LICENSE"
+cp -f "LICENSE" "${DEB_ROOT}/usr/share/doc/${PACKAGE_NAME}/copyright"
 cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png"
 cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/pixmaps/${PACKAGE_NAME}.png"
 cp -f "$APPDATA_TEMPLATE" "${DEB_ROOT}/usr/share/metainfo/${APPDATA_OUTPUT_NAME}"
@@ -292,7 +296,9 @@ chmod 644 \
   "${DEB_ROOT}/opt/${PACKAGE_NAME}/README.md" \
   "${DEB_ROOT}/opt/${PACKAGE_NAME}/PROJECT_PLAN.md" \
   "${DEB_ROOT}/opt/${PACKAGE_NAME}/update_manifest.example.json" \
+  "${DEB_ROOT}/opt/${PACKAGE_NAME}/LICENSE" \
   "${DEB_ROOT}/usr/share/applications/${DESKTOP_ID}" \
+  "${DEB_ROOT}/usr/share/doc/${PACKAGE_NAME}/copyright" \
   "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png" \
   "${DEB_ROOT}/usr/share/pixmaps/${PACKAGE_NAME}.png" \
   "${DEB_ROOT}/usr/share/metainfo/${APPDATA_OUTPUT_NAME}"
@@ -304,6 +310,7 @@ download_appimagetool
 mkdir -p \
   "${APPDIR_ROOT}/usr/bin" \
   "${APPDIR_ROOT}/usr/share/applications" \
+  "${APPDIR_ROOT}/usr/share/doc/${PACKAGE_NAME}" \
   "${APPDIR_ROOT}/usr/share/icons/hicolor/256x256/apps" \
   "${APPDIR_ROOT}/usr/share/metainfo"
 cp -f "dist/${APP_BINARY_NAME}" "${APPDIR_ROOT}/usr/bin/${APP_BINARY_NAME}"
@@ -311,6 +318,8 @@ cp -f "dist/${UPDATER_BINARY_NAME}" "${APPDIR_ROOT}/usr/bin/${UPDATER_BINARY_NAM
 cp -f "README.md" "${APPDIR_ROOT}/usr/bin/README.md"
 cp -f "PROJECT_PLAN.md" "${APPDIR_ROOT}/usr/bin/PROJECT_PLAN.md"
 cp -f "update_manifest.example.json" "${APPDIR_ROOT}/usr/bin/update_manifest.example.json"
+cp -f "LICENSE" "${APPDIR_ROOT}/usr/bin/LICENSE"
+cp -f "LICENSE" "${APPDIR_ROOT}/usr/share/doc/${PACKAGE_NAME}/copyright"
 sed 's/\r$//' "$APP_RUN_TEMPLATE" > "${APPDIR_ROOT}/AppRun"
 cp -f "$ICON_OUTPUT" "${APPDIR_ROOT}/${PACKAGE_NAME}.png"
 cp -f "$ICON_OUTPUT" "${APPDIR_ROOT}/.DirIcon"

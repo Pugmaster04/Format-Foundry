@@ -100,6 +100,20 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn('find "${DEB_ROOT}" -type d -exec chmod 755', build_script)
         self.assertIn("s/\\r$//", build_script)
         self.assertIn('APPDATA_OUTPUT_NAME="${DESKTOP_ID%.desktop}.appdata.xml"', build_script)
+        self.assertIn('"${DEB_ROOT}/usr/share/doc/${PACKAGE_NAME}/copyright"', build_script)
+        self.assertIn('"${APPDIR_ROOT}/usr/share/doc/${PACKAGE_NAME}/copyright"', build_script)
+
+    def test_release_packages_include_local_license_terms(self) -> None:
+        installer_source = read("installer/FormatFoundry.iss")
+        windows_builder = read("tools/build_windows_release_phase.ps1")
+        linux_builder = read("build_linux.sh")
+        workflow = read(".github/workflows/cross-platform-build-release.yml")
+
+        self.assertIn("LicenseFile=..\\LICENSE", installer_source)
+        self.assertIn('Source: "..\\LICENSE"; DestDir: "{app}"', installer_source)
+        self.assertIn('Join-Path $portableDirectory "LICENSE"', windows_builder)
+        self.assertIn('cp -f "LICENSE" "$TAR_DIR/LICENSE"', linux_builder)
+        self.assertIn("deb-smoke/usr/share/doc/format-foundry/copyright", workflow)
 
     def test_every_historical_changelog_release_is_labeled_alpha(self) -> None:
         changelog = read("CHANGELOG.md")

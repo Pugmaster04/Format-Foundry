@@ -2,7 +2,6 @@
 import colorsys
 import argparse
 import csv
-import glob
 import hashlib
 import heapq
 import json
@@ -26,6 +25,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 import zipfile
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, ClassVar
@@ -35,6 +35,18 @@ import tkinter.font as tkfont
 from tkinter import END, SINGLE, BooleanVar, IntVar, StringVar, filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+from app_identity import (
+    APP_EXECUTABLE_BASENAME,
+    DEBIAN_PACKAGE_NAME,
+    DISPLAY_VERSION,
+    LEGACY_APP_EXECUTABLE_BASENAMES,
+    LEGACY_PRODUCT_SLUGS,
+    LEGACY_UPDATER_EXECUTABLE_BASENAMES,
+    PACKAGE_VERSION,
+    PRODUCT_NAME,
+    PRODUCT_SLUG,
+    UPDATER_EXECUTABLE_BASENAME,
+)
 from aria2_support import build_download_command, call_rpc, process_is_running, terminate_process
 from archive_support import safe_extract_tar, safe_extract_zip
 from backend_support import (
@@ -43,14 +55,20 @@ from backend_support import (
     backend_install_command,
     detect_backend_paths,
 )
+from format_foundry_provenance import runtime_provenance_json
+from job_ledger import ACTIVE_JOB_STATUSES, JobLedger
+from optional_dependencies import imageio_ffmpeg_module, torrent_class, windnd_module, yaml_module
+from settings_support import load_settings_document, save_settings_document
 from support_runtime import (
     BACKEND_KEY_TO_NAME,
     BACKEND_NAME_TO_KEY,
     DEFAULT_GITHUB_RELEASE_API_URL,
     DEFAULT_GITHUB_REPO_URL,
     DEFAULT_TRUSTED_UPDATE_HOSTS,
+    atomic_write_json,
     build_environment_snapshot,
     collect_backend_details,
+    display_path_with_home_alias,
     evaluate_manifest_compatibility,
     format_release_label,
     is_release_newer,
@@ -75,42 +93,16 @@ except Exception:
 else:
     register_heif_opener()
 
-try:
-    import yaml
-except Exception:
-    yaml = None
-
-try:
-    import imageio_ffmpeg
-except Exception:
-    imageio_ffmpeg = None
-
-try:
-    import windnd
-except Exception:
-    windnd = None
-
-try:
-    from torrentool.api import Torrent
-except Exception:
-    Torrent = None
-
-
-APP_TITLE = "Format Foundry"
-APP_SLUG = "FormatFoundry"
-LEGACY_APP_SLUGS = ("UniversalConversionHubUCH", "UniversalConversionHubHCB", "UniversalFileUtilitySuite")
-APP_VERSION = "0.5.0-beta"
-APP_VERSION_LABEL = "Beta 0.5"
+APP_TITLE = PRODUCT_NAME
+APP_SLUG = PRODUCT_SLUG
+LEGACY_APP_SLUGS = LEGACY_PRODUCT_SLUGS
+APP_VERSION = PACKAGE_VERSION
+APP_VERSION_LABEL = DISPLAY_VERSION
 DEFAULT_UPDATE_MANIFEST_URL = ""
-APP_EXE_BASENAME = "FormatFoundry"
-UPDATER_EXE_BASENAME = "FormatFoundry_Updater"
-DEBIAN_PACKAGE_NAME = "format-foundry"
-LEGACY_APP_EXE_BASENAMES = ("UniversalConversionHub_UCH", "UniversalConversionHub_HCB", "UniversalFileUtilitySuite")
-LEGACY_UPDATER_EXE_BASENAMES = (
-    "UniversalConversionHub_UCH_Updater",
-    "UniversalConversionHub_HCB_Updater",
-    "UniversalFileUtilitySuite_Updater",
-)
+APP_EXE_BASENAME = APP_EXECUTABLE_BASENAME
+UPDATER_EXE_BASENAME = UPDATER_EXECUTABLE_BASENAME
+LEGACY_APP_EXE_BASENAMES = LEGACY_APP_EXECUTABLE_BASENAMES
+LEGACY_UPDATER_EXE_BASENAMES = LEGACY_UPDATER_EXECUTABLE_BASENAMES
 LEGACY_WINDOW_TITLES = (
     APP_TITLE,
     "Universal Conversion Hub (UCH)",
@@ -790,6 +782,7 @@ def read_structured(path: Path):
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
     if suffix in {".yaml", ".yml"}:
+        yaml = yaml_module()
         if yaml is None:
             raise RuntimeError("PyYAML is not installed; cannot read YAML.")
         with path.open("r", encoding="utf-8") as handle:
@@ -810,6 +803,7 @@ def write_structured(data: Any, path: Path, fmt: str) -> None:
             json.dump(data, handle, indent=2, ensure_ascii=False)
         return
     if fmt == "yaml":
+        yaml = yaml_module()
         if yaml is None:
             raise RuntimeError("PyYAML is not installed; cannot write YAML.")
         with path.open("w", encoding="utf-8") as handle:
@@ -1008,42 +1002,6 @@ class BackendRegistry:
     imagemagick: str | None
     aria2: str | None
 
-    @staticmethod
-    def _existing(path_str: str | None) -> str | None:
-        if not path_str:
-            return None
-        try:
-            path_obj = Path(path_str)
-            if path_obj.exists():
-                return str(path_obj)
-        except Exception:
-            return None
-        return None
-
-    @staticmethod
-    def _first_existing(candidates: list[Path]) -> str | None:
-        for candidate in candidates:
-            if str(candidate):
-                try:
-                    if candidate.exists():
-                        return str(candidate)
-                except Exception:
-                    continue
-        return None
-
-    @staticmethod
-    def _first_glob(base_patterns: list[str]) -> str | None:
-        for pattern in base_patterns:
-            try:
-                matches = sorted(glob.glob(pattern, recursive=True))
-            except Exception:
-                matches = []
-            for match in matches:
-                match_path = Path(match)
-                if match_path.exists():
-                    return str(match_path)
-        return None
-
     @classmethod
     def clear_cache(cls) -> None:
         cls._cached = None
@@ -1052,159 +1010,36 @@ class BackendRegistry:
     def detect(cls, force_refresh: bool = False) -> "BackendRegistry":
         if not force_refresh and cls._cached is not None:
             return cls._cached
+
         imageio_ffmpeg_path = None
+        imageio_ffmpeg = imageio_ffmpeg_module()
         if imageio_ffmpeg is not None:
             try:
                 imageio_ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
             except Exception:
                 imageio_ffmpeg_path = None
 
-        ffmpeg_path = cls._existing(shutil.which("ffmpeg") or shutil.which("ffmpeg.exe"))
-        if not ffmpeg_path:
-            ffmpeg_path = cls._first_existing(
-                [
-                    Path(os.environ.get("ProgramFiles", "")) / "ffmpeg" / "bin" / "ffmpeg.exe",
-                    Path(os.environ.get("ProgramFiles(x86)", "")) / "ffmpeg" / "bin" / "ffmpeg.exe",
-                    Path(os.environ.get("ProgramW6432", "")) / "ffmpeg" / "bin" / "ffmpeg.exe",
-                    Path("/usr/bin/ffmpeg"),
-                    Path("/usr/local/bin/ffmpeg"),
-                    Path("/snap/bin/ffmpeg"),
-                ]
-            )
-        if not ffmpeg_path:
-            ffmpeg_path = cls._first_glob(
-                [
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages" / "Gyan.FFmpeg_Microsoft.Winget.Source_*" / "**" / "ffmpeg.exe"),
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages" / "FFmpeg.*_Microsoft.Winget.Source_*" / "**" / "ffmpeg.exe"),
-                ]
-            )
-        if not ffmpeg_path:
-            ffmpeg_path = cls._existing(imageio_ffmpeg_path)
-
-        ffprobe_path = cls._existing(shutil.which("ffprobe") or shutil.which("ffprobe.exe"))
-        if not ffprobe_path and ffmpeg_path:
-            ffprobe_path = cls._first_existing([Path(ffmpeg_path).with_name("ffprobe.exe"), Path(ffmpeg_path).with_name("ffprobe")])
-        if not ffprobe_path:
-            ffprobe_path = cls._first_glob(
-                [
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages" / "Gyan.FFmpeg_Microsoft.Winget.Source_*" / "**" / "ffprobe.exe"),
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages" / "FFmpeg.*_Microsoft.Winget.Source_*" / "**" / "ffprobe.exe"),
-                ]
-            )
-
-        pandoc = cls._existing(shutil.which("pandoc") or shutil.which("pandoc.exe"))
-        if not pandoc:
-            pandoc = cls._first_existing(
-                [
-                    Path(os.environ.get("ProgramFiles", "")) / "Pandoc" / "pandoc.exe",
-                    Path(os.environ.get("ProgramFiles(x86)", "")) / "Pandoc" / "pandoc.exe",
-                    Path(os.environ.get("LOCALAPPDATA", "")) / "Pandoc" / "pandoc.exe",
-                    Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Pandoc" / "pandoc.exe",
-                    Path("/usr/bin/pandoc"),
-                    Path("/usr/local/bin/pandoc"),
-                    Path("/snap/bin/pandoc"),
-                ]
-            )
-        if not pandoc:
-            pandoc = cls._first_glob(
-                [
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages" / "JohnMacFarlane.Pandoc_Microsoft.Winget.Source_*" / "**" / "pandoc.exe"),
-                ]
-            )
-
-        libreoffice = cls._existing(shutil.which("soffice") or shutil.which("soffice.exe"))
-        if not libreoffice:
-            libreoffice = cls._first_existing(
-                [
-                    Path(os.environ.get("ProgramFiles", "")) / "LibreOffice" / "program" / "soffice.exe",
-                    Path(os.environ.get("ProgramFiles(x86)", "")) / "LibreOffice" / "program" / "soffice.exe",
-                    Path("/usr/bin/soffice"),
-                    Path("/usr/local/bin/soffice"),
-                    Path("/usr/lib/libreoffice/program/soffice"),
-                ]
-            )
-
-        sevenzip = cls._existing(
-            shutil.which("7z")
-            or shutil.which("7zz")
-            or shutil.which("7z.exe")
-        )
-        if not sevenzip:
-            sevenzip = cls._first_existing(
-                [
-                    Path(os.environ.get("ProgramFiles", "")) / "7-Zip" / "7z.exe",
-                    Path(os.environ.get("ProgramFiles(x86)", "")) / "7-Zip" / "7z.exe",
-                    Path(os.environ.get("ProgramW6432", "")) / "7-Zip" / "7z.exe",
-                    Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "7-Zip" / "7z.exe",
-                    Path("/usr/bin/7z"),
-                    Path("/usr/bin/7zz"),
-                    Path("/usr/local/bin/7z"),
-                    Path("/usr/local/bin/7zz"),
-                ]
-            )
-
-        imagemagick_candidates = [shutil.which("magick"), shutil.which("magick.exe")]
-        if current_platform_key() != "windows":
-            imagemagick_candidates.append(shutil.which("convert"))
-        imagemagick = cls._existing(next((candidate for candidate in imagemagick_candidates if candidate), None))
-        if not imagemagick:
-            imagemagick = cls._first_glob(
-                [
-                    str(Path(os.environ.get("ProgramFiles", "")) / "ImageMagick*" / "magick.exe"),
-                    str(Path(os.environ.get("ProgramFiles(x86)", "")) / "ImageMagick*" / "magick.exe"),
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "ImageMagick*" / "magick.exe"),
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages" / "ImageMagick.ImageMagick_Microsoft.Winget.Source_*" / "**" / "magick.exe"),
-                    "/usr/bin/magick",
-                    "/usr/local/bin/magick",
-                    "/usr/bin/convert",
-                    "/usr/local/bin/convert",
-                ]
-            )
-
-        local_aria2_bases: list[Path] = [Path(__file__).resolve().parent, Path(__file__).resolve().parent.parent]
+        script_dir = Path(__file__).resolve().parent
+        runtime_roots = [script_dir, script_dir.parent]
+        resource_root = getattr(sys, "_MEIPASS", "")
+        if resource_root:
+            runtime_roots.append(Path(resource_root))
         if getattr(sys, "frozen", False):
             executable_dir = Path(sys.executable).resolve().parent
-            local_aria2_bases.extend([executable_dir, executable_dir.parent])
-        deduped_local_aria2_bases: list[Path] = []
-        seen_local_aria2_bases: set[str] = set()
-        for base in local_aria2_bases:
-            key = str(base)
-            if key in seen_local_aria2_bases:
-                continue
-            seen_local_aria2_bases.add(key)
-            deduped_local_aria2_bases.append(base)
+            runtime_roots.extend([executable_dir, executable_dir.parent])
 
-        aria2 = cls._existing(shutil.which("aria2c") or shutil.which("aria2c.exe"))
-        if not aria2:
-            aria2 = cls._first_existing(
-                [
-                    Path(os.environ.get("ProgramFiles", "")) / "aria2" / "aria2c.exe",
-                    Path(os.environ.get("ProgramFiles(x86)", "")) / "aria2" / "aria2c.exe",
-                    Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "aria2" / "aria2c.exe",
-                    Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Links" / "aria2c.exe",
-                    Path("/usr/bin/aria2c"),
-                    Path("/usr/local/bin/aria2c"),
-                    Path("/snap/bin/aria2c"),
-                    *[base / "aria2c.exe" for base in deduped_local_aria2_bases],
-                    *[base / "aria2" / "aria2c.exe" for base in deduped_local_aria2_bases],
-                ]
-            )
-        if not aria2:
-            aria2 = cls._first_glob(
-                [
-                    str(Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages" / "aria2.aria2_Microsoft.Winget.Source_*" / "**" / "aria2c.exe"),
-                    *[str(base / "aria2*" / "aria2c.exe") for base in deduped_local_aria2_bases],
-                ]
-            )
-
+        paths = detect_backend_paths(
+            ffmpeg_fallback=imageio_ffmpeg_path,
+            runtime_search_roots=runtime_roots,
+        )
         registry = cls(
-            ffmpeg=ffmpeg_path,
-            ffprobe=ffprobe_path,
-            pandoc=pandoc,
-            libreoffice=libreoffice,
-            sevenzip=sevenzip,
-            imagemagick=imagemagick,
-            aria2=aria2,
+            ffmpeg=paths.get("ffmpeg"),
+            ffprobe=paths.get("ffprobe"),
+            pandoc=paths.get("pandoc"),
+            libreoffice=paths.get("libreoffice"),
+            sevenzip=paths.get("sevenzip"),
+            imagemagick=paths.get("imagemagick"),
+            aria2=paths.get("aria2"),
         )
         cls._cached = registry
         return registry
@@ -1219,7 +1054,6 @@ class BackendRegistry:
             ("ImageMagick", self.imagemagick or "Not found"),
             ("Aria2", self.aria2 or "Not found"),
         ]
-
 
 class TaskEngine:
     def __init__(self, app: "SuiteApp"):
@@ -2021,6 +1855,7 @@ class SuiteApp:
 
         self.main_thread = threading.current_thread()
         self.ui_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self._activity_log_lines: deque[str] = deque()
         self._process_lock = threading.Lock()
         self._active_processes: dict[int, set[subprocess.Popen[Any]]] = {}
         self._task_cancel_events: dict[int, threading.Event] = {}
@@ -2033,17 +1868,22 @@ class SuiteApp:
         ensure_dir(self.appdata_dir)
 
         self.settings_path = self.appdata_dir / "settings.json"
+        self.settings_load_notice = ""
+        self.settings_read_only = False
         self.settings = self._load_settings()
         self._refresh_paths_from_settings()
         self._window_bar_color_override = self._resolve_window_bar_color_override()
 
-        self.status_left_var = StringVar(value="Ready.")
+        self.status_left_var = StringVar(value=self.settings_load_notice or "Ready.")
         self.status_right_var = StringVar(value="")
         self.header_backend_var = StringVar(value="Detecting")
         self.dark_mode_var = BooleanVar(value=bool(self.settings.get("dark_mode", False)))
         self.fullscreen_var = BooleanVar(value=bool(self.settings.get("fullscreen", False)))
         self.borderless_max_var = BooleanVar(value=bool(self.settings.get("borderless_maximized", False)))
         self.show_overview_panel_var = BooleanVar(value=bool(self.settings.get("show_overview_panel", False)))
+        self.idea_bank_enabled_var = BooleanVar(value=bool(self.settings.get("idea_bank_addon_enabled", False)))
+        self.pc_health_enabled_var = BooleanVar(value=bool(self.settings.get("pc_health_addon_enabled", False)))
+        self.compact_density_var = BooleanVar(value=bool(self.settings.get("compact_density", False)))
         self._overview_auto_hidden = False
         self._startup_window_shown = False
         self._startup_tasks_scheduled = False
@@ -2059,6 +1899,8 @@ class SuiteApp:
         self.workspace_module_notebooks: dict[str, ttk.Notebook] = {}
         self.module_categories: dict[str, str] = {}
         self.workspace_tab: ttk.Frame | None = None
+        self.idea_bank_tab: Any | None = None
+        self.pc_health_tab: Any | None = None
         self.backend_corner_button: ttk.Button | None = None
         self._root_frame: ttk.Frame | None = None
         self._content_frame: ttk.Frame | None = None
@@ -2068,6 +1910,7 @@ class SuiteApp:
         self.window_drag_label: ttk.Label | None = None
         self._window_drag_offset: tuple[int, int] | None = None
         self.drag_drop_enabled = False
+        self._windnd = None
         self.drag_drop_status_var = StringVar(value="")
         self._last_drop_signature: tuple[tuple[str, ...], float] | None = None
         self.backend_hover_cards: list[HoverCard] = []
@@ -2096,6 +1939,8 @@ class SuiteApp:
         self._configure_styles()
         self._build_menu()
         self._build_ui()
+        if self.settings_load_notice:
+            self.log(self.settings_load_notice)
         self._setup_drag_and_drop()
         if bool(self.fullscreen_var.get()) and bool(self.borderless_max_var.get()):
             self.borderless_max_var.set(False)
@@ -2125,7 +1970,10 @@ class SuiteApp:
             "fullscreen": False,
             "borderless_maximized": False,
             "show_overview_panel": False,
+            "idea_bank_addon_enabled": False,
+            "pc_health_addon_enabled": False,
             "reduce_motion": False,
+            "compact_density": False,
             "ui_scale_percent": 100,
             "use_hover_tooltips": False,
             "output_folder": str(default_output),
@@ -2147,21 +1995,15 @@ class SuiteApp:
 
     def _load_settings(self) -> dict[str, Any]:
         defaults = self._default_settings()
-        if not self.settings_path.exists():
-            return defaults
-        try:
-            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                return defaults
-            merged = dict(defaults)
-            merged.update(data)
-            return merged
-        except Exception:
-            return defaults
+        result = load_settings_document(self.settings_path, defaults)
+        self.settings_load_notice = result.notice
+        self.settings_read_only = result.read_only
+        return result.data
 
     def _save_settings(self) -> None:
-        ensure_dir(self.settings_path.parent)
-        self.settings_path.write_text(json.dumps(self.settings, indent=2, ensure_ascii=False), encoding="utf-8")
+        if self.settings_read_only:
+            return
+        save_settings_document(self.settings_path, self.settings)
 
     def _refresh_paths_from_settings(self) -> None:
         output_folder = str(self.settings.get("output_folder", "")).strip()
@@ -2174,8 +2016,12 @@ class SuiteApp:
     def _run_first_run_setup_wizard(self) -> None:
         wizard = tk.Toplevel(self.root)
         wizard.title("First Run Setup")
-        wizard.geometry(f"{self._scaled(760)}x{self._scaled(620)}")
-        wizard.minsize(self._scaled(720), self._scaled(560))
+        screen_width = max(1, int(wizard.winfo_screenwidth()))
+        screen_height = max(1, int(wizard.winfo_screenheight()))
+        wizard_width = min(760, max(420, screen_width - 48))
+        wizard_height = min(620, max(360, screen_height - 72))
+        wizard.geometry(f"{wizard_width}x{wizard_height}")
+        wizard.minsize(min(620, wizard_width), min(420, wizard_height))
         wizard.resizable(True, True)
         if str(self.root.state()) != "withdrawn":
             try:
@@ -2241,7 +2087,7 @@ class SuiteApp:
         ttk.Label(
             content_body,
             text="Set your defaults now. You can change them later from File -> Settings.",
-            foreground="#475A72",
+            style="Helper.TLabel",
             wraplength=590,
         ).pack(anchor="w", pady=(4, 12))
 
@@ -2275,7 +2121,7 @@ class SuiteApp:
         ttk.Label(
             content_body,
             text='Manifest example: {"latest_version":"0.5.0-beta","download_url":"https://example.com/FormatFoundry_Setup_0.5.0-beta.exe","notes":"Release notes"}',
-            foreground="#57687F",
+            style="Helper.TLabel",
             wraplength=590,
             justify="left",
         ).pack(anchor="w", pady=(2, 12))
@@ -2305,7 +2151,7 @@ class SuiteApp:
             finished["done"] = True
             wizard.destroy()
 
-        ttk.Label(buttons, text="Scroll for more options if needed.", foreground="#57687F").pack(side="left")
+        ttk.Label(buttons, text="Scroll for more options if needed.", style="Helper.TLabel").pack(side="left")
         ttk.Button(buttons, text="Use Defaults", command=finish).pack(side="right")
         ttk.Button(buttons, text="Save and Continue", command=finish).pack(side="right", padx=(0, 8))
 
@@ -2504,6 +2350,10 @@ class SuiteApp:
     def _scaled(self, value: int, minimum: int = 1) -> int:
         return max(minimum, int(round(float(value) * self._ui_scale_factor())))
 
+    def _density_scaled(self, value: int, minimum: int = 1) -> int:
+        density = 0.76 if bool(self.settings.get("compact_density", False)) else 1.0
+        return max(minimum, int(round(float(value) * self._ui_scale_factor() * density)))
+
     def _mousewheel_units_from_event(self, event: Any) -> int:
         if hasattr(event, "delta") and getattr(event, "delta", 0):
             delta = int(event.delta)
@@ -2533,17 +2383,15 @@ class SuiteApp:
             return None
 
         try:
-            if isinstance(widget, tk.Text):
-                widget.yview_scroll(delta_units, "units")
-                return "break"
-            if isinstance(widget, tk.Listbox):
-                widget.yview_scroll(delta_units, "units")
-                return "break"
-            if isinstance(widget, ttk.Treeview):
-                widget.yview_scroll(delta_units, "units")
-                return "break"
+            if isinstance(widget, (tk.Text, tk.Listbox, ttk.Treeview)):
+                first, last = widget.yview()
+                can_scroll_up = delta_units < 0 and first > 0.0
+                can_scroll_down = delta_units > 0 and last < 1.0
+                if can_scroll_up or can_scroll_down:
+                    widget.yview_scroll(delta_units, "units")
+                    return "break"
         except Exception:
-            return None
+            pass
 
         current = widget
         while current is not None:
@@ -2716,15 +2564,18 @@ class SuiteApp:
     def _configure_styles(self) -> None:
         base_font_size = self._scaled(10)
         self.root.option_add("*Font", f"{{Segoe UI}} {base_font_size}")
+        self.root.option_add("*Listbox.height", 5 if self.settings.get("compact_density", False) else 6)
         self.style = ttk.Style(self.root)
         themes = set(self.style.theme_names())
         if "clam" in themes:
             self.style.theme_use("clam")
 
         self.style.configure(".", font=self._font(10))
-        self.style.configure("App.TButton", padding=(self._scaled(14), self._scaled(8)), font=self._font(10, semibold=True))
-        self.style.configure("PrimaryApp.TButton", padding=(self._scaled(14), self._scaled(8)), font=self._font(10, semibold=True))
-        self.style.configure("QuietApp.TButton", padding=(self._scaled(14), self._scaled(8)), font=self._font(10))
+        self.style.configure("Vertical.TScrollbar", width=self._scaled(16), arrowsize=self._scaled(16))
+        self.style.configure("App.TButton", padding=(self._scaled(14), self._density_scaled(8)), font=self._font(10, semibold=True))
+        self.style.configure("PrimaryApp.TButton", padding=(self._scaled(14), self._density_scaled(8)), font=self._font(10, semibold=True))
+        self.style.configure("QuietApp.TButton", padding=(self._scaled(14), self._density_scaled(8)), font=self._font(10))
+        self.style.configure("DangerApp.TButton", padding=(self._scaled(14), self._density_scaled(8)), font=self._font(10, semibold=True))
         self.style.configure("App.TNotebook", borderwidth=0, tabmargins=(self._scaled(8), 0, 0, 0))
         try:
             self.style.configure("App.TNotebook", tabposition="n")
@@ -2733,7 +2584,7 @@ class SuiteApp:
             pass
         self.style.configure(
             "App.TNotebook.Tab",
-            padding=(self._scaled(16), self._scaled(11)),
+            padding=(self._scaled(16), self._density_scaled(11)),
             font=self._font(10, semibold=True),
             background="#DCE5F1",
             foreground="#17304F",
@@ -2742,7 +2593,7 @@ class SuiteApp:
         self.style.configure("TopTabs.TNotebook", borderwidth=0, tabmargins=(self._scaled(6), 0, 0, 0))
         self.style.configure(
             "TopTabs.TNotebook.Tab",
-            padding=(self._scaled(20), self._scaled(11)),
+            padding=(self._scaled(20), self._density_scaled(11)),
             font=self._font(10, semibold=True),
             background="#DCE5F1",
             foreground="#17304F",
@@ -2813,7 +2664,7 @@ class SuiteApp:
             "title_fg": "#102233",
             "subtitle_fg": "#5A7387",
             "meta_fg": "#1D3748",
-            "muted_fg": "#6A8193",
+            "muted_fg": "#5F7587",
             "status_bg": "#E5EDF4",
             "status_fg": "#234152",
             "button_bg": "#FFFFFF",
@@ -3001,7 +2852,7 @@ class SuiteApp:
             fieldbackground=palette["input_bg"],
             foreground=palette["input_fg"],
             bordercolor=palette["input_border"],
-            rowheight=self._scaled(30),
+            rowheight=self._density_scaled(30, minimum=self._scaled(22)),
             font=self._font(10),
         )
         self.style.map("Treeview", background=[("selected", palette["select_bg"])], foreground=[("selected", palette["select_fg"])])
@@ -3056,7 +2907,19 @@ class SuiteApp:
         self.style.configure("HeaderStatValue.TLabel", background=palette["hero_panel_bg"], foreground=palette["title_fg"], font=self._font(14, semibold=True))
         self.style.configure("HeaderStatLabel.TLabel", background=palette["hero_panel_bg"], foreground=palette["muted_fg"], font=self._font(9))
         self.style.configure("CardBody.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10))
+        self.style.configure("CardValue.TLabel", background=palette["card_bg"], foreground=palette["title_fg"], font=self._font(13, semibold=True))
         self.style.configure("CardMuted.TLabel", background=palette["card_bg"], foreground=palette["muted_fg"], font=self._font(9))
+        self.style.configure("Muted.TLabel", background=palette["surface_bg"], foreground=palette["muted_fg"], font=self._font(9))
+        self.style.configure("Helper.TLabel", background=palette["window_bg"], foreground=palette["muted_fg"], font=self._font(9))
+        warning_background = "#4A3100" if dark_mode else "#FFF4D6"
+        warning_foreground = "#FFE3A3" if dark_mode else "#704700"
+        self.style.configure(
+            "Warning.TLabel",
+            background=warning_background,
+            foreground=warning_foreground,
+            font=self._font(9, semibold=True),
+            padding=(self._scaled(8), self._density_scaled(5)),
+        )
         self.style.configure("ModuleTitle.TLabel", background=palette["card_bg"], foreground=palette["title_fg"], font=self._font(16, semibold=True))
         self.style.configure("ModuleSummary.TLabel", background=palette["card_bg"], foreground=palette["meta_fg"], font=self._font(10))
         self.style.configure("ModuleWorkflow.TLabel", background=palette["hero_panel_bg"], foreground=palette["subtitle_fg"], font=self._font(9, semibold=True))
@@ -3113,6 +2976,20 @@ class SuiteApp:
         self.style.map(
             "QuietApp.TButton",
             background=[("active", palette["button_active"]), ("pressed", palette["button_press"]), ("disabled", palette["window_bg"])],
+            foreground=[("disabled", palette["subtitle_fg"])],
+        )
+        danger_bg = "#D92D20" if dark_mode else "#B42318"
+        danger_active = "#F04438" if dark_mode else "#912018"
+        danger_pressed = "#B42318" if dark_mode else "#7A1812"
+        self.style.configure(
+            "DangerApp.TButton",
+            background=danger_bg,
+            foreground="#FFFFFF",
+            borderwidth=1,
+        )
+        self.style.map(
+            "DangerApp.TButton",
+            background=[("active", danger_active), ("pressed", danger_pressed), ("disabled", palette["window_bg"])],
             foreground=[("disabled", palette["subtitle_fg"])],
         )
         self.style.configure("Shell.TButton", background=palette["button_bg"], foreground=palette["button_fg"], borderwidth=1, padding=(self._scaled(8), self._scaled(4)))
@@ -3448,11 +3325,96 @@ class SuiteApp:
             return "break"
         return None
 
+    def _run_shortcut(self, callback: Callable[[], Any]) -> str:
+        callback()
+        return "break"
+
+    def _open_module_picker(self) -> None:
+        existing = getattr(self, "_module_picker_dialog", None)
+        if existing is not None:
+            try:
+                existing.deiconify()
+                existing.lift()
+                existing.focus_force()
+                return
+            except tk.TclError:
+                self._module_picker_dialog = None
+
+        dialog = tk.Toplevel(self.root)
+        self._module_picker_dialog = dialog
+        dialog.title("Find a Module")
+        dialog.transient(self.root)
+        dialog.resizable(True, True)
+        screen_width = max(1, int(dialog.winfo_screenwidth()))
+        screen_height = max(1, int(dialog.winfo_screenheight()))
+        dialog_width = min(560, max(360, screen_width - 48))
+        dialog_height = min(460, max(300, screen_height - 72))
+        dialog.geometry(f"{dialog_width}x{dialog_height}")
+        dialog.minsize(min(380, dialog_width), min(300, dialog_height))
+        self._apply_window_icon_to(dialog)
+
+        body = ttk.Frame(dialog, style="Surface.TFrame", padding=self._scaled(16))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Find a module", style="HeaderTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="Type a tool name, then press Enter. Escape closes this picker.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(2, 10))
+        query_var = StringVar()
+        query_entry = ttk.Entry(body, textvariable=query_var)
+        query_entry.pack(fill="x")
+        results = tk.Listbox(body, activestyle="dotbox", exportselection=False)
+        results.pack(fill="both", expand=True, pady=(10, 10))
+
+        module_names = sorted(self.tabs, key=str.casefold)
+        labels: dict[str, str] = {}
+        for module_name in module_names:
+            category = self.module_categories.get(module_name, "")
+            labels[module_name] = f"{module_name} [{category}]" if category else module_name
+
+        def refresh(*_args) -> None:
+            needle = query_var.get().strip().casefold()
+            results.delete(0, END)
+            for module_name in module_names:
+                label = labels[module_name]
+                if not needle or needle in label.casefold():
+                    results.insert(END, label)
+            if results.size():
+                results.selection_set(0)
+                results.activate(0)
+
+        def close() -> None:
+            self._module_picker_dialog = None
+            dialog.destroy()
+
+        def open_selected(_event=None) -> str:
+            selected = results.curselection()
+            if not selected:
+                return "break"
+            selected_label = str(results.get(selected[0]))
+            for module_name, label in labels.items():
+                if label == selected_label:
+                    self.select_tab(module_name)
+                    close()
+                    break
+            return "break"
+
+        query_var.trace_add("write", refresh)
+        query_entry.bind("<Return>", open_selected)
+        results.bind("<Return>", open_selected)
+        results.bind("<Double-Button-1>", open_selected)
+        dialog.bind("<Escape>", lambda _event: (close(), "break")[1])
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        refresh()
+        self._center_window_on_screen(dialog)
+        query_entry.focus_set()
+
     def _build_menu(self) -> None:
         menu = tk.Menu(self.root)
 
         file_menu = tk.Menu(menu, tearoff=0)
-        file_menu.add_command(label="Open Output Folder", command=self._open_output_folder)
+        file_menu.add_command(label="Open Output Folder", accelerator="Ctrl+O", command=self._open_output_folder)
         file_menu.add_command(label="Open Program Folder", command=lambda: self._open_path(self.runtime_dir))
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._request_close)
@@ -3475,12 +3437,29 @@ class SuiteApp:
         edit_menu.add_checkbutton(label="Dark Mode", variable=self.dark_mode_var, command=self._on_dark_mode_changed)
         menu.add_cascade(label="Edit", menu=edit_menu)
 
+        modules_menu = tk.Menu(menu, tearoff=0)
+        modules_menu.add_command(label="Find a Module...", accelerator="Ctrl+K", command=self._open_module_picker)
+        modules_menu.add_separator()
+        for module_name in ("Convert", "Images", "Audio", "Video", "Downloads", "Torrents", "Presets / Batch Jobs"):
+            modules_menu.add_command(label=module_name, command=lambda name=module_name: self.select_tab(name))
+        menu.add_cascade(label="Modules", menu=modules_menu)
+
         settings_menu = tk.Menu(menu, tearoff=0)
-        settings_menu.add_command(label="Settings...", command=self._open_settings_dialog)
+        settings_menu.add_command(label="Settings...", accelerator="Ctrl+,", command=self._open_settings_dialog)
         settings_menu.add_command(label="Uninstall...", command=self._open_uninstall_dialog)
         settings_menu.add_separator()
         settings_menu.add_command(label="Run First-Run Setup Wizard", command=self._rerun_setup_wizard)
         settings_menu.add_command(label="Backend Center", command=self._open_backend_install_assistant)
+        settings_menu.add_checkbutton(
+            label="Enable Idea Bank Add-on",
+            variable=self.idea_bank_enabled_var,
+            command=self._on_idea_bank_enabled_changed,
+        )
+        settings_menu.add_checkbutton(
+            label="Enable PC Health Snapshot Add-on",
+            variable=self.pc_health_enabled_var,
+            command=self._on_pc_health_enabled_changed,
+        )
         settings_menu.add_command(label="Export Bug Report...", command=self._export_bug_report)
         settings_menu.add_separator()
         settings_menu.add_checkbutton(
@@ -3488,17 +3467,118 @@ class SuiteApp:
             variable=self.show_overview_panel_var,
             command=self._on_overview_panel_setting_changed,
         )
+        settings_menu.add_checkbutton(
+            label="Compact Density",
+            variable=self.compact_density_var,
+            command=self._on_compact_density_changed,
+        )
         menu.add_cascade(label="Settings", menu=settings_menu)
 
         menu.add_command(label="Overview", command=self._toggle_overview_panel)
 
         help_menu = tk.Menu(menu, tearoff=0)
-        help_menu.add_command(label="Check for Updates", command=self._open_updater_for_updates)
+        help_menu.add_command(label="Check for Updates", accelerator="Ctrl+U", command=self._open_updater_for_updates)
         help_menu.add_command(label="How-To", command=self._open_how_to_window)
         help_menu.add_command(label="About", command=self._show_about)
         menu.add_cascade(label="Help", menu=help_menu)
 
         self.root.config(menu=menu)
+        self.root.bind_all("<Control-k>", lambda _event: self._run_shortcut(self._open_module_picker), add="+")
+        self.root.bind_all("<Control-o>", lambda _event: self._run_shortcut(self._open_output_folder), add="+")
+        self.root.bind_all("<Control-comma>", lambda _event: self._run_shortcut(self._open_settings_dialog), add="+")
+        self.root.bind_all("<Control-u>", lambda _event: self._run_shortcut(self._open_updater_for_updates), add="+")
+        self.root.bind_all("<Control-l>", lambda _event: self._run_shortcut(lambda: self.select_tab("Activity Log")), add="+")
+        self.root.bind_all(
+            "<Control-Shift-B>",
+            lambda _event: self._run_shortcut(lambda: self.select_tab("Presets / Batch Jobs")),
+            add="+",
+        )
+
+    def _on_compact_density_changed(self) -> None:
+        self.settings["compact_density"] = bool(self.compact_density_var.get())
+        self._save_settings()
+        self._configure_styles()
+        self.status_left_var.set(
+            "Compact density enabled." if self.compact_density_var.get() else "Comfortable density enabled."
+        )
+
+    def _on_idea_bank_enabled_changed(self) -> None:
+        enabled = bool(self.idea_bank_enabled_var.get())
+        self.settings["idea_bank_addon_enabled"] = enabled
+        self._save_settings()
+        self._sync_optional_addons()
+        if enabled:
+            self.select_tab("Idea Bank")
+            self.status_left_var.set("Idea Bank add-on enabled.")
+        else:
+            self.status_left_var.set("Idea Bank add-on disabled. Saved ideas were kept.")
+
+    def _on_pc_health_enabled_changed(self) -> None:
+        enabled = bool(self.pc_health_enabled_var.get())
+        self.settings["pc_health_addon_enabled"] = enabled
+        self._save_settings()
+        self._sync_optional_addons()
+        if enabled:
+            self.select_tab("PC Health")
+            self.status_left_var.set("PC Health Snapshot add-on enabled.")
+        else:
+            self.status_left_var.set("PC Health Snapshot add-on disabled.")
+
+    def _sync_optional_addons(self) -> None:
+        notebook = self.top_notebook
+        if notebook is None:
+            return
+        idea_bank_enabled = bool(self.idea_bank_enabled_var.get())
+        if idea_bank_enabled and self.idea_bank_tab is None:
+            from addons.idea_bank import IdeaBankTab
+
+            addon_tab = IdeaBankTab(notebook, self)
+            activity_index: int | str = "end"
+            for index, tab_id in enumerate(notebook.tabs()):
+                if notebook.tab(tab_id, "text") == "Activity Log":
+                    activity_index = index
+                    break
+            notebook.insert(activity_index, addon_tab, text="Idea Bank")
+            self.idea_bank_tab = addon_tab
+            self.tabs["Idea Bank"] = addon_tab
+        if not idea_bank_enabled and self.idea_bank_tab is not None:
+            addon_tab = self.idea_bank_tab
+            try:
+                notebook.forget(addon_tab)
+            except tk.TclError:
+                pass
+            try:
+                addon_tab.destroy()
+            except tk.TclError:
+                pass
+            self.idea_bank_tab = None
+            self.tabs.pop("Idea Bank", None)
+
+        pc_health_enabled = bool(self.pc_health_enabled_var.get())
+        if pc_health_enabled and self.pc_health_tab is None:
+            from addons.pc_health import PCHealthTab
+
+            addon_tab = PCHealthTab(notebook, self)
+            activity_index = "end"
+            for index, tab_id in enumerate(notebook.tabs()):
+                if notebook.tab(tab_id, "text") == "Activity Log":
+                    activity_index = index
+                    break
+            notebook.insert(activity_index, addon_tab, text="PC Health")
+            self.pc_health_tab = addon_tab
+            self.tabs["PC Health"] = addon_tab
+        if not pc_health_enabled and self.pc_health_tab is not None:
+            addon_tab = self.pc_health_tab
+            try:
+                notebook.forget(addon_tab)
+            except tk.TclError:
+                pass
+            try:
+                addon_tab.destroy()
+            except tk.TclError:
+                pass
+            self.pc_health_tab = None
+            self.tabs.pop("PC Health", None)
 
     def _build_ui(self) -> None:
         root_frame = ttk.Frame(self.root, style="App.TFrame", padding=(16, 14, 16, 12))
@@ -3718,6 +3798,7 @@ class SuiteApp:
         self.log_box.configure(relief="flat", highlightthickness=1)
         self.log_box.pack(fill="both", expand=True, padx=10, pady=10)
 
+        self._sync_optional_addons()
         self._apply_theme(bool(self.dark_mode_var.get()))
         self._apply_overview_panel_visibility(log_change=False)
         self._update_window_drag_strip_visibility()
@@ -3777,14 +3858,15 @@ class SuiteApp:
         if self.drag_drop_enabled:
             return ""
         if os.name == "nt":
-            if windnd is None:
+            if self._windnd is None:
                 return "Drag and drop is unavailable in this build. Use Add Files or Add Folder instead."
             return "Drag and drop could not be initialized. Use Add Files or Add Folder instead."
         system_name = platform.system() or "this platform"
         return f"Drag and drop is not enabled on {system_name} yet. Use Add Files or Add Folder instead."
 
     def _setup_drag_and_drop(self) -> None:
-        if os.name != "nt" or windnd is None:
+        self._windnd = windnd_module() if os.name == "nt" else None
+        if os.name != "nt" or self._windnd is None:
             self.drag_drop_enabled = False
             self.drag_drop_status_var.set(self._drag_drop_availability_message())
             self.log(self.drag_drop_status_var.get())
@@ -3803,7 +3885,7 @@ class SuiteApp:
         if getattr(widget, "_uch_drop_hooked", False):
             return
         try:
-            windnd.hook_dropfiles(widget, func=lambda files: self._queue_external_drop(files))
+            self._windnd.hook_dropfiles(widget, func=lambda files: self._queue_external_drop(files))
             setattr(widget, "_uch_drop_hooked", True)
         except Exception:
             pass
@@ -4170,7 +4252,7 @@ class SuiteApp:
         ttk.Label(
             outer,
             text=plan.summary,
-            foreground="#475A72",
+            style="Helper.TLabel",
             wraplength=700,
             justify="left",
         ).pack(anchor="w", pady=(6, 10))
@@ -4211,6 +4293,7 @@ class SuiteApp:
             ttk.Button(
                 buttons,
                 text=plan.action_label,
+                style="DangerApp.TButton",
                 command=lambda: self._launch_uninstall_plan(plan) and dialog.destroy(),
             ).pack(side="right", padx=(0, 8))
 
@@ -4389,6 +4472,8 @@ class SuiteApp:
             self.backend_runtime_details = collect_backend_details(
                 self._backend_paths_map(),
                 popen_kwargs=hidden_console_process_kwargs(),
+                cache_path=self.appdata_dir / "backend_versions.json",
+                force_refresh=force_refresh,
             )
         return self.backend_runtime_details
 
@@ -4417,6 +4502,8 @@ class SuiteApp:
                         "aria2": registry.aria2,
                     },
                     popen_kwargs=hidden_console_process_kwargs(),
+                    cache_path=self.appdata_dir / "backend_versions.json",
+                    force_refresh=force_refresh,
                 )
 
                 def apply() -> None:
@@ -4442,13 +4529,7 @@ class SuiteApp:
         return parse_trusted_host_patterns(raw or DEFAULT_TRUSTED_UPDATE_HOSTS)
 
     def _activity_log_tail(self, max_lines: int = 200) -> list[str]:
-        log_widget = getattr(self, "log_box", None)
-        if log_widget is None:
-            return []
-        try:
-            lines = log_widget.get("1.0", "end-1c").splitlines()
-        except Exception:
-            return []
+        lines = list(self._activity_log_lines)
         if max_lines <= 0:
             return lines
         return lines[-max_lines:]
@@ -4533,7 +4614,7 @@ class SuiteApp:
         if not path:
             return
         target = Path(path)
-        target.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(target, snapshot)
         self.status_left_var.set(f"Bug report exported: {target.name}")
         self.log(f"Bug report exported: {target}")
 
@@ -4795,12 +4876,12 @@ class SuiteApp:
             screen_height = max(1, int(dialog.winfo_screenheight()))
         except Exception:
             screen_width, screen_height = (1920, 1080)
-        usable_width = max(self._scaled(720), screen_width - self._scaled(48))
-        usable_height = max(self._scaled(560), screen_height - self._scaled(72))
-        dialog_width = min(usable_width, max(self._scaled(820), int(screen_width * 0.70)))
-        dialog_height = min(usable_height, max(self._scaled(640), int(screen_height * 0.78)))
+        usable_width = max(360, screen_width - 48)
+        usable_height = max(320, screen_height - 72)
+        dialog_width = min(usable_width, max(720, int(screen_width * 0.70)))
+        dialog_height = min(usable_height, max(560, int(screen_height * 0.78)))
         dialog.geometry(f"{dialog_width}x{dialog_height}")
-        dialog.minsize(min(usable_width, self._scaled(700)), min(usable_height, self._scaled(520)))
+        dialog.minsize(min(usable_width, 640), min(usable_height, 460))
 
         output_var = StringVar(value=str(self.settings.get("output_folder", self.default_output_root)))
         update_url_var = StringVar(value=str(self.settings.get("update_manifest_url", "")))
@@ -4809,7 +4890,10 @@ class SuiteApp:
         fullscreen_var = BooleanVar(value=bool(self.settings.get("fullscreen", False)))
         borderless_var = BooleanVar(value=bool(self.settings.get("borderless_maximized", False)))
         show_overview_var = BooleanVar(value=bool(self.settings.get("show_overview_panel", False)))
+        idea_bank_var = BooleanVar(value=bool(self.settings.get("idea_bank_addon_enabled", False)))
+        pc_health_var = BooleanVar(value=bool(self.settings.get("pc_health_addon_enabled", False)))
         reduce_motion_var = BooleanVar(value=bool(self.settings.get("reduce_motion", False)))
+        compact_density_var = BooleanVar(value=bool(self.settings.get("compact_density", False)))
         ui_scale_var = StringVar(value=str(int(self.settings.get("ui_scale_percent", 100))))
         hover_tooltips_var = BooleanVar(value=bool(self.settings.get("use_hover_tooltips", False)))
         update_check_var = BooleanVar(value=bool(self.settings.get("check_updates_on_startup", True)))
@@ -4834,7 +4918,7 @@ class SuiteApp:
         settings_intro = ttk.Label(
             outer,
             text="Adjust startup, output, visual, and processing defaults for better stability and performance.",
-            foreground="#475A72",
+            style="Helper.TLabel",
             justify="left",
         )
         settings_intro.pack(anchor="w", pady=(4, 10), fill="x")
@@ -4883,6 +4967,7 @@ class SuiteApp:
         startup_tab = make_scrollable_settings_tab("Startup / Updates")
         performance_tab = make_scrollable_settings_tab("Performance / Logs")
         security_tab = make_scrollable_settings_tab("Security")
+        addons_tab = make_scrollable_settings_tab("Add-ons")
 
         def open_output_from_var() -> None:
             target = Path(output_var.get().strip() or str(self.default_output_root))
@@ -4931,16 +5016,21 @@ class SuiteApp:
             text="Use hover tooltips instead of always-visible helper text",
             variable=hover_tooltips_var,
         ).pack(anchor="w", pady=(2, 0))
+        ttk.Checkbutton(
+            general_tab,
+            text="Use compact spacing without reducing text size",
+            variable=compact_density_var,
+        ).pack(anchor="w", pady=(2, 0))
         ttk.Label(
             general_tab,
             text="Scale, contrast, motion, and tooltip preferences are applied live after saving.",
-            foreground="#57687F",
+            style="Helper.TLabel",
             wraplength=760,
         ).pack(anchor="w", pady=(2, 0))
         ttk.Label(
             general_tab,
             textvariable=self.drag_drop_status_var,
-            foreground="#57687F",
+            style="Helper.TLabel",
             wraplength=760,
             justify="left",
         ).pack(anchor="w", pady=(6, 0))
@@ -4970,13 +5060,13 @@ class SuiteApp:
         maintenance_buttons = [
             ttk.Button(maintenance_row, text="Open Program Folder", style="Shell.TButton", command=lambda: self._open_path(self.runtime_dir)),
             ttk.Button(maintenance_row, text="Open Settings Folder", style="Shell.TButton", command=lambda: self._open_path(self.settings_path.parent)),
-            ttk.Button(maintenance_row, text="Uninstall App", style="Shell.TButton", command=self._open_uninstall_dialog),
+            ttk.Button(maintenance_row, text="Uninstall App", style="DangerApp.TButton", command=self._open_uninstall_dialog),
         ]
         self._bind_flow_layout(maintenance_row, maintenance_buttons, min_item_width=190, horizontal_gap=6, vertical_gap=6, max_columns=3)
         maintenance_label = ttk.Label(
             general_tab,
             text="Uninstall launches the platform-specific removal flow when available and keeps your settings/output folders unless you remove them separately.",
-            foreground="#57687F",
+            style="Helper.TLabel",
             justify="left",
         )
         maintenance_label.pack(anchor="w", pady=(4, 0), fill="x")
@@ -4987,7 +5077,7 @@ class SuiteApp:
         update_example_label = ttk.Label(
             general_tab,
             text='Example JSON: {"latest_version":"0.5.0-beta","download_url":"https://example.com/FormatFoundry_Setup_0.5.0-beta.exe","notes":"Release notes"}',
-            foreground="#57687F",
+            style="Helper.TLabel",
             justify="left",
         )
         update_example_label.pack(anchor="w", pady=(4, 0), fill="x")
@@ -5029,7 +5119,7 @@ class SuiteApp:
                 "Higher FFmpeg thread counts can improve speed on multi-core systems, but may increase CPU usage.\n"
                 "Log retention controls memory use during long sessions."
             ),
-            foreground="#57687F",
+            style="Helper.TLabel",
             justify="left",
         )
         performance_label.pack(anchor="w", pady=(2, 0), fill="x")
@@ -5038,7 +5128,7 @@ class SuiteApp:
         security_intro = ttk.Label(
             security_tab,
             text="Security controls for update checks and external links.",
-            foreground="#57687F",
+            style="Helper.TLabel",
             justify="left",
         )
         security_intro.pack(anchor="w", pady=(0, 8), fill="x")
@@ -5076,14 +5166,76 @@ class SuiteApp:
                 "Recommended for production: keep HTTPS requirements enabled.\n"
                 "Restrict update hosts to your own release surface so the updater cannot be redirected to arbitrary domains."
             ),
-            foreground="#57687F",
+            style="Helper.TLabel",
             justify="left",
         )
         security_guidance.pack(anchor="w", pady=(8, 0), fill="x")
         self._bind_responsive_wrap(security_guidance, padding=8, minimum=300)
 
+        ttk.Label(addons_tab, text="Optional workspaces", font=self._font(11, semibold=True)).pack(anchor="w")
+        addons_intro = ttk.Label(
+            addons_tab,
+            text=(
+                "Add-ons are isolated from conversion jobs and are disabled by default. "
+                "Turning an add-on off hides its workspace without deleting its data."
+            ),
+            style="Helper.TLabel",
+            justify="left",
+        )
+        addons_intro.pack(anchor="w", pady=(4, 12), fill="x")
+        self._bind_responsive_wrap(addons_intro, padding=8, minimum=300)
+        idea_bank_card = ttk.LabelFrame(addons_tab, text="Idea Bank", style="Card.TLabelframe", padding=12)
+        idea_bank_card.pack(fill="x")
+        ttk.Checkbutton(
+            idea_bank_card,
+            text="Enable the Idea Bank workspace",
+            variable=idea_bank_var,
+        ).pack(anchor="w")
+        idea_bank_description = ttk.Label(
+            idea_bank_card,
+            text=(
+                "Capture ideas, notes, tags, and planning status in a searchable local workspace. "
+                "Idea Bank never installs a backend or contacts a network service."
+            ),
+            style="CardMuted.TLabel",
+            justify="left",
+        )
+        idea_bank_description.pack(anchor="w", pady=(6, 8), fill="x")
+        self._bind_responsive_wrap(idea_bank_description, padding=8, minimum=280)
+
+        def open_idea_bank_data() -> None:
+            target = self.appdata_dir / "addons" / "idea-bank"
+            ensure_dir(target)
+            self._open_path(target)
+
+        ttk.Button(
+            idea_bank_card,
+            text="Open Idea Bank Data Folder",
+            style="QuietApp.TButton",
+            command=open_idea_bank_data,
+        ).pack(anchor="w")
+
+        pc_health_card = ttk.LabelFrame(addons_tab, text="PC Health Snapshot", style="Card.TLabelframe", padding=12)
+        pc_health_card.pack(fill="x", pady=(10, 0))
+        ttk.Checkbutton(
+            pc_health_card,
+            text="Enable the PC Health Snapshot workspace",
+            variable=pc_health_var,
+        ).pack(anchor="w")
+        pc_health_description = ttk.Label(
+            pc_health_card,
+            text=(
+                "Show a private, read-only OS, memory, disk, and security-provider summary. "
+                "It never changes files or system configuration and does not replace antivirus software."
+            ),
+            style="CardMuted.TLabel",
+            justify="left",
+        )
+        pc_health_description.pack(anchor="w", pady=(6, 0), fill="x")
+        self._bind_responsive_wrap(pc_health_description, padding=8, minimum=280)
+
         status_var = StringVar(value="")
-        ttk.Label(outer, textvariable=status_var, foreground="#8A5A00").pack(anchor="w", pady=(8, 4))
+        ttk.Label(outer, textvariable=status_var, style="Warning.TLabel").pack(anchor="w", pady=(8, 4))
 
         def restore_defaults() -> None:
             defaults = self._default_settings()
@@ -5094,7 +5246,10 @@ class SuiteApp:
             fullscreen_var.set(bool(defaults["fullscreen"]))
             borderless_var.set(bool(defaults["borderless_maximized"]))
             show_overview_var.set(bool(defaults["show_overview_panel"]))
+            idea_bank_var.set(bool(defaults["idea_bank_addon_enabled"]))
+            pc_health_var.set(bool(defaults["pc_health_addon_enabled"]))
             reduce_motion_var.set(bool(defaults["reduce_motion"]))
+            compact_density_var.set(bool(defaults["compact_density"]))
             ui_scale_var.set(str(defaults["ui_scale_percent"]))
             hover_tooltips_var.set(bool(defaults["use_hover_tooltips"]))
             update_check_var.set(bool(defaults["check_updates_on_startup"]))
@@ -5155,7 +5310,10 @@ class SuiteApp:
             self.settings["fullscreen"] = bool(fullscreen_var.get())
             self.settings["borderless_maximized"] = bool(borderless_var.get())
             self.settings["show_overview_panel"] = bool(show_overview_var.get())
+            self.settings["idea_bank_addon_enabled"] = bool(idea_bank_var.get())
+            self.settings["pc_health_addon_enabled"] = bool(pc_health_var.get())
             self.settings["reduce_motion"] = bool(reduce_motion_var.get())
+            self.settings["compact_density"] = bool(compact_density_var.get())
             self.settings["ui_scale_percent"] = int(ui_scale_percent)
             self.settings["use_hover_tooltips"] = bool(hover_tooltips_var.get())
             if self.settings["fullscreen"] and self.settings["borderless_maximized"]:
@@ -5181,8 +5339,12 @@ class SuiteApp:
             self.fullscreen_var.set(bool(self.settings["fullscreen"]))
             self.borderless_max_var.set(bool(self.settings["borderless_maximized"]))
             self.show_overview_panel_var.set(bool(self.settings["show_overview_panel"]))
+            self.idea_bank_enabled_var.set(bool(self.settings["idea_bank_addon_enabled"]))
+            self.pc_health_enabled_var.set(bool(self.settings["pc_health_addon_enabled"]))
+            self.compact_density_var.set(bool(self.settings["compact_density"]))
             self._configure_styles()
             self._apply_overview_panel_visibility(log_change=False)
+            self._sync_optional_addons()
             self._apply_window_mode_state()
             self._set_backend_summary_status()
             self._refresh_hover_tooltip_preferences()
@@ -5240,7 +5402,7 @@ class SuiteApp:
         outer = ttk.Frame(window, padding=12)
         outer.pack(fill="both", expand=True)
         ttk.Label(outer, text=f"Help Guide ({how_to_path.name})", font=self._font(12, semibold=True)).pack(anchor="w")
-        ttk.Label(outer, text=str(how_to_path), foreground="#57687F", wraplength=920).pack(anchor="w", pady=(2, 8))
+        ttk.Label(outer, text=str(how_to_path), style="Helper.TLabel", wraplength=920).pack(anchor="w", pady=(2, 8))
 
         viewer = ScrolledText(outer, wrap="word")
         viewer.pack(fill="both", expand=True)
@@ -5377,7 +5539,7 @@ class SuiteApp:
             }
         )
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(path, settings)
         return path
 
     def _launch_updater(
@@ -5730,14 +5892,8 @@ class SuiteApp:
             screen_width = max(1, int(self.root.winfo_screenwidth()))
             screen_height = max(1, int(self.root.winfo_screenheight()))
         except Exception:
-            return (self._scaled(960), self._scaled(640))
-        usable_width = max(self._scaled(720), screen_width - self._scaled(40))
-        usable_height = max(self._scaled(520), screen_height - self._scaled(72))
-        target_min_width = min(self._scaled(1160), max(self._scaled(760), int(screen_width * 0.62)))
-        target_min_height = min(self._scaled(760), max(self._scaled(540), int(screen_height * 0.62)))
-        min_width = min(usable_width, target_min_width)
-        min_height = min(usable_height, target_min_height)
-        return (min_width, min_height)
+            return (760, 520)
+        return (min(760, max(640, screen_width - 40)), min(520, max(420, screen_height - 72)))
 
     def _calculate_display_matched_geometry(self) -> str:
         try:
@@ -5756,8 +5912,8 @@ class SuiteApp:
             width = min(usable_width, max(min_width, int(screen_width * width_target_ratio)))
             height = min(usable_height, max(min_height, int(screen_height * height_target_ratio)))
 
-            width = max(self._scaled(720), min(screen_width, width))
-            height = max(self._scaled(520), min(screen_height, height))
+            width = max(min(720, screen_width), min(screen_width, width))
+            height = max(min(520, screen_height), min(screen_height, height))
             x = max(0, (screen_width - width) // 2)
             y = max(0, (screen_height - height) // 2)
             return f"{width}x{height}+{x}+{y}"
@@ -6046,20 +6202,28 @@ class SuiteApp:
                 self._on_top_tab_changed()
                 return
 
-    def _append_log(self, message: str) -> None:
-        stamp = time.strftime("%H:%M:%S")
-        self.log_box.insert(END, f"[{stamp}] {message}\n")
+    def _append_logs(self, messages: list[str]) -> None:
+        if not messages:
+            return
         try:
             max_lines = int(self.settings.get("log_max_lines", 4000))
         except Exception:
             max_lines = 4000
         max_lines = max(200, min(50000, max_lines))
-        total_lines = int(float(self.log_box.index("end-1c").split(".")[0]))
-        overflow = total_lines - max_lines
+        stamp = time.strftime("%H:%M:%S")
+        rendered = [f"[{stamp}] {message}" for message in messages]
+        self._activity_log_lines.extend(rendered)
+        overflow = max(0, len(self._activity_log_lines) - max_lines)
+        for _index in range(overflow):
+            self._activity_log_lines.popleft()
+        self.log_box.insert(END, "\n".join(rendered) + "\n")
         if overflow > 0:
             self.log_box.delete("1.0", f"{overflow + 1}.0")
         self.log_box.see(END)
-        self.status_left_var.set(message[:120])
+        self.status_left_var.set(messages[-1][:120])
+
+    def _append_log(self, message: str) -> None:
+        self._append_logs([message])
 
     def log(self, message: str) -> None:
         if threading.current_thread() is self.main_thread:
@@ -6097,15 +6261,24 @@ class SuiteApp:
         self.call_ui(lambda: messagebox.showerror(APP_TITLE, message))
 
     def _poll_ui_queue(self) -> None:
+        pending_logs: list[str] = []
+
+        def flush_logs() -> None:
+            if pending_logs:
+                self._append_logs(list(pending_logs))
+                pending_logs.clear()
+
         try:
             while True:
                 action, payload = self.ui_queue.get_nowait()
                 if action == "log":
-                    self._append_log(payload)
+                    pending_logs.append(str(payload))
                 elif action == "call":
+                    flush_logs()
                     payload()
         except queue.Empty:
             pass
+        flush_logs()
         self.root.after(100, self._poll_ui_queue)
 
     def run_process(self, cmd: list[str], cwd: Path | None = None) -> None:
@@ -6695,7 +6868,7 @@ class ModuleTab(ttk.Frame):
         self.module_cancel_button = ttk.Button(
             title_row,
             text="Stop",
-            style="QuietApp.TButton",
+            style="DangerApp.TButton",
             command=self.request_cancel,
             state="disabled",
         )
@@ -7115,14 +7288,15 @@ class BackendLinksTab(ModuleTab):
                 version_value = "Unknown"
             elif not version_value and not detection_complete:
                 version_value = "Checking"
-            self.tree.insert("", "end", values=(backend_name, status, version_value, path_value))
+            display_path = display_path_with_home_alias(path_value)
+            self.tree.insert("", "end", values=(backend_name, status, version_value, display_path))
             links = BACKEND_LINKS.get(backend_name, {})
             self.backend_data[backend_name] = {
                 "homepage": links.get("homepage", ""),
                 "docs": links.get("docs", ""),
                 "download": links.get("download", ""),
                 "install_cmd": self.app._backend_install_command(backend_name),
-                "detected_path": path_value if path_value != "Not found" else "",
+                "detected_path": display_path if path_value != "Not found" else "",
                 "version": version_value,
             }
         if self.tree.get_children():
@@ -7173,7 +7347,7 @@ class BackendLinksTab(ModuleTab):
         if not path_value:
             messagebox.showwarning(APP_TITLE, "This backend is not currently detected.")
             return
-        path = Path(path_value)
+        path = Path(path_value).expanduser()
         if not path.exists():
             messagebox.showwarning(APP_TITLE, "Detected path is no longer available.")
             return
@@ -7199,7 +7373,7 @@ class ConvertTab(ModuleTab):
         super().__init__(master, app)
         self.files: list[Path] = []
         self.target_format = StringVar(value="")
-        self.output_dir = StringVar(value=str(self.app.default_output_root / "convert"))
+        self.output_dir = StringVar(value=display_path_with_home_alias(self.app.default_output_root / "convert"))
         self.image_quality = IntVar(value=92)
         self.image_quality_text = StringVar(value=str(self.image_quality.get()))
         self.image_quality_display = StringVar(value=f"{self.image_quality.get()}%")
@@ -7661,7 +7835,7 @@ class ConvertTab(ModuleTab):
             )
             self._refresh_target_formats()
             return
-        out_dir = Path(self.output_dir.get().strip())
+        out_dir = Path(self.output_dir.get().strip()).expanduser()
         ensure_dir(out_dir)
         options = self.export_preset()
         total = len(self.files)
@@ -8330,7 +8504,7 @@ class RoadmapModuleTab(ModuleTab):
     def _build(self) -> None:
         body = self.build_module_shell()
         ttk.Label(body, text=f"{self.module_name} Module", font=self.app._font(13, bold=True)).pack(anchor="w")
-        ttk.Label(body, text=f"Current status: starter scaffold ({self.phase})", foreground="#1f4f8a").pack(anchor="w", pady=(2, 10))
+        ttk.Label(body, text=f"Current status: starter scaffold ({self.phase})", style="Helper.TLabel").pack(anchor="w", pady=(2, 10))
         ttk.Label(body, text=self.note, wraplength=1180).pack(anchor="w", pady=(0, 10))
 
         box = ttk.LabelFrame(body, text="Planned expansion")
@@ -10420,7 +10594,9 @@ class Aria2DownloadsTab(ModuleTab):
         super().__init__(master, app)
         self.sources: list[str] = []
         self.uri_var = StringVar(value="")
-        self.output_dir = StringVar(value=str(self.app.default_output_root / "aria2" / "downloads"))
+        self.output_dir = StringVar(
+            value=display_path_with_home_alias(self.app.default_output_root / "aria2" / "downloads")
+        )
         self.status_var = StringVar(value="Ready.")
         self.session_state_var = StringVar(value="Idle")
         self.progress_var = IntVar(value=0)
@@ -10491,7 +10667,7 @@ class Aria2DownloadsTab(ModuleTab):
         ttk.Label(folder_row, text="Download folder").pack(side="left")
         ttk.Entry(folder_row, textvariable=self.output_dir).pack(side="left", fill="x", expand=True, padx=(8, 8))
         ttk.Button(folder_row, text="Browse", command=lambda: self.choose_output_dir(self.output_dir, "Choose aria2 download folder")).pack(side="left")
-        ttk.Button(folder_row, text="Open", command=lambda: self.app._open_path(Path(self.output_dir.get().strip() or str(self.app.default_output_root)))).pack(
+        ttk.Button(folder_row, text="Open", command=lambda: self.app._open_path(Path(self.output_dir.get().strip() or str(self.app.default_output_root)).expanduser())).pack(
             side="left",
             padx=(6, 0),
         )
@@ -10499,7 +10675,7 @@ class Aria2DownloadsTab(ModuleTab):
         self.start_button.pack(side="right")
         self.pause_button = ttk.Button(folder_row, text="Pause", style="QuietApp.TButton", command=self.toggle_pause_download, state="disabled")
         self.pause_button.pack(side="right", padx=(0, 6))
-        self.stop_button = ttk.Button(folder_row, text="Stop", style="QuietApp.TButton", command=self.cancel_download, state="disabled")
+        self.stop_button = ttk.Button(folder_row, text="Stop", style="DangerApp.TButton", command=self.cancel_download, state="disabled")
         self.stop_button.pack(side="right", padx=(0, 6))
 
         info_box = ttk.LabelFrame(outer, text="Supported Inputs")
@@ -10659,7 +10835,7 @@ class Aria2DownloadsTab(ModuleTab):
                 "Aria2 was not detected. Install or connect the Aria2 backend before using this tab.",
             )
             return
-        destination = Path(self.output_dir.get().strip() or str(self.app.default_output_root / "aria2" / "downloads"))
+        destination = Path(self.output_dir.get().strip() or str(self.app.default_output_root / "aria2" / "downloads")).expanduser()
         ensure_dir(destination)
         sources = list(self.sources)
         self.download_cancel_requested.clear()
@@ -10770,9 +10946,13 @@ class TorrentsTab(ModuleTab):
         self.download_entries: list[TorrentDownloadEntry] = []
         self._entry_display_lookup: dict[str, int] = {}
         self.magnet_var = StringVar(value="")
-        self.download_dir = StringVar(value=str(self.app.default_output_root / "torrents" / "downloads"))
+        self.download_dir = StringVar(
+            value=display_path_with_home_alias(self.app.default_output_root / "torrents" / "downloads")
+        )
         self.create_source = StringVar(value="")
-        self.torrent_output = StringVar(value=str(self.app.default_output_root / "torrents" / "new_download.torrent"))
+        self.torrent_output = StringVar(
+            value=display_path_with_home_alias(self.app.default_output_root / "torrents" / "new_download.torrent")
+        )
         self.comment_var = StringVar(value="")
         self.private_var = BooleanVar(value=False)
         self.selected_entry_var = StringVar(value="")
@@ -10927,7 +11107,7 @@ class TorrentsTab(ModuleTab):
         ttk.Label(folder_row, text="Download folder").pack(side="left")
         ttk.Entry(folder_row, textvariable=self.download_dir).pack(side="left", fill="x", expand=True, padx=(8, 8))
         ttk.Button(folder_row, text="Browse", command=lambda: self.choose_output_dir(self.download_dir, "Choose torrent download folder")).pack(side="left")
-        ttk.Button(folder_row, text="Open", command=lambda: self.app._open_path(Path(self.download_dir.get().strip() or str(self.app.default_output_root)))).pack(
+        ttk.Button(folder_row, text="Open", command=lambda: self.app._open_path(Path(self.download_dir.get().strip() or str(self.app.default_output_root)).expanduser())).pack(
             side="left",
             padx=(6, 0),
         )
@@ -10935,7 +11115,7 @@ class TorrentsTab(ModuleTab):
         self.start_button.pack(side="right")
         self.pause_button = ttk.Button(folder_row, text="Pause", style="QuietApp.TButton", command=self.toggle_pause_download, state="disabled")
         self.pause_button.pack(side="right", padx=(0, 6))
-        self.stop_button = ttk.Button(folder_row, text="Stop", style="QuietApp.TButton", command=self.cancel_download, state="disabled")
+        self.stop_button = ttk.Button(folder_row, text="Stop", style="DangerApp.TButton", command=self.cancel_download, state="disabled")
         self.stop_button.pack(side="right", padx=(0, 6))
 
         progress_row = ttk.Frame(download_box)
@@ -11150,7 +11330,8 @@ class TorrentsTab(ModuleTab):
     def _parse_torrent_entry(self, source_path: Path) -> TorrentDownloadEntry:
         label = source_path.name
         try:
-            torrent = Torrent.from_file(str(source_path)) if Torrent is not None else None
+            torrent_type = torrent_class()
+            torrent = torrent_type.from_file(str(source_path)) if torrent_type is not None else None
             if torrent is None:
                 return TorrentDownloadEntry(source=str(source_path), label=label, entry_type="torrent")
             files = [
@@ -11242,14 +11423,15 @@ class TorrentsTab(ModuleTab):
         return trackers
 
     def create_torrent(self) -> None:
-        if Torrent is None:
+        torrent_type = torrent_class()
+        if torrent_type is None:
             messagebox.showerror(APP_TITLE, "The torrentool Python dependency is not installed.")
             return
-        source = Path(self.create_source.get().strip())
+        source = Path(self.create_source.get().strip()).expanduser()
         if not source.exists():
             messagebox.showwarning(APP_TITLE, "Choose a file or folder to package into a torrent.")
             return
-        output_path = Path(self.torrent_output.get().strip() or str(source.with_suffix(".torrent")))
+        output_path = Path(self.torrent_output.get().strip() or str(source.with_suffix(".torrent"))).expanduser()
         if output_path.suffix.lower() != ".torrent":
             output_path = output_path.with_suffix(".torrent")
         trackers = self._tracker_list()
@@ -11261,7 +11443,7 @@ class TorrentsTab(ModuleTab):
             if resolved is None:
                 raise RuntimeError("Operation canceled by user.")
             ensure_dir(resolved.parent)
-            torrent = Torrent.create_from(source)
+            torrent = torrent_type.create_from(source)
             if trackers:
                 torrent.announce_urls = [[tracker] for tracker in trackers]
             if comment:
@@ -11441,7 +11623,7 @@ class TorrentsTab(ModuleTab):
             if entry.entry_type == "torrent" and entry.files and not self._selected_file_indices(entry):
                 messagebox.showwarning(APP_TITLE, f"Select at least one file for {entry.label} before starting the download.")
                 return
-        destination = Path(self.download_dir.get().strip())
+        destination = Path(self.download_dir.get().strip()).expanduser()
         ensure_dir(destination)
         entries = list(self.download_entries)
         self.download_cancel_requested.clear()
@@ -11589,8 +11771,10 @@ class PresetsBatchTab(ModuleTab):
     def __init__(self, master, app: SuiteApp):
         super().__init__(master, app)
         self.preset_file = self.app.appdata_dir / "suite_presets.json"
+        self.job_ledger = JobLedger(self.app.appdata_dir / "batch_jobs.sqlite3")
         self.presets: dict[str, dict[str, Any]] = {}
-        self.jobs: list[dict[str, Any]] = []
+        recovered_jobs = self.job_ledger.recover_interrupted()
+        self.jobs: list[dict[str, Any]] = self.job_ledger.list(ACTIVE_JOB_STATUSES)
 
         self.module_var = StringVar(value="Convert")
         self.preset_name_var = StringVar(value="")
@@ -11601,6 +11785,13 @@ class PresetsBatchTab(ModuleTab):
         self._load_presets()
         self._build()
         self._refresh_widgets()
+        self._refresh_job_tree()
+        if recovered_jobs:
+            self.status_var.set(
+                f"Recovered {recovered_jobs} interrupted job(s). Review them, then run the queue when ready."
+            )
+        elif self.jobs:
+            self.status_var.set(f"Restored {len(self.jobs)} queued job(s) from the previous session.")
 
     def _build(self) -> None:
         outer = self.build_module_shell()
@@ -11619,7 +11810,7 @@ class PresetsBatchTab(ModuleTab):
         ttk.Entry(left, textvariable=self.preset_name_var).pack(fill="x", padx=10)
         ttk.Button(left, text="Capture Current Module Settings", command=self.capture_preset).pack(fill="x", padx=10, pady=(10, 4))
         ttk.Button(left, text="Apply Selected Preset to Module", command=self.apply_preset_to_module).pack(fill="x", padx=10, pady=4)
-        ttk.Button(left, text="Delete Selected Preset", command=self.delete_preset).pack(fill="x", padx=10, pady=4)
+        ttk.Button(left, text="Delete Selected Preset", style="DangerApp.TButton", command=self.delete_preset).pack(fill="x", padx=10, pady=4)
 
         preset_box = ttk.Frame(left)
         preset_box.pack(fill="both", expand=True, padx=10, pady=(10, 10))
@@ -11636,7 +11827,7 @@ class PresetsBatchTab(ModuleTab):
         self.queue_preset_combo.pack(side="left", padx=(8, 12))
         ttk.Button(queue_controls, text="Add Files as Jobs", command=self.add_jobs).pack(side="left")
         ttk.Button(queue_controls, text="Remove Selected Job", command=self.remove_job).pack(side="left", padx=6)
-        ttk.Button(queue_controls, text="Clear Jobs", command=self.clear_jobs).pack(side="left")
+        ttk.Button(queue_controls, text="Clear Jobs", style="DangerApp.TButton", command=self.clear_jobs).pack(side="left")
 
         out_row = ttk.Frame(right)
         out_row.pack(fill="x", padx=10, pady=(0, 6))
@@ -11644,11 +11835,17 @@ class PresetsBatchTab(ModuleTab):
         ttk.Entry(out_row, textvariable=self.queue_output_var).pack(side="left", fill="x", expand=True, padx=(8, 8))
         ttk.Button(out_row, text="Browse", command=lambda: self.choose_output_dir(self.queue_output_var, "Choose batch output folder")).pack(side="left")
 
-        self.job_tree = ttk.Treeview(right, columns=("module", "preset", "file", "output"), show="headings")
+        self.job_tree = ttk.Treeview(
+            right,
+            columns=("status", "module", "preset", "file", "output"),
+            show="headings",
+        )
+        self.job_tree.heading("status", text="Status")
         self.job_tree.heading("module", text="Module")
         self.job_tree.heading("preset", text="Preset")
         self.job_tree.heading("file", text="Input file")
         self.job_tree.heading("output", text="Output folder")
+        self.job_tree.column("status", width=100, stretch=False)
         self.job_tree.column("module", width=120)
         self.job_tree.column("preset", width=160)
         self.job_tree.column("file", width=460)
@@ -11672,7 +11869,7 @@ class PresetsBatchTab(ModuleTab):
                 self.presets = {}
 
     def _save_presets(self) -> None:
-        self.preset_file.write_text(json.dumps(self.presets, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(self.preset_file, self.presets)
 
     def _refresh_widgets(self) -> None:
         self.preset_list.delete(0, END)
@@ -11683,6 +11880,38 @@ class PresetsBatchTab(ModuleTab):
         self.queue_preset_combo.configure(values=ordered)
         if ordered and not self.queue_preset_var.get():
             self.queue_preset_var.set(ordered[0])
+
+    def _refresh_job_tree(self) -> None:
+        selected_ids = set(self.job_tree.selection()) if hasattr(self, "job_tree") else set()
+        for item in self.job_tree.get_children():
+            self.job_tree.delete(item)
+        for job in self.jobs:
+            job_id = str(job.get("job_id", ""))
+            if not job_id:
+                continue
+            self.job_tree.insert(
+                "",
+                "end",
+                iid=job_id,
+                values=(
+                    str(job.get("status", "queued")).title(),
+                    str(job.get("module", "")),
+                    str(job.get("preset", "")),
+                    str(job.get("input", "")),
+                    str(job.get("output", "")),
+                ),
+            )
+            if job_id in selected_ids:
+                self.job_tree.selection_add(job_id)
+
+    def _set_job_status(self, job: dict[str, Any], status: str, error: str = "") -> None:
+        job_id = str(job.get("job_id", ""))
+        if not job_id:
+            return
+        self.job_ledger.update_status(job_id, status, error)
+        job["status"] = status
+        job["error"] = error
+        self.app.call_ui(self._refresh_job_tree)
 
     def _selected_preset_name(self) -> str | None:
         selected = self.preset_list.curselection()
@@ -11733,6 +11962,8 @@ class PresetsBatchTab(ModuleTab):
         if not preset_name:
             messagebox.showwarning(APP_TITLE, "Select a preset to delete.")
             return
+        if not messagebox.askyesno(APP_TITLE, f"Delete preset '{preset_name}'?\n\nQueued jobs keep their saved settings snapshot."):
+            return
         self.presets.pop(preset_name, None)
         self._save_presets()
         self._refresh_widgets()
@@ -11778,16 +12009,17 @@ class PresetsBatchTab(ModuleTab):
             if job_key in existing:
                 duplicates += 1
                 continue
-            job = {
+            job = self.job_ledger.add({
                 "module": module_name,
                 "preset": preset_name,
                 "input": str(path),
                 "output": output_dir,
-            }
+                "config": dict(preset.get("config", {})),
+            })
             self.jobs.append(job)
-            self.job_tree.insert("", "end", values=(module_name, preset_name, str(path), output_dir))
             existing.add(job_key)
             added += 1
+        self._refresh_job_tree()
         if added:
             message = f"Queue now has {len(self.jobs)} job(s). Added {added} file(s)."
             if duplicates:
@@ -11801,22 +12033,25 @@ class PresetsBatchTab(ModuleTab):
         selected = self.job_tree.selection()
         if not selected:
             return
-        for item in selected:
-            values = self.job_tree.item(item, "values")
-            self.job_tree.delete(item)
-            for index, job in enumerate(list(self.jobs)):
-                if (job["module"], job["preset"], job["input"], job["output"]) == tuple(values):
-                    self.jobs.pop(index)
-                    break
+        selected_ids = set(selected)
+        for job_id in selected_ids:
+            self.job_ledger.delete(job_id)
+        self.jobs = [job for job in self.jobs if str(job.get("job_id", "")) not in selected_ids]
+        self._refresh_job_tree()
         self.status_var.set(f"Queue now has {len(self.jobs)} job(s).")
 
     def handle_external_drop(self, paths: list[Path]) -> bool:
         return self._add_job_paths(paths)
 
     def clear_jobs(self) -> None:
+        if self.jobs and not messagebox.askyesno(
+            APP_TITLE,
+            f"Clear all {len(self.jobs)} visible batch job(s)?\n\nThis removes their saved queue history.",
+        ):
+            return
+        self.job_ledger.clear(include_completed=True)
         self.jobs.clear()
-        for item in self.job_tree.get_children():
-            self.job_tree.delete(item)
+        self._refresh_job_tree()
         self.status_var.set("Queue cleared.")
 
     def export_jobs(self) -> None:
@@ -11827,28 +12062,29 @@ class PresetsBatchTab(ModuleTab):
         )
         if not path:
             return
-        Path(path).write_text(json.dumps(self.jobs, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write_json(Path(path), self.jobs)
         self.status_var.set(f"Exported queue to {path}")
 
     def run_queue(self) -> None:
         if not self.jobs:
             messagebox.showwarning(APP_TITLE, "Add jobs before running queue.")
             return
-        total = len(self.jobs)
+        runnable_jobs = [job for job in self.jobs if str(job.get("status", "queued")) != "completed"]
+        if not runnable_jobs:
+            self.status_var.set("All visible jobs are already complete.")
+            return
+        total = len(runnable_jobs)
 
         def work() -> None:
             failures = []
-            for index, job in enumerate(self.jobs, start=1):
+            for index, job in enumerate(runnable_jobs, start=1):
+                self.check_cancelled()
                 module_name = str(job.get("module"))
-                preset_name = str(job.get("preset"))
                 source = Path(str(job.get("input")))
                 output_dir = Path(str(job.get("output")))
                 ensure_dir(output_dir)
-                preset = self.presets.get(preset_name)
-                if not preset:
-                    failures.append(f"Missing preset '{preset_name}' for job {index}")
-                    continue
-                config = dict(preset.get("config", {}))
+                config = dict(job.get("config", {}))
+                self._set_job_status(job, "running")
                 try:
                     if module_name == "Convert":
                         target = str(config.get("target_format", "png"))
@@ -11870,9 +12106,17 @@ class PresetsBatchTab(ModuleTab):
                         mode_key = str(config.get("mode_key", "stream_prep"))
                         self.app.engine.process_video_file(source, output_dir, mode_key, config)
                     else:
-                        failures.append(f"Unsupported module '{module_name}' in job {index}")
+                        raise RuntimeError(f"Unsupported module '{module_name}'")
+                    self.check_cancelled()
+                except OperationCanceledError as exc:
+                    self._set_job_status(job, "interrupted", str(exc))
+                    raise
                 except Exception as exc:
-                    failures.append(f"Job {index} ({source.name}) failed: {exc}")
+                    issue = f"Job {index} ({source.name}) failed: {exc}"
+                    failures.append(issue)
+                    self._set_job_status(job, "failed", str(exc))
+                else:
+                    self._set_job_status(job, "completed")
 
                 self.app.call_ui(lambda i=index, total_jobs=total: self.status_var.set(f"Running job {i}/{total_jobs}..."))
 
@@ -11880,18 +12124,30 @@ class PresetsBatchTab(ModuleTab):
                 raise RuntimeError(f"{len(failures)} job(s) failed. First issue: {failures[0]}")
             self.app.call_ui(lambda: self.status_var.set(f"Batch queue finished successfully for {total} job(s)."))
 
-        self.run_async(work, done_message=f"Batch queue completed {total} job(s).")
+        self.run_async_managed(
+            work,
+            done_message=f"Batch queue completed {total} job(s).",
+            on_cancel=lambda exc: self.app.call_ui(
+                lambda: self.status_var.set(f"Batch queue stopped safely: {exc}")
+            ),
+            on_error=lambda _exc: self.app.call_ui(self._refresh_job_tree),
+            on_finally=lambda: self.job_ledger.prune_completed(keep=500),
+        )
 
 
 def _run_cli_mode() -> int | None:
     parser = argparse.ArgumentParser(add_help=True, prog=APP_SLUG)
     parser.add_argument("--version", action="store_true", help="Print app version and exit.")
+    parser.add_argument("--provenance", action="store_true", help="Print canonical project provenance and exit.")
     parser.add_argument("--smoke-test", action="store_true", help="Run a headless startup probe and exit.")
     args, unknown = parser.parse_known_args()
     if unknown:
         parser.error(f"unrecognized arguments: {' '.join(unknown)}")
     if args.version:
         print(f"{APP_TITLE} {APP_VERSION_LABEL} ({APP_VERSION})")
+        return 0
+    if args.provenance:
+        print(runtime_provenance_json(component="application", version=APP_VERSION))
         return 0
     if args.smoke_test:
         script_dir = Path(__file__).resolve().parent
@@ -11943,8 +12199,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-
-
-
 

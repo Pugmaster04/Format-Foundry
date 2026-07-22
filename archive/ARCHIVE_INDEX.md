@@ -5,7 +5,7 @@ This file is the archive index for the project.
 Archive payloads now live outside the repo by default.
 
 Default external archive root:
-- `C:\Users\Pugma\Documents\Universal File Utility Suite Output\Format Foundry Archives`
+- a sibling `Format Foundry Archives` directory next to the repository
 
 ## Canonical History Snapshots
 
@@ -23,7 +23,7 @@ Each snapshot folder contains:
 ## Imported Legacy Lineage
 
 These were imported from the earlier `Universal File Utility Suite` source tree in:
-- `C:\Users\Pugma\Downloads\New Python Script Suite\archive`
+- a user-selected legacy archive directory supplied to the import tool
 
 Canonical imported location:
 - `Format Foundry Archives\legacy_universal_file_utility_suite`
@@ -53,3 +53,4 @@ Archive automation scripts:
 - `v0.6.2` remains preserved under the external archive root in `history\v0.6.2` as the last `0.6.2` canonical line before the `0.6.5` optimization release.
 - `v0.6.5` is the active optimized release line.
 - Use the `FORMAT_FOUNDRY_ARCHIVE_ROOT` environment variable if you want the archive root somewhere other than the default sibling folder.
+- Use `-LegacyArchiveRoot` or `FORMAT_FOUNDRY_LEGACY_ARCHIVE_ROOT` when importing an older source archive.

@@ -10,6 +10,7 @@
     const patterns = [
       /^FormatFoundry_Setup_(.+)\.exe$/i,
       /^FormatFoundry_Updater_(.+)\.exe$/i,
+      /^FormatFoundry_Portable_(.+)_windows_x86_64\.zip$/i,
       /^format-foundry_(.+)_(?:amd64|arm64)\.deb$/i,
       /^FormatFoundry_linux_(.+)_(?:x86_64|aarch64)\.AppImage$/i,
     ];
@@ -60,6 +61,7 @@
       links: {
         windowsInstaller: resolveAssetUrl(`FormatFoundry_Setup_${packageVersion}.exe`),
         windowsPortable: resolveAssetUrl(`FormatFoundry_${packageVersion}.exe`),
+        windowsPortableFolder: resolveAssetUrl(`FormatFoundry_Portable_${packageVersion}_windows_x86_64.zip`),
         windowsUpdater: resolveAssetUrl(`FormatFoundry_Updater_${packageVersion}.exe`),
         linuxDeb: resolveAssetUrl(`format-foundry_${packageVersion}_amd64.deb`),
         linuxAppImage: resolveAssetUrl(`FormatFoundry_linux_${packageVersion}_x86_64.AppImage`),
@@ -73,9 +75,15 @@
       windowsAlt: [
         {
           href: site.links.windowsPortable,
-          title: "Portable Windows app",
+          title: "Single-file Windows app",
           description: "Single-file executable when you do not want the installer path.",
           action: "Download EXE",
+        },
+        {
+          href: site.links.windowsPortableFolder,
+          title: "Fast-start portable ZIP",
+          description: "Extracted one-folder build that avoids one-file startup extraction.",
+          action: "Download ZIP",
         },
         {
           href: site.links.windowsUpdater,

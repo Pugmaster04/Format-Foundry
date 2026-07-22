@@ -1,0 +1,105 @@
+{
+  "schema": "format-foundry/media-catalog/v1",
+  "generated_at_utc": "2026-07-22T05:55:00Z",
+  "provenance_id": "ffp1-af300b981ec8a9a505ca56a575193ed8a896f1f4b924019d2e8219290f598bee",
+  "assets": [
+    {
+      "path": "exports/devpost-cover-1200x800.png",
+      "role": "Devpost gallery cover",
+      "upload_order": 1,
+      "caption": "Format Foundry brings conversion, media, archive, metadata, storage, and download workflows into one Windows and Linux workspace.",
+      "source": ["screenshots/format-foundry-main-windows.png"]
+    },
+    {
+      "path": "exports/gallery-01-one-workspace-1600x900.png",
+      "role": "Gallery slide 1 - one workspace",
+      "upload_order": 2,
+      "caption": "A workflow-first desktop surface for conversion, compression, extraction, documents, images, audio, video, archives, and metadata.",
+      "source": ["screenshots/format-foundry-main-windows.png"]
+    },
+    {
+      "path": "exports/gallery-02-backend-center-1600x900.png",
+      "role": "Gallery slide 2 - backend center",
+      "upload_order": 3,
+      "caption": "The updater detects optional tools, explains the features each one enables, and routes setup through trusted package managers and official links.",
+      "source": ["screenshots/format-foundry-backend-center-windows.png"]
+    },
+    {
+      "path": "exports/gallery-03-aria2-downloads-1600x900.png",
+      "role": "Gallery slide 3 - aria2 downloads",
+      "upload_order": 4,
+      "caption": "The aria2 workspace keeps protocol support, queue state, pause and stop controls, progress, and risk guidance visible.",
+      "source": ["screenshots/format-foundry-aria2-windows.png"]
+    },
+    {
+      "path": "exports/gallery-04-cross-platform-release-1600x900.png",
+      "role": "Gallery slide 4 - cross-platform delivery",
+      "upload_order": 5,
+      "caption": "Versioned Windows installers, Debian packages, AppImages, checksums, and coordinated CI make the project usable beyond a source checkout.",
+      "source": []
+    },
+    {
+      "path": "exports/gallery-05-idea-bank-1600x900.png",
+      "role": "Gallery slide 5 - optional Idea Bank",
+      "upload_order": 6,
+      "caption": "The optional Idea Bank adds a searchable, local-only workspace for ideas, status, tags, notes, archiving, and CSV export.",
+      "source": ["screenshots/format-foundry-idea-bank-windows.png"]
+    },
+    {
+      "path": "exports/gallery-06-pc-health-1600x900.png",
+      "role": "Gallery slide 6 - optional PC Health Snapshot",
+      "upload_order": 7,
+      "caption": "The optional PC Health Snapshot provides a private, read-only overview of the operating system, memory, disk space, and security-provider status.",
+      "source": ["screenshots/format-foundry-pc-health-windows.png"]
+    },
+    {
+      "path": "exports/youtube-thumbnail-1920x1080.png",
+      "role": "YouTube demo thumbnail",
+      "upload_order": null,
+      "caption": "Format Foundry: from scattered tools to one dependable workflow.",
+      "source": ["screenshots/format-foundry-main-windows.png"]
+    },
+    {
+      "path": "exports/format-foundry-icon-512.png",
+      "role": "Format Foundry app icon",
+      "upload_order": null,
+      "caption": "Official Format Foundry application icon.",
+      "source": ["../assets/universal_file_utility_suite_preview.png"]
+    },
+    {
+      "path": "screenshots/format-foundry-main-windows.png",
+      "role": "Authentic source capture - main workspace",
+      "upload_order": null,
+      "caption": "Unedited Windows capture of the Format Foundry conversion workspace.",
+      "source": []
+    },
+    {
+      "path": "screenshots/format-foundry-backend-center-windows.png",
+      "role": "Authentic source capture - backend center",
+      "upload_order": null,
+      "caption": "Unedited Windows capture of the updater's optional feature tools center.",
+      "source": []
+    },
+    {
+      "path": "screenshots/format-foundry-aria2-windows.png",
+      "role": "Authentic source capture - aria2 workspace",
+      "upload_order": null,
+      "caption": "Unedited Windows capture of the aria2 download workspace and safety guidance.",
+      "source": []
+    },
+    {
+      "path": "screenshots/format-foundry-idea-bank-windows.png",
+      "role": "Authentic source capture - optional Idea Bank",
+      "upload_order": null,
+      "caption": "Unedited Windows capture of the optional, local-only Format Foundry Idea Bank workspace.",
+      "source": []
+    },
+    {
+      "path": "screenshots/format-foundry-pc-health-windows.png",
+      "role": "Authentic source capture - optional PC Health Snapshot",
+      "upload_order": null,
+      "caption": "Unedited Windows capture of the optional, read-only Format Foundry PC Health Snapshot workspace.",
+      "source": []
+    }
+  ]
+}

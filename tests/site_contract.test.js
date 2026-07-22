@@ -21,6 +21,7 @@ const assets = [
   "FormatFoundry_Setup_0.5.0-beta.exe",
   "FormatFoundry_0.5.0-beta.exe",
   "FormatFoundry_Updater_0.5.0-beta.exe",
+  "FormatFoundry_Portable_0.5.0-beta_windows_x86_64.zip",
   "format-foundry_0.5.0-beta_amd64.deb",
   "FormatFoundry_linux_0.5.0-beta_x86_64.AppImage",
   "FormatFoundry_linux_0.5.0-beta_x86_64.tar.gz",
@@ -30,6 +31,10 @@ const beta = buildSiteConfig("v1.8.18", assets, "Format Foundry Beta 0.5");
 assert.equal(beta.version, "0.5.0-beta");
 assert.equal(beta.displayVersion, "Beta 0.5");
 assert.equal(beta.links.windowsInstaller, `${releaseBase}/FormatFoundry_Setup_0.5.0-beta.exe`);
+assert.equal(
+  beta.links.windowsPortableFolder,
+  `${releaseBase}/FormatFoundry_Portable_0.5.0-beta_windows_x86_64.zip`,
+);
 assert.equal(beta.links.linuxDeb, `${releaseBase}/format-foundry_0.5.0-beta_amd64.deb`);
 
 const missingInstaller = buildSiteConfig("v1.8.18", assets.slice(1), "Format Foundry Beta 0.5");

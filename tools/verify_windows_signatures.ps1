@@ -4,6 +4,7 @@ param(
     [string]$Directory,
     [Parameter(Mandatory = $true)]
     [string]$ExpectedNames,
+    [string]$AdditionalPaths = "",
     [Parameter(Mandatory = $true)]
     [string]$ReceiptPath
 )
@@ -17,8 +18,24 @@ if (-not $names.Count) {
     throw "At least one expected Windows artifact name is required."
 }
 
-$receipt = foreach ($name in $names) {
-    $path = Join-Path $root $name
+$artifacts = foreach ($name in $names) {
+    [ordered]@{ Name = $name; Path = (Join-Path $root $name) }
+}
+foreach ($additionalPath in @($AdditionalPaths -split "\|" | Where-Object { $_ })) {
+    $resolvedPath = if ([System.IO.Path]::IsPathRooted($additionalPath)) {
+        $additionalPath
+    } else {
+        Join-Path $root $additionalPath
+    }
+    $artifacts += [ordered]@{
+        Name = "portable/$([System.IO.Path]::GetFileName($resolvedPath))"
+        Path = $resolvedPath
+    }
+}
+
+$receipt = foreach ($artifact in $artifacts) {
+    $name = [string]$artifact.Name
+    $path = [string]$artifact.Path
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Expected signed artifact is missing: $path"
     }
@@ -29,12 +46,18 @@ $receipt = foreach ($name in $names) {
     if (-not $signature.SignerCertificate) {
         throw "Authenticode signer certificate is missing for $name."
     }
+    if (-not $signature.TimeStamperCertificate) {
+        throw "RFC 3161 timestamp certificate is missing for $name."
+    }
     [ordered]@{
         name = $name
         sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
         signer_subject = $signature.SignerCertificate.Subject
         signer_thumbprint = $signature.SignerCertificate.Thumbprint
         certificate_not_after = $signature.SignerCertificate.NotAfter.ToUniversalTime().ToString("o")
+        timestamp_subject = $signature.TimeStamperCertificate.Subject
+        timestamp_thumbprint = $signature.TimeStamperCertificate.Thumbprint
+        timestamp_certificate_not_after = $signature.TimeStamperCertificate.NotAfter.ToUniversalTime().ToString("o")
         status = $signature.Status.ToString()
     }
 }

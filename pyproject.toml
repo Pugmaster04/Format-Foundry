@@ -1,0 +1,24 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 140
+extend-exclude = ["build", "dist", "release_bins", "installer_output", ".venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["B017"]
+"tools/generate_windows_version_info.py" = ["E402"]
+"tools/prepare_release_metadata.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+show_error_codes = true
+warn_unreachable = true
+exclude = "^(build|dist|release_bins|installer_output|\\.venv)/"
+
+[[tool.mypy.overrides]]
+module = ["support_runtime", "backend_support"]
+disallow_untyped_defs = false
+disallow_untyped_calls = false

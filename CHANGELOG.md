@@ -9,7 +9,39 @@ This changelog includes:
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+- Added an optional, disabled-by-default Idea Bank workspace with local atomic persistence, search, status filtering, tags, CSV export, and malformed-data protection.
+- Added a dedicated Add-ons settings page and runtime menu toggle; disabling Idea Bank preserves its saved data.
+- Added an optional, disabled-by-default PC Health Snapshot workspace with privacy-safe JSON export, read-only OS/memory/disk information, bounded Microsoft Defender status on Windows, and a Storage Analyzer handoff.
+- Added a fast-start one-folder Windows portable ZIP alongside the installer and single-file executable.
+- Added real Ubuntu integration coverage for FFmpeg/FFprobe, Pandoc, LibreOffice, 7-Zip, ImageMagick, and Aria2.
+- Added Windows and Linux responsive-layout evidence for 1024x768 through 1920x1080 plus 150% interface scaling.
+- Added a screenshot-backed optimization audit with prioritized release, architecture, performance, UI, and accessibility recommendations.
+- Added deterministic Devpost media packaging with a real Idea Bank gallery capture, automatic integrity verification, and cache-file exclusion.
+
+### Fixed
+- Removed a developer-specific GitHub Desktop executable path from the updater and replaced it with portable standard-install and version-independent GitHub Desktop discovery.
+- Nested text, list, and tree controls now consume mouse-wheel input only while they can scroll, allowing the surrounding module or settings page to continue at control boundaries.
+- Default queue density and scrollbar sizing now keep more workflow controls reachable on compact displays.
+- Linux backend discovery now rejects Windows `.exe` paths exposed through WSL interoperability and selects native Linux tools.
+- Linux Debian/AppImage assembly now stages permission-sensitive files on a native filesystem, normalizes CRLF launcher templates, and wires correctly named AppStream metadata.
+- PC Health content is vertically scrollable with mouse-wheel support, including at 150% scaling on a 1280x720 display.
+- Windows LibreOffice version detection now reads executable metadata instead of launching a helper that could leave hidden processes running.
+
+### Changed
+- Consolidated main-app backend discovery onto the shared backend support module instead of maintaining a second detection implementation.
+- Backend version probes now run with a bounded worker pool while preserving deterministic result order.
+- App settings, updater settings, presets, batch jobs, and Idea Bank data now use atomic file replacement to avoid partial-write corruption.
+- Windows and Linux builds now preserve separate checksum manifests while coordinated release CI generates the canonical combined checksum file.
+- Idea Bank now rolls back failed or oversized writes, debounces search refresh, and neutralizes spreadsheet formulas in CSV exports.
+- CI now lints and strictly type-checks the shared backend/runtime seams and both built-in add-ons instead of excluding them from the quality contract.
+
+### Security
+- Windows release signing now supports Azure Artifact Signing with short-lived GitHub OIDC authentication, isolates credentials in a dedicated tagged-release environment, preserves a validated PFX fallback, and keeps unsigned tagged releases fail-closed.
+- Windows builds are split into binary, installer, and staging phases so managed signing occurs before signed binaries are embedded in the installer and again after installer compilation.
+- App and updater builds now embed a stable Format Foundry provenance ID, tagged releases bind exact artifact hashes to the source commit, and GitHub signs a downloadable build-provenance attestation before publication.
+- Devpost media now carries visible copyright attribution, PNG provenance metadata, and a SHA-256 media manifest without collecting user or device data.
+- Branch and tagged builds now generate vulnerability-audit reports, reproducible CycloneDX SBOMs, performance reports, and cross-platform layout evidence.
 
 ## [0.5.0-beta] - 2026-07-17 (Beta 0.5)
 
@@ -19,7 +51,7 @@ This is the first Beta release. Every release listed below it is now classified 
 - ZIP and TAR extraction now rejects path traversal, symbolic links, hard links, device files, FIFOs, oversized member sets, and archives whose declared expansion exceeds available disk space.
 - Linux builds verify the downloaded `appimagetool` SHA256 before execution, and tagged releases publish a `SHA256SUMS` manifest for every installer asset.
 - GitHub Actions are pinned to exact commit revisions and release-write permission is limited to the tagged publish job.
-- Tagged Windows releases now fail closed without a protected Authenticode PFX, sign the app and updater before installer compilation, sign the completed installer, and verify every signature before publication.
+- Tagged Windows releases now fail closed without a configured trusted Authenticode provider, sign the app and updater before installer compilation, sign the completed installer, and verify every signature before publication.
 
 ### Fixed
 - Backend discovery and version probes now run outside the Tk event thread, so startup reaches the splash and main window without waiting on slow tools such as LibreOffice.
@@ -394,8 +426,4 @@ This is the first Beta release. Every release listed below it is now classified 
 ### Legacy Patch Line Notes
 - Rapid binary iteration cycle in Downloads workspace while core UI/packaging foundations were being established.
 - Artifacts from this stage were later archived and superseded by the canonical `v0.5` source/build process in:
-  - `C:\Users\Pugma\Documents\Universal File Utility Suite Output\Universal-File-Conversion`
-
-
-
-
+  - the project history archive associated with the canonical repository

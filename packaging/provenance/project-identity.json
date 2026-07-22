@@ -1,0 +1,11 @@
+{
+  "schema": "format-foundry/provenance/v1",
+  "project_name": "Format Foundry",
+  "project_id": "io.github.pugmaster04.format-foundry",
+  "project_owner": "Pugmaster04",
+  "provenance_id": "ffp1-af300b981ec8a9a505ca56a575193ed8a896f1f4b924019d2e8219290f598bee",
+  "origin_repository": "https://github.com/Pugmaster04/Format-Foundry",
+  "copyright": "Copyright (c) 2026 Pugmaster04. All rights reserved.",
+  "license": "Proprietary; see LICENSE in the official repository.",
+  "verification_command": "gh attestation verify <artifact> -R Pugmaster04/Format-Foundry"
+}

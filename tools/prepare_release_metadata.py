@@ -9,17 +9,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from support_runtime import RELEASE_TRANSPORT_TAG, format_release_label, is_release_newer
-
+from app_identity import DISPLAY_VERSION, MIGRATION_RELEASE_TAG, PACKAGE_VERSION
+from support_runtime import format_release_label, is_release_newer
 
 LEGACY_ALPHA_FLOOR = "1.8.17"
-
-
-def extract_constant(source: str, name: str) -> str:
-    match = re.search(rf'^{re.escape(name)} = "([^"]+)"', source, flags=re.MULTILINE)
-    if not match:
-        raise RuntimeError(f"{name} was not found in modular_file_utility_suite.py")
-    return match.group(1)
 
 
 def changelog_block(changelog: str, package_version: str) -> str:
@@ -35,13 +28,11 @@ def changelog_block(changelog: str, package_version: str) -> str:
     return "\n".join(block).strip()
 
 
-def release_metadata(tag: str, app_source: str) -> dict[str, str]:
-    package_version = extract_constant(app_source, "APP_VERSION")
-    display_version = extract_constant(app_source, "APP_VERSION_LABEL")
+def release_metadata(tag: str) -> dict[str, str]:
     normalized_tag = tag.strip()
-    if normalized_tag != RELEASE_TRANSPORT_TAG:
+    if normalized_tag != MIGRATION_RELEASE_TAG:
         raise RuntimeError(
-            f"Beta migration releases must use transport tag {RELEASE_TRANSPORT_TAG}; received {normalized_tag or '(empty)'}."
+            f"Beta migration releases must use transport tag {MIGRATION_RELEASE_TAG}; received {normalized_tag or '(empty)'}."
         )
     if not is_release_newer(normalized_tag, LEGACY_ALPHA_FLOOR):
         raise RuntimeError(
@@ -49,9 +40,9 @@ def release_metadata(tag: str, app_source: str) -> dict[str, str]:
         )
     return {
         "tag": normalized_tag,
-        "package_version": package_version,
-        "display_version": display_version,
-        "title": f"Format Foundry {display_version}",
+        "package_version": PACKAGE_VERSION,
+        "display_version": DISPLAY_VERSION,
+        "title": f"Format Foundry {DISPLAY_VERSION}",
     }
 
 
@@ -63,8 +54,7 @@ def main() -> int:
     parser.add_argument("--github-output", default="")
     args = parser.parse_args()
 
-    app_source = (ROOT / "modular_file_utility_suite.py").read_text(encoding="utf-8", errors="replace")
-    metadata = release_metadata(args.tag, app_source)
+    metadata = release_metadata(args.tag)
     changelog = Path(args.changelog).read_text(encoding="utf-8-sig", errors="replace")
     Path(args.notes).write_text(changelog_block(changelog, metadata["package_version"]) + "\n", encoding="utf-8")
 

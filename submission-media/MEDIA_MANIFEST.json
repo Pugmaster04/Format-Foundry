@@ -1,0 +1,187 @@
+{
+  "assets": [
+    {
+      "bytes": 402011,
+      "caption": "Format Foundry brings conversion, media, archive, metadata, storage, and download workflows into one Windows and Linux workspace.",
+      "height": 800,
+      "path": "exports/devpost-cover-1200x800.png",
+      "role": "Devpost gallery cover",
+      "sha256": "64141ebc2f513393c31196438f0cc1253577a415e3b6eef7432a8793ec74c951",
+      "source": [
+        "screenshots/format-foundry-main-windows.png"
+      ],
+      "upload_order": 1,
+      "width": 1200
+    },
+    {
+      "bytes": 610136,
+      "caption": "A workflow-first desktop surface for conversion, compression, extraction, documents, images, audio, video, archives, and metadata.",
+      "height": 900,
+      "path": "exports/gallery-01-one-workspace-1600x900.png",
+      "role": "Gallery slide 1 - one workspace",
+      "sha256": "f25fbc03ae1f6b3a2e57a5e5898e6cfd8cf307b2921964c9b918e5a520c82771",
+      "source": [
+        "screenshots/format-foundry-main-windows.png"
+      ],
+      "upload_order": 2,
+      "width": 1600
+    },
+    {
+      "bytes": 664117,
+      "caption": "The updater detects optional tools, explains the features each one enables, and routes setup through trusted package managers and official links.",
+      "height": 900,
+      "path": "exports/gallery-02-backend-center-1600x900.png",
+      "role": "Gallery slide 2 - backend center",
+      "sha256": "86373c5e8ef419ec60b4d97815b42b12708f2c334464cd0258cfadbab4cdecd2",
+      "source": [
+        "screenshots/format-foundry-backend-center-windows.png"
+      ],
+      "upload_order": 3,
+      "width": 1600
+    },
+    {
+      "bytes": 625474,
+      "caption": "The aria2 workspace keeps protocol support, queue state, pause and stop controls, progress, and risk guidance visible.",
+      "height": 900,
+      "path": "exports/gallery-03-aria2-downloads-1600x900.png",
+      "role": "Gallery slide 3 - aria2 downloads",
+      "sha256": "4d908c10a8278126bee09499e27391e3be59b63db580fe0b5e6bc17f2f938596",
+      "source": [
+        "screenshots/format-foundry-aria2-windows.png"
+      ],
+      "upload_order": 4,
+      "width": 1600
+    },
+    {
+      "bytes": 699256,
+      "caption": "Versioned Windows installers, Debian packages, AppImages, checksums, and coordinated CI make the project usable beyond a source checkout.",
+      "height": 900,
+      "path": "exports/gallery-04-cross-platform-release-1600x900.png",
+      "role": "Gallery slide 4 - cross-platform delivery",
+      "sha256": "2a13df44c707e4f41a96f0dbbd07c9ec37977a34da36fc69341faddb755894e4",
+      "source": [],
+      "upload_order": 5,
+      "width": 1600
+    },
+    {
+      "bytes": 606963,
+      "caption": "The optional Idea Bank adds a searchable, local-only workspace for ideas, status, tags, notes, archiving, and CSV export.",
+      "height": 900,
+      "path": "exports/gallery-05-idea-bank-1600x900.png",
+      "role": "Gallery slide 5 - optional Idea Bank",
+      "sha256": "65808d461749a5e138d321b4b25cf73fcfbc20e661cb5c8e65648ad36b34e9ef",
+      "source": [
+        "screenshots/format-foundry-idea-bank-windows.png"
+      ],
+      "upload_order": 6,
+      "width": 1600
+    },
+    {
+      "bytes": 631539,
+      "caption": "The optional PC Health Snapshot provides a private, read-only overview of the operating system, memory, disk space, and security-provider status.",
+      "height": 900,
+      "path": "exports/gallery-06-pc-health-1600x900.png",
+      "role": "Gallery slide 6 - optional PC Health Snapshot",
+      "sha256": "309e6e361a97e6531b062c7f5ccd57d9c188ad50163d8c258ea1bf2e46f36ba7",
+      "source": [
+        "screenshots/format-foundry-pc-health-windows.png"
+      ],
+      "upload_order": 7,
+      "width": 1600
+    },
+    {
+      "bytes": 779215,
+      "caption": "Format Foundry: from scattered tools to one dependable workflow.",
+      "height": 1080,
+      "path": "exports/youtube-thumbnail-1920x1080.png",
+      "role": "YouTube demo thumbnail",
+      "sha256": "1eeebbc6f508bff94239de7acf92940c12311bd7e9f17aea06726a73e81de0a7",
+      "source": [
+        "screenshots/format-foundry-main-windows.png"
+      ],
+      "upload_order": null,
+      "width": 1920
+    },
+    {
+      "bytes": 5920,
+      "caption": "Official Format Foundry application icon.",
+      "height": 512,
+      "path": "exports/format-foundry-icon-512.png",
+      "role": "Format Foundry app icon",
+      "sha256": "27a52d89b19cc1aef0e112f0147db37f2a37c67bee4dc75a41511ebd971ca931",
+      "source": [
+        "../assets/universal_file_utility_suite_preview.png"
+      ],
+      "upload_order": null,
+      "width": 512
+    },
+    {
+      "bytes": 42748,
+      "caption": "Unedited Windows capture of the Format Foundry conversion workspace.",
+      "height": 900,
+      "path": "screenshots/format-foundry-main-windows.png",
+      "role": "Authentic source capture - main workspace",
+      "sha256": "f3dc86a0d335d0b80b2af2a2cce3827180fa3f6f56cd334138633c1281185cfa",
+      "source": [],
+      "upload_order": null,
+      "width": 1600
+    },
+    {
+      "bytes": 59442,
+      "caption": "Unedited Windows capture of the updater's optional feature tools center.",
+      "height": 900,
+      "path": "screenshots/format-foundry-backend-center-windows.png",
+      "role": "Authentic source capture - backend center",
+      "sha256": "dc2e9bb9c0b01e5f362be9a75b477dd13ea543a385a437daca3263e1c4d1cf35",
+      "source": [],
+      "upload_order": null,
+      "width": 1500
+    },
+    {
+      "bytes": 43529,
+      "caption": "Unedited Windows capture of the aria2 download workspace and safety guidance.",
+      "height": 900,
+      "path": "screenshots/format-foundry-aria2-windows.png",
+      "role": "Authentic source capture - aria2 workspace",
+      "sha256": "41ae370a2bb24c71f275d0b80b5ab7aa16644f630b6745e93b6b32408bdb963e",
+      "source": [],
+      "upload_order": null,
+      "width": 1600
+    },
+    {
+      "bytes": 23605,
+      "caption": "Unedited Windows capture of the optional, local-only Format Foundry Idea Bank workspace.",
+      "height": 821,
+      "path": "screenshots/format-foundry-idea-bank-windows.png",
+      "role": "Authentic source capture - optional Idea Bank",
+      "sha256": "71651f53711cef9db62e5e4101c873a38ab6740c4c0992737ff59ab7a7fad484",
+      "source": [],
+      "upload_order": null,
+      "width": 1280
+    },
+    {
+      "bytes": 35655,
+      "caption": "Unedited Windows capture of the optional, read-only Format Foundry PC Health Snapshot workspace.",
+      "height": 720,
+      "path": "screenshots/format-foundry-pc-health-windows.png",
+      "role": "Authentic source capture - optional PC Health Snapshot",
+      "sha256": "26ed5e5e1d3064f2e0d9a004df9df374687992478b5ba2edba3690f625bb6e0d",
+      "source": [],
+      "upload_order": null,
+      "width": 1280
+    }
+  ],
+  "generated_at_utc": "2026-07-22T05:55:00Z",
+  "identity": {
+    "copyright": "Copyright (c) 2026 Pugmaster04. All rights reserved.",
+    "license": "Proprietary; see LICENSE in the official repository.",
+    "origin_repository": "https://github.com/Pugmaster04/Format-Foundry",
+    "project_id": "io.github.pugmaster04.format-foundry",
+    "project_name": "Format Foundry",
+    "project_owner": "Pugmaster04",
+    "provenance_id": "ffp1-af300b981ec8a9a505ca56a575193ed8a896f1f4b924019d2e8219290f598bee",
+    "schema": "format-foundry/provenance/v1",
+    "verification_command": "gh attestation verify <artifact> -R Pugmaster04/Format-Foundry"
+  },
+  "schema": "format-foundry/media-manifest/v1"
+}

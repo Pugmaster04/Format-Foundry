@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_PATH = ROOT / "modular_file_utility_suite.py"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app_identity import DISPLAY_VERSION, PACKAGE_VERSION
+
 OUTPUT_DIR = ROOT / "packaging" / "windows"
 
 
 def read_versions() -> tuple[str, str]:
-    source = SOURCE_PATH.read_text(encoding="utf-8")
-    match = re.search(r'^APP_VERSION = "([^"]+)"', source, flags=re.MULTILINE)
-    if not match:
-        raise RuntimeError(f"APP_VERSION was not found in {SOURCE_PATH}")
-    label_match = re.search(r'^APP_VERSION_LABEL = "([^"]+)"', source, flags=re.MULTILINE)
-    return match.group(1), (label_match.group(1) if label_match else match.group(1))
+    return PACKAGE_VERSION, DISPLAY_VERSION
 
 
 def version_tuple(version: str) -> tuple[int, int, int, int]:

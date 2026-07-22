@@ -98,15 +98,24 @@ APP_BINARY_NAME="FormatFoundry"
 UPDATER_BINARY_NAME="FormatFoundry_Updater"
 PACKAGE_NAME="format-foundry"
 DESKTOP_ID="io.github.pugmaster04.formatfoundry.desktop"
+APPDATA_OUTPUT_NAME="${DESKTOP_ID%.desktop}.appdata.xml"
 PACKAGING_ROOT="packaging/linux"
 BUILD_ROOT="build/linux-packaging"
-APPDIR_ROOT="${BUILD_ROOT}/AppDir"
-DEB_ROOT="${BUILD_ROOT}/deb-root"
+PACKAGING_WORK_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/format-foundry-packaging.XXXXXX")"
+APPDIR_ROOT="${PACKAGING_WORK_ROOT}/AppDir"
+DEB_ROOT="${PACKAGING_WORK_ROOT}/deb-root"
 ICON_OUTPUT="${BUILD_ROOT}/${PACKAGE_NAME}.png"
 DESKTOP_TEMPLATE="${PACKAGING_ROOT}/${PACKAGE_NAME}.desktop.in"
 APPDATA_TEMPLATE="${PACKAGING_ROOT}/${PACKAGE_NAME}.appdata.xml"
 APP_RUN_TEMPLATE="${PACKAGING_ROOT}/AppRun"
 APPIMAGE_TOOL_DIR="${BUILD_ROOT}/tools"
+
+cleanup_packaging_workspace() {
+  if [[ -n "${PACKAGING_WORK_ROOT:-}" && -d "${PACKAGING_WORK_ROOT}" ]]; then
+    rm -rf -- "${PACKAGING_WORK_ROOT}"
+  fi
+}
+trap cleanup_packaging_workspace EXIT
 
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -126,17 +135,7 @@ case "$ARCH" in
     ;;
 esac
 
-PACKAGE_VERSION="$("${PYTHON_BIN}" - <<'PY'
-import pathlib
-import re
-
-text = pathlib.Path("modular_file_utility_suite.py").read_text(encoding="utf-8")
-match = re.search(r'^APP_VERSION = "([^"]+)"', text, re.MULTILINE)
-if not match:
-    raise SystemExit("APP_VERSION not found in modular_file_utility_suite.py")
-print(match.group(1))
-PY
-)"
+PACKAGE_VERSION="$("${PYTHON_BIN}" tools/extract_app_version.py)"
 DEBIAN_VERSION="${PACKAGE_VERSION/-beta/~beta}"
 
 TAR_BASENAME="${APP_BINARY_NAME}_linux_${PACKAGE_VERSION}_${ARCH}"
@@ -158,7 +157,7 @@ esac
 render_desktop_file() {
   local exec_target="$1"
   local output_path="$2"
-  sed "s|__EXEC__|${exec_target}|g" "$DESKTOP_TEMPLATE" > "$output_path"
+  sed "s|__EXEC__|${exec_target}|g; s/\r$//" "$DESKTOP_TEMPLATE" > "$output_path"
 }
 
 build_linux_icon() {
@@ -259,7 +258,7 @@ cp -f "PROJECT_PLAN.md" "${DEB_ROOT}/opt/${PACKAGE_NAME}/PROJECT_PLAN.md"
 cp -f "update_manifest.example.json" "${DEB_ROOT}/opt/${PACKAGE_NAME}/update_manifest.example.json"
 cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png"
 cp -f "$ICON_OUTPUT" "${DEB_ROOT}/usr/share/pixmaps/${PACKAGE_NAME}.png"
-cp -f "$APPDATA_TEMPLATE" "${DEB_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
+cp -f "$APPDATA_TEMPLATE" "${DEB_ROOT}/usr/share/metainfo/${APPDATA_OUTPUT_NAME}"
 render_desktop_file "format-foundry" "${DEB_ROOT}/usr/share/applications/${DESKTOP_ID}"
 cat > "${DEB_ROOT}/usr/bin/format-foundry" <<'EOF'
 #!/bin/sh
@@ -287,8 +286,18 @@ Description: ${APP_NAME}
  Modular desktop utility for conversion, extraction, archives, media workflows,
  storage analysis, and aria2-based downloads.
 EOF
+find "${DEB_ROOT}" -type d -exec chmod 755 {} +
+chmod 644 \
+  "${DEB_ROOT}/DEBIAN/control" \
+  "${DEB_ROOT}/opt/${PACKAGE_NAME}/README.md" \
+  "${DEB_ROOT}/opt/${PACKAGE_NAME}/PROJECT_PLAN.md" \
+  "${DEB_ROOT}/opt/${PACKAGE_NAME}/update_manifest.example.json" \
+  "${DEB_ROOT}/usr/share/applications/${DESKTOP_ID}" \
+  "${DEB_ROOT}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png" \
+  "${DEB_ROOT}/usr/share/pixmaps/${PACKAGE_NAME}.png" \
+  "${DEB_ROOT}/usr/share/metainfo/${APPDATA_OUTPUT_NAME}"
 dpkg-deb --build --root-owner-group "$DEB_ROOT" "$DEB_PACKAGE"
-appstreamcli validate --pedantic --no-net "${DEB_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
+appstreamcli validate --pedantic --no-net "${DEB_ROOT}/usr/share/metainfo/${APPDATA_OUTPUT_NAME}"
 
 echo "[7/8] Creating AppImage..."
 download_appimagetool
@@ -302,15 +311,15 @@ cp -f "dist/${UPDATER_BINARY_NAME}" "${APPDIR_ROOT}/usr/bin/${UPDATER_BINARY_NAM
 cp -f "README.md" "${APPDIR_ROOT}/usr/bin/README.md"
 cp -f "PROJECT_PLAN.md" "${APPDIR_ROOT}/usr/bin/PROJECT_PLAN.md"
 cp -f "update_manifest.example.json" "${APPDIR_ROOT}/usr/bin/update_manifest.example.json"
-cp -f "$APP_RUN_TEMPLATE" "${APPDIR_ROOT}/AppRun"
+sed 's/\r$//' "$APP_RUN_TEMPLATE" > "${APPDIR_ROOT}/AppRun"
 cp -f "$ICON_OUTPUT" "${APPDIR_ROOT}/${PACKAGE_NAME}.png"
 cp -f "$ICON_OUTPUT" "${APPDIR_ROOT}/.DirIcon"
 cp -f "$ICON_OUTPUT" "${APPDIR_ROOT}/usr/share/icons/hicolor/256x256/apps/${PACKAGE_NAME}.png"
-cp -f "$APPDATA_TEMPLATE" "${APPDIR_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
+cp -f "$APPDATA_TEMPLATE" "${APPDIR_ROOT}/usr/share/metainfo/${APPDATA_OUTPUT_NAME}"
 render_desktop_file "${APP_BINARY_NAME}" "${APPDIR_ROOT}/${DESKTOP_ID}"
 cp -f "${APPDIR_ROOT}/${DESKTOP_ID}" "${APPDIR_ROOT}/usr/share/applications/${DESKTOP_ID}"
 chmod 755 "${APPDIR_ROOT}/AppRun" "${APPDIR_ROOT}/usr/bin/${APP_BINARY_NAME}" "${APPDIR_ROOT}/usr/bin/${UPDATER_BINARY_NAME}"
-appstreamcli validate --pedantic --no-net "${APPDIR_ROOT}/usr/share/metainfo/${PACKAGE_NAME}.appdata.xml"
+appstreamcli validate --pedantic --no-net "${APPDIR_ROOT}/usr/share/metainfo/${APPDATA_OUTPUT_NAME}"
 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_TOOL" "$APPDIR_ROOT" "$APPIMAGE_PACKAGE"
 chmod +x "$APPIMAGE_PACKAGE"
 
@@ -327,7 +336,8 @@ echo "[8/8] Validating install surface..."
     "${TAR_BASENAME}.tar.gz" \
     "${PACKAGE_NAME}_${PACKAGE_VERSION}_${DEB_ARCH}.deb" \
     "${APP_BINARY_NAME}_linux_${PACKAGE_VERSION}_${ARCH}.AppImage" \
-    > "SHA256SUMS"
+    > "SHA256SUMS-linux"
+  cp -f "SHA256SUMS-linux" "SHA256SUMS"
 )
 
 echo "Done."
@@ -337,4 +347,5 @@ echo "Staged output:   $ROOT/release_bins"
 echo "Linux package:   $ROOT/$TAR_PACKAGE"
 echo "Debian package:  $ROOT/$DEB_PACKAGE"
 echo "AppImage:        $ROOT/$APPIMAGE_PACKAGE"
-echo "Checksums:       $ROOT/release_bins/SHA256SUMS"
+echo "Checksums:       $ROOT/release_bins/SHA256SUMS-linux"
+echo "Local alias:     $ROOT/release_bins/SHA256SUMS"

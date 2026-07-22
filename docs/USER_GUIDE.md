@@ -171,6 +171,51 @@ Backends panel behavior:
 - Detected backend path: click to open file location
 - Missing backend: click to open install link
 
+## 5A) Optional Add-ons
+
+### Idea Bank
+
+Idea Bank is a built-in secondary workspace that is disabled by default. It is independent of file
+conversion and does not require any optional backend.
+
+Enable it from either location:
+
+- `Settings -> Enable Idea Bank Add-on`
+- `Settings -> Settings... -> Add-ons`
+
+The workspace supports:
+
+- Creating and editing ideas with notes
+- Inbox, Exploring, Planned, Completed, and Archived statuses
+- Comma-separated tags
+- Search and status filtering
+- CSV export
+
+Idea data is written atomically to `addons/idea-bank/ideas.json` beneath the normal Format Foundry
+settings directory. Disabling the add-on removes the top-level tab but keeps the data. Idea Bank does
+not use the network and does not load third-party add-on code.
+
+### PC Health Snapshot
+
+PC Health Snapshot is a second built-in workspace that is disabled by default. Enable it from either
+location:
+
+- `Settings -> Enable PC Health Snapshot Add-on`
+- `Settings -> Settings... -> Add-ons`
+
+It provides a private, read-only summary of:
+
+- Operating-system name, release, and architecture
+- Available and total physical memory
+- Free and total space on the home drive
+- Microsoft Defender status on Windows
+
+The add-on never changes files, security settings, or operating-system configuration. Its JSON export
+does not include the computer name or user paths. Linux security providers differ by distribution, so
+the Linux view directs users to their distribution security center rather than claiming a universal
+provider result. This workspace is informational and is not antivirus software. Use `Open Storage
+Analyzer` when deeper folder analysis is needed.
+
 ## 6) Update Sources
 
 Use `Settings -> Update manifest URL` for app update checks.
@@ -187,6 +232,22 @@ Updater security options include:
 - optional confirmation before opening download URLs
 - SHA256 verification policy for downloaded update files
 - optional trusted-host allowlist enforcement for manifests and download URLs
+
+Official app and updater binaries expose their canonical, privacy-preserving project identity:
+
+```text
+FormatFoundry --provenance
+FormatFoundry_Updater --provenance
+```
+
+Tagged release artifacts are also hash-bound to their source commit in `PROVENANCE.json` and
+signed through GitHub artifact attestations. Verify a downloaded installer or package with:
+
+```text
+gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
+```
+
+See [PROVENANCE.md](PROVENANCE.md) for the identity fingerprint, Authenticode check, and scope.
 
 Example:
 
@@ -239,14 +300,11 @@ Outputs:
 
 `release_bins` is the staging folder for the current release line. Public release assets are versioned so the downloaded filenames match the shipped release exactly.
 
-Official tagged Windows releases require a real Authenticode code-signing PFX. Configure these GitHub Actions secrets before creating the release tag:
-- `WINDOWS_SIGNING_CERTIFICATE_BASE64`
-- `WINDOWS_SIGNING_CERTIFICATE_PASSWORD`
+Official tagged Windows releases require a publicly trusted Authenticode provider. The recommended configuration is Azure Artifact Signing with GitHub OIDC, which keeps the signing key in Microsoft's managed service rather than exporting it into the repository or a general CI secret. A protected PFX remains supported for compatible code-signing certificates.
 
-Optional repository variable:
-- `WINDOWS_SIGNING_TIMESTAMP_URL` (defaults to DigiCert's RFC 3161 timestamp service)
+See [WINDOWS_SIGNING.md](WINDOWS_SIGNING.md) for the PFX explanation, Azure identity and role setup, the secure GitHub environment helper, and the fallback procedure.
 
-The tagged build signs the app and updater before compiling the installer, signs the completed installer, verifies all three signatures, and only then allows the coordinated GitHub release job to run. Missing or invalid credentials fail the tagged build; branch CI remains unsigned test output.
+The tagged build signs the app and updater before compiling the installer, signs the completed installer, verifies all three signatures, and only then allows the coordinated GitHub release job to run. Missing, partial, or invalid credentials fail the tagged build. Normal branch CI stays unsigned and does not receive signing credentials.
 
 Beta 0.5 deliberately uses Git transport tag `v1.8.18`, which lets installed Alpha `1.8.17` updaters discover the lifecycle transition. Release titles, application UI, package metadata, and asset filenames continue to use `Beta 0.5` / `0.5.0-beta`.
 
@@ -272,6 +330,7 @@ Linux release packaging:
   - `format-foundry`
   - `format-foundry-updater`
 - The AppImage contains the app, bundled updater binary, desktop metadata, and icon resources so it can launch without the source tree.
+- Windows releases include `FormatFoundry_Portable_<version>_windows_x86_64.zip`, an optional one-folder build that starts without extracting a one-file bundle and does not require installation.
 - The updater branch logic now prefers Linux `.deb` assets on Debian-family systems, then `.AppImage`, then `.tar.gz`
 
 Ubuntu 24.04 install from `.deb`:
@@ -431,12 +490,6 @@ Updater download folder default:
 - Use lawful personal workflows.
 - Test on a small sample before large batch jobs.
 - Keep backups for destructive operations.
-
-
-
-
-
-
 
 
 

@@ -23,13 +23,12 @@ function Get-DefaultArchiveRoot {
 }
 
 function Get-AppVersion {
-    $mainScript = Join-Path $RepoRoot "modular_file_utility_suite.py"
-    if (-not (Test-Path $mainScript)) {
-        return "unknown"
-    }
-    $line = Select-String -Path $mainScript -Pattern 'APP_VERSION\s*=\s*"([^"]+)"' | Select-Object -First 1
-    if ($line -and $line.Matches.Count -gt 0) {
-        return $line.Matches[0].Groups[1].Value
+    $extractor = Join-Path $RepoRoot "tools\extract_app_version.py"
+    if (Test-Path -LiteralPath $extractor -PathType Leaf) {
+        $version = & python $extractor 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$version)) {
+            return ([string]($version | Select-Object -Last 1)).Trim()
+        }
     }
     return "unknown"
 }

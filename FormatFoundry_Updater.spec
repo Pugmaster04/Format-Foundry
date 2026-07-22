@@ -12,6 +12,7 @@ a = Analysis(
         ('assets/universal_file_utility_suite.ico', 'assets'),
         ('assets/universal_file_utility_suite_preview.png', 'assets'),
         ('update_manifest.example.json', '.'),
+        ('packaging/provenance/project-identity.json', 'provenance'),
     ],
     hiddenimports=[],
     hookspath=[],

@@ -4,6 +4,7 @@ __pycache__/
 
 .venv/
 .venv-windows/
+node_modules/
 venv/
 env/
 .env.codex.local

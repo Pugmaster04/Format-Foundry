@@ -136,7 +136,7 @@ case "$ARCH" in
 esac
 
 PACKAGE_VERSION="$("${PYTHON_BIN}" tools/extract_app_version.py)"
-DEBIAN_VERSION="${PACKAGE_VERSION/-beta/~beta}"
+DEBIAN_VERSION="1:${PACKAGE_VERSION/-beta/~beta}"
 
 TAR_BASENAME="${APP_BINARY_NAME}_linux_${PACKAGE_VERSION}_${ARCH}"
 TAR_DIR="release_bins/${TAR_BASENAME}"
@@ -202,10 +202,12 @@ echo "[1/8] Installing Python dependencies..."
 "${PYTHON_BIN}" -m pip install -r requirements.txt
 
 echo "[2/8] Building app binary..."
+"${PYTHON_BIN}" tools/collect_build_evidence.py --notices build/third-party-notices
 "${PYTHON_BIN}" -m PyInstaller --noconfirm --clean FormatFoundry.spec
 
 echo "[3/8] Building updater binary..."
 "${PYTHON_BIN}" -m PyInstaller --noconfirm --clean FormatFoundry_Updater.spec
+"${PYTHON_BIN}" tools/collect_build_evidence.py --frozen build/native-payload-linux.json
 
 echo "[4/8] Staging binaries..."
 mkdir -p release_bins
@@ -284,7 +286,9 @@ Section: utils
 Priority: optional
 Architecture: ${DEB_ARCH}
 Maintainer: Pugmaster04 <noreply@users.noreply.github.com>
-Depends: xdg-utils
+Installed-Size: $(du -sk "${DEB_ROOT}/opt" "${DEB_ROOT}/usr" | awk '{sum += $1} END {print sum}')
+Homepage: https://github.com/Pugmaster04/Format-Foundry
+Depends: xdg-utils, libc6 (>= 2.39), libx11-6, libxext6, libxrender1, libxft2, libfontconfig1
 Suggests: ffmpeg, pandoc, libreoffice, p7zip-full, imagemagick, aria2
 Description: ${APP_NAME}
  Modular desktop utility for conversion, extraction, archives, media workflows,

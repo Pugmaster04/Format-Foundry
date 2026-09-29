@@ -3,13 +3,20 @@ from __future__ import annotations
 import functools
 import http.server
 import os
+import secrets
+import socket
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
+import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 
+from aria2_support import CompletionMonitor, build_download_command, reap_process
 from backend_support import detect_backend_paths
+from modular_file_utility_suite import TaskEngine
 
 ENABLED = os.environ.get("FORMAT_FOUNDRY_REAL_BACKENDS", "").strip() == "1"
 
@@ -75,6 +82,53 @@ class RealBackendIntegrationTests(unittest.TestCase):
             )
             self.assertTrue(output.is_file())
             self.assertIn("mp4", probe.stdout)
+
+    def test_app_webm_conversion_uses_compatible_codecs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "fixture.mp4"
+            self.run_backend([self.backend("ffmpeg"), "-f", "lavfi", "-i", "color=c=teal:s=32x32:d=0.25", "-y", str(source)])
+            app = SimpleNamespace(backends=SimpleNamespace(ffmpeg=self.backend("ffmpeg")), settings={},
+                                  resolve_output_path=lambda path, **_: path, run_process=self.run_backend)
+            output = TaskEngine(app).convert_file(source, root, "webm", {})
+            probe = self.run_backend([self.backend("ffprobe"), "-v", "error", "-show_entries", "stream=codec_name", str(output)])
+            self.assertIn("vp9", probe.stdout)
+
+    def test_app_aria2_rpc_download_completes_and_exits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "fixture.txt").write_text("Format Foundry download fixture", encoding="utf-8")
+            handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                rpc_port = sock.getsockname()[1]
+            token = secrets.token_urlsafe(32)
+            command = build_download_command(self.backend("aria2"), root / "download", rpc_port,
+                                             [f"http://127.0.0.1:{server.server_port}/fixture.txt"], secret=token)
+            process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+            try:
+                monitor = CompletionMonitor(rpc_port, token)
+                complete = False
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    try:
+                        complete = monitor.complete()
+                    except urllib.error.URLError:
+                        pass
+                    if complete:
+                        break
+                    time.sleep(0.5)
+                self.assertTrue(complete, "Owned aria2 session did not complete")
+                self.assertEqual(process.wait(timeout=5), 0)
+                self.assertEqual((root / "download/fixture.txt").read_bytes(), (root / "fixture.txt").read_bytes())
+            finally:
+                reap_process(process)
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=3)
 
     def test_pandoc_converts_markdown_to_html(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

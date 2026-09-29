@@ -14,8 +14,8 @@ from settings_support import CURRENT_SETTINGS_SCHEMA_VERSION, SETTINGS_SCHEMA_KE
 class IdentityAndAccessibilityTests(unittest.TestCase):
     def test_canonical_identity_is_consumer_facing(self) -> None:
         self.assertEqual(PRODUCT_NAME, "Format Foundry")
-        self.assertEqual(PACKAGE_VERSION, "0.5.0-beta")
-        self.assertEqual(DISPLAY_VERSION, "Beta 0.5")
+        self.assertEqual(PACKAGE_VERSION, "0.7.1-beta")
+        self.assertEqual(DISPLAY_VERSION, "Beta 0.7.1")
 
     def test_contrast_helpers_match_wcag_reference_values(self) -> None:
         self.assertAlmostEqual(relative_luminance("#000"), 0.0)

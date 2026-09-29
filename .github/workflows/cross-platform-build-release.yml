@@ -1,6 +1,7 @@
 name: Cross-Platform Build and Release
 
 on:
+  pull_request:
   workflow_dispatch:
   push:
     branches:
@@ -27,32 +28,53 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install Windows build prerequisites
-        shell: powershell
+      - name: Set up Node.js for TypeScript translation tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install pinned TypeScript test compiler
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm.cmd ci --ignore-scripts --no-audit --no-fund
+          python -c "from code_translation import find_typescript_compiler; assert find_typescript_compiler() is not None"
+
+      - name: Install Windows build prerequisites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           choco install innosetup --no-progress -y
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
 
       - name: Run Windows test suite
-        shell: powershell
+        shell: pwsh
         run: |
-          python -m py_compile modular_file_utility_suite.py suite_updater.py
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m py_compile modular_file_utility_suite.py suite_updater.py language_support.py code_translation.py
           python -m unittest discover -s tests -v
-          python -m ruff check app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
-          python -m mypy app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
+          python -m ruff check code_translation.py language_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
+          python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           python -m mypy submission-media/tools --follow-imports=skip
           python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-windows.json
           python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-windows
           python tools/performance_budget.py --report build/performance-budget-source-windows.json
+          python -m cyclonedx_py environment --output-reproducible --of JSON -o build/FormatFoundry-SBOM-windows.cdx.json
 
       - name: Build Windows artifacts
         shell: cmd
         run: build_suite_release.bat
 
       - name: Enforce frozen Windows performance budgets
-        shell: powershell
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           python tools/performance_budget.py `
             --app-binary dist/FormatFoundry.exe `
             --updater-binary dist/FormatFoundry_Updater.exe `
@@ -63,8 +85,10 @@ jobs:
             --report build/performance-budget-portable-windows.json
 
       - name: Validate install surface
-        shell: powershell
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = python tools/extract_app_version.py
           if (-not $version) { throw 'Unable to determine APP_VERSION' }
           python tools/validate_install_surface.py --readme README.md --artifacts release_bins installer_output dist --required-asset "FormatFoundry_Setup_${version}.exe"
@@ -84,6 +108,8 @@ jobs:
             release_bins/FormatFoundry_Portable_*_windows_x86_64.zip
             release_bins/SHA256SUMS-windows
             build/pip-audit-windows.json
+            build/FormatFoundry-SBOM-windows.cdx.json
+            build/native-payload-windows.json
             build/performance-budget-*.json
             build/ui-layout-probe-windows/**
 
@@ -105,28 +131,47 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install Windows build prerequisites
-        shell: powershell
+      - name: Set up Node.js for TypeScript translation tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install pinned TypeScript test compiler
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm.cmd ci --ignore-scripts --no-audit --no-fund
+          python -c "from code_translation import find_typescript_compiler; assert find_typescript_compiler() is not None"
+
+      - name: Install Windows build prerequisites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           choco install innosetup --no-progress -y
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
 
       - name: Run Windows test suite
-        shell: powershell
+        shell: pwsh
         run: |
-          python -m py_compile modular_file_utility_suite.py suite_updater.py
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m py_compile modular_file_utility_suite.py suite_updater.py language_support.py code_translation.py
           python -m unittest discover -s tests -v
-          python -m ruff check app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
-          python -m mypy app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
+          python -m ruff check code_translation.py language_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
+          python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           python -m mypy submission-media/tools --follow-imports=skip
           python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-windows.json
           python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-windows
           python tools/performance_budget.py --report build/performance-budget-source-windows.json
+          python -m cyclonedx_py environment --output-reproducible --of JSON -o build/FormatFoundry-SBOM-windows.cdx.json
 
       - name: Resolve fail-closed signing provider
         id: signing
-        shell: powershell
+        shell: pwsh
         env:
           REQUESTED_PROVIDER: ${{ vars.WINDOWS_SIGNING_PROVIDER }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -138,6 +183,8 @@ jobs:
           WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
           WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $azureValues = @(
             $env:AZURE_CLIENT_ID,
             $env:AZURE_TENANT_ID,
@@ -188,8 +235,11 @@ jobs:
 
       - name: Build Windows binaries for managed signing
         if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        shell: powershell
-        run: .\tools\build_windows_release_phase.ps1 -Phase Binaries
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          .\tools\build_windows_release_phase.ps1 -Phase Binaries
 
       - name: Sign app and updater with Azure Artifact Signing
         if: steps.signing.outputs.provider == 'azure-artifact-signing'
@@ -220,8 +270,11 @@ jobs:
 
       - name: Build installer from signed binaries
         if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        shell: powershell
-        run: .\tools\build_windows_release_phase.ps1 -Phase Installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          .\tools\build_windows_release_phase.ps1 -Phase Installer
 
       - name: Sign installer with Azure Artifact Signing
         if: steps.signing.outputs.provider == 'azure-artifact-signing'
@@ -249,8 +302,11 @@ jobs:
 
       - name: Stage Azure-signed release assets
         if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        shell: powershell
-        run: .\tools\build_windows_release_phase.ps1 -Phase Stage
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          .\tools\build_windows_release_phase.ps1 -Phase Stage
 
       - name: Build and sign with protected PFX fallback
         if: steps.signing.outputs.provider == 'pfx'
@@ -263,23 +319,29 @@ jobs:
         run: build_suite_release.bat
 
       - name: Validate install surface
-        shell: powershell
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = python tools/extract_app_version.py
           if (-not $version) { throw 'Unable to determine APP_VERSION' }
           python tools/validate_install_surface.py --readme README.md --artifacts release_bins installer_output dist --required-asset "FormatFoundry_Setup_${version}.exe"
 
       - name: Verify tagged Windows release signatures
-        shell: powershell
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = python tools/extract_app_version.py
           $names = "FormatFoundry_${version}.exe|FormatFoundry_Updater_${version}.exe|FormatFoundry_Setup_${version}.exe"
-          $portable = Join-Path $PWD "dist\FormatFoundry_Portable\FormatFoundry.exe"
+          $portable = (Join-Path $PWD "dist\FormatFoundry_Portable\FormatFoundry.exe") + "|" + (Join-Path $PWD "dist\FormatFoundry_Portable\FormatFoundry_Updater.exe")
           .\tools\verify_windows_signatures.ps1 -Directory release_bins -ExpectedNames $names -AdditionalPaths $portable -ReceiptPath release_bins\WINDOWS_SIGNATURES_VERIFIED.json
 
       - name: Enforce signed Windows performance budgets
-        shell: powershell
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           python tools/performance_budget.py `
             --app-binary dist/FormatFoundry.exe `
             --updater-binary dist/FormatFoundry_Updater.exe `
@@ -305,11 +367,13 @@ jobs:
             release_bins/SHA256SUMS-windows
             release_bins/WINDOWS_SIGNATURES_VERIFIED.json
             build/pip-audit-windows.json
+            build/FormatFoundry-SBOM-windows.cdx.json
+            build/native-payload-windows.json
             build/performance-budget-*.json
             build/ui-layout-probe-windows/**
 
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
@@ -326,17 +390,28 @@ jobs:
           chmod +x build_linux.sh
           ./build_linux.sh
 
+      - name: Set up Node.js for TypeScript translation tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install pinned TypeScript test compiler
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          .venv/bin/python -c "from code_translation import find_typescript_compiler; assert find_typescript_compiler() is not None"
+
       - name: Run Linux test suite
         shell: bash
         run: |
           .venv/bin/python -m pip install -r requirements-dev.txt
-          .venv/bin/python -m py_compile modular_file_utility_suite.py suite_updater.py
+          .venv/bin/python -m py_compile modular_file_utility_suite.py suite_updater.py language_support.py code_translation.py
           .venv/bin/python -m unittest discover -s tests -v
-          .venv/bin/python -m ruff check app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
-          .venv/bin/python -m mypy app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
+          .venv/bin/python -m ruff check code_translation.py language_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
+          .venv/bin/python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           .venv/bin/python -m mypy submission-media/tools --follow-imports=skip
           .venv/bin/python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-linux.json
-          .venv/bin/python -m cyclonedx_py requirements requirements.txt --output-reproducible --of JSON -o build/FormatFoundry-SBOM.cdx.json
+          .venv/bin/python -m cyclonedx_py environment --output-reproducible --of JSON -o build/FormatFoundry-SBOM.cdx.json
           FORMAT_FOUNDRY_REAL_BACKENDS=1 .venv/bin/python -m unittest tests.integration.test_real_backends -v
           xvfb-run -a --server-args="-screen 0 1920x1080x24" .venv/bin/python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-linux
           .venv/bin/python tools/performance_budget.py --report build/performance-budget-source-linux.json
@@ -359,6 +434,10 @@ jobs:
           chmod +x "$APPIMAGE_PACKAGE"
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --version
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --smoke-test
+
+      - name: Verify Linux packages outside the source tree
+        shell: bash
+        run: bash tools/verify_linux_release.sh
 
       - name: Validate Debian package layout
         shell: bash
@@ -407,6 +486,7 @@ jobs:
             release_bins/SHA256SUMS
             build/FormatFoundry-SBOM.cdx.json
             build/pip-audit-linux.json
+            build/native-payload-linux.json
             build/performance-budget-*.json
             build/ui-layout-probe-linux/**
 
@@ -415,7 +495,7 @@ jobs:
     needs:
       - build-windows-release
       - build-linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
@@ -453,9 +533,13 @@ jobs:
         env:
           RELEASE_TITLE: ${{ steps.prep.outputs.title }}
           RELEASE_VERSION: ${{ steps.prep.outputs.package_version }}
+          RELEASE_LICENSE_REVIEWED: ${{ vars.RELEASE_LICENSE_REVIEWED }}
+          UBUNTU_VALIDATED_COMMIT: ${{ vars.UBUNTU_VALIDATED_COMMIT }}
         shell: bash
         run: |
           set -euo pipefail
+          test "${RELEASE_LICENSE_REVIEWED:-}" = "true" || { echo "Release blocked: exact bundled native source/license arrangements and consumer terms require review."; exit 1; }
+          test "${UBUNTU_VALIDATED_COMMIT:-}" = "$GITHUB_SHA" || { echo "Release blocked: a real Ubuntu install/run validation of this commit is required."; exit 1; }
           VERSION="$RELEASE_VERSION"
           declare -a ASSETS=(
             "release-payload/windows/release_bins/FormatFoundry_${VERSION}.exe"
@@ -465,6 +549,9 @@ jobs:
             "release-payload/windows/release_bins/WINDOWS_SIGNATURES_VERIFIED.json"
           )
           cp release-payload/linux/build/FormatFoundry-SBOM.cdx.json "FormatFoundry_${VERSION}_SBOM.cdx.json"
+          cp release-payload/windows/build/FormatFoundry-SBOM-windows.cdx.json "FormatFoundry_${VERSION}_windows_SBOM.cdx.json"
+          cp release-payload/windows/build/native-payload-windows.json "FormatFoundry_${VERSION}_native-windows.json"
+          cp release-payload/linux/build/native-payload-linux.json "FormatFoundry_${VERSION}_native-linux.json"
           cp release-payload/linux/build/pip-audit-linux.json "FormatFoundry_${VERSION}_pip-audit-linux.json"
           cp release-payload/linux/build/performance-budget-linux.json "FormatFoundry_${VERSION}_performance-linux.json"
           cp release-payload/windows/build/pip-audit-windows.json "FormatFoundry_${VERSION}_pip-audit-windows.json"
@@ -472,6 +559,9 @@ jobs:
           cp release-payload/windows/build/performance-budget-portable-windows.json "FormatFoundry_${VERSION}_performance-portable-windows.json"
           ASSETS+=(
             "FormatFoundry_${VERSION}_SBOM.cdx.json"
+            "FormatFoundry_${VERSION}_windows_SBOM.cdx.json"
+            "FormatFoundry_${VERSION}_native-windows.json"
+            "FormatFoundry_${VERSION}_native-linux.json"
             "FormatFoundry_${VERSION}_pip-audit-linux.json"
             "FormatFoundry_${VERSION}_pip-audit-windows.json"
             "FormatFoundry_${VERSION}_performance-linux.json"
@@ -517,6 +607,7 @@ jobs:
             release-payload/linux/release_bins/FormatFoundry_linux_*.AppImage
             release-payload/linux/release_bins/FormatFoundry_linux_*.tar.gz
             FormatFoundry_*_SBOM.cdx.json
+            FormatFoundry_*_native-*.json
             FormatFoundry_*_pip-audit-*.json
             FormatFoundry_*_performance-*.json
             PROVENANCE.json

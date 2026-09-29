@@ -1,13 +1,13 @@
 ﻿{
   "latest_version": "v1.8.18",
-  "release_label": "Beta 0.5",
-  "package_version": "0.5.0-beta",
+  "release_label": "Beta 0.7.1",
+  "package_version": "0.7.1-beta",
   "release_tag": "v1.8.18",
-  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18/FormatFoundry_Setup_0.5.0-beta.exe",
-  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "notes": "Release notes here.",
+  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18/FormatFoundry_Setup_0.7.1-beta.exe",
+  "sha256": "REPLACE_WITH_ACTUAL_ARTIFACT_SHA256_BEFORE_PUBLISHING",
+  "notes": "Example only. This URL targets Windows. Publish a separate platform-specific manifest for Linux.",
   "compatibility": {
-    "platforms": ["windows", "linux"],
+    "platforms": ["windows"],
     "architectures": ["x86_64", "amd64"],
     "minimum_os_versions": {
       "windows": "10",
@@ -18,8 +18,6 @@
     }
   }
 }
-
-
 
 
 

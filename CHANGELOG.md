@@ -9,6 +9,42 @@ This changelog includes:
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.7.1-beta] - 2026-09-29 (Beta 0.7.1)
+
+This is the next local Beta milestone. Its source, installer, and package versions are aligned; it is not yet a published release. The `v1.8.18` transport tag remains reserved for compatibility with installed Alpha updaters.
+
+### Code Translation
+- Added the first executable translation path: single-file TypeScript `.ts`/`.mts`/`.cts` to JavaScript `.js`/`.mjs`/`.cjs` through the official TypeScript compiler.
+- Added bounded project compilation for local TypeScript imports and `tsconfig.json` settings, saving generated JavaScript as a non-overwriting ZIP while keeping project sources unchanged.
+- Added compiler detection, a clear setup route, strict diagnostics, cancellation/timeout limits, generated-code preview and staged non-overwriting output.
+- Added a pinned developer test compiler and cross-platform regression tests. Reference browsing remains available without it.
+
+### Offline Code Language Library
+- Added Development / Code Languages with 21 bundled profiles, searchable core rules, original examples, official-documentation links and language-to-language reference comparisons.
+- Distinguished programming, shell, query, markup and stylesheet languages; documented baselines and porting pitfalls rather than claiming universal translation.
+- Added bounded UTF-8 source inspection without execution, uploads or source-content logging. Python files receive AST parsing only; other languages are explicitly reference-only.
+- Bundled the versioned JSON library in Windows/Linux application builds and portable packaging; no new dependencies, AI service or API key required.
+
+### Adobe Interchange Compatibility
+- Added bounded PDF and PDF-compatible Illustrator AI import using PDFium: all-page TIFF or first-page PNG/JPEG, without requiring Adobe software or enabling PostScript execution.
+- Added Photoshop PSD/PSB flattened-composite import, with ImageMagick required for PSB and advanced PSD variants. Editable layers and native Adobe project export are not supported.
+- Preserved all TIFF pages during PDF export, added staged output commits, explicit format limitations, and malformed/canceled/oversized-input regression tests.
+- Added the PDF renderer to application build requirements and frozen imports; dependency notice collection now includes notices within LICENSES directories.
+
+### September 2026 Audit Remediation
+- Prevented batch rename collisions, LibreOffice output collisions, and failed updater downloads from overwriting or deleting preserved files.
+- Added authenticated aria2 RPC, validated responses, non-blocking pause/resume, and deliberate completion/shutdown of owned download processes.
+- Isolated and bounded UI queue callbacks; retained failed and canceled inputs for retry; corrected deferred error callbacks.
+- Added container-aware WebM output, capability-based document routing, cancellable checksum/archive processing, strict report parsing, and staged extraction.
+- Kept common primary actions and Stop visible outside scrolling modules; expanded responsive setup/settings/updater/theme tests.
+- Hardened update redirects, metadata/download limits, platform selection, compatibility enforcement, and Windows elevated installer handoff.
+- Corrected Alpha-to-Beta Debian ordering with epoch 1; pinned Ubuntu 24.04 builds, enabled PR package builds, and made Windows CI native-command failures fatal.
+- Bundled the updater in the portable ZIP, collected dependency notices/native inventories and per-platform environment SBOMs, and retained signing, licensing, and physical-Ubuntu release gates.
+- Updated five pinned dependencies; included main app/updater in lint coverage; corrected website offline behavior and unpublished-Beta download claims.
+- See `docs/AUDIT_REMEDIATION_2026-09-26.md` for evidence, limitations, and outstanding release requirements.
+
 ### Added
 - Added an optional, disabled-by-default Idea Bank workspace with local atomic persistence, search, status filtering, tags, CSV export, and malformed-data protection.
 - Added a dedicated Add-ons settings page and runtime menu toggle; disabling Idea Bank preserves its saved data.
@@ -46,7 +82,7 @@ This changelog includes:
 
 ## [0.5.0-beta] - 2026-07-17 (Beta 0.5)
 
-This is the first Beta release. Every release listed below it is now classified as Alpha.
+This was the first local Beta milestone; it was not published. The public releases listed below it are classified as Alpha.
 
 ### Security
 - ZIP and TAR extraction now rejects path traversal, symbolic links, hard links, device files, FIFOs, oversized member sets, and archives whose declared expansion exceeds available disk space.

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 PRODUCT_NAME = "Format Foundry"
 PRODUCT_SLUG = "FormatFoundry"
-PACKAGE_VERSION = "0.5.0-beta"
-DISPLAY_VERSION = "Beta 0.5"
+PACKAGE_VERSION = "0.7.1-beta"
+DISPLAY_VERSION = "Beta 0.7.1"
 MIGRATION_RELEASE_TAG = "v1.8.18"
 APP_EXECUTABLE_BASENAME = "FormatFoundry"
 UPDATER_EXECUTABLE_BASENAME = "FormatFoundry_Updater"

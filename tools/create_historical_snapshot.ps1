@@ -46,6 +46,9 @@ function Copy-SafeTree {
         ".pytest_cache",
         ".mypy_cache",
         ".venv",
+        ".venv-windows",
+        ".ruff_cache",
+        ".env.codex.local",
         "venv",
         "env",
         "build",
@@ -55,7 +58,7 @@ function Copy-SafeTree {
         "release_bins"
     )
     Get-ChildItem -Path $SourceRoot -Force | ForEach-Object {
-        if ($excludedNames -contains $_.Name) {
+        if (($excludedNames -contains $_.Name) -or ($_.Name -like ".env*") -or ($_.Extension -in @(".pfx", ".p12", ".key"))) {
             return
         }
         Copy-Item -Path $_.FullName -Destination $DestinationRoot -Recurse -Force

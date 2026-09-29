@@ -68,7 +68,7 @@ Each module should be independently testable, replaceable, and extensible.
 - Optional read-only PC Health Snapshot workspace
 
 ## Current Release Target
-- Canonical coordinated release: `Beta 0.5` (`0.5.0-beta` package version)
+- Canonical coordinated release target: `Beta 0.7.1` (`0.7.1-beta` package version)
 - Migration transport tag: `v1.8.18` for installed Alpha `1.8.17` clients
 - App version, updater version, installer metadata, manifest version, and public install docs must stay aligned through release-contract tests.
 
@@ -89,7 +89,6 @@ Detailed execution order and release gates are maintained in `docs/POST_BETA_ROA
 4. Add manual Narrator, Orca, keyboard-only, and real Ubuntu desktop install/launcher/uninstall checks to release sign-off.
 5. Configure a publicly trusted Azure Artifact Signing or CA-issued certificate identity before publishing Beta binaries.
 6. Keep third-party add-on loading disabled until signed manifests, compatibility rules, consent, and isolation are implemented.
-
 
 
 

@@ -13,6 +13,25 @@ def read(path: str) -> str:
 
 
 class ReleaseContractTests(unittest.TestCase):
+    def test_build_baseline_and_powershell_fail_closed_contract(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load(read(".github/workflows/cross-platform-build-release.yml"))
+        self.assertIn("pull_request", workflow[True])
+        self.assertEqual(workflow["jobs"]["build-linux"]["runs-on"], "ubuntu-24.04")
+        for job in workflow["jobs"].values():
+            for step in job["steps"]:
+                if step.get("shell") == "pwsh":
+                    self.assertIn("$PSNativeCommandUseErrorActionPreference = $true", step["run"])
+                    self.assertIn("$ErrorActionPreference = 'Stop'", step["run"])
+        self.assertIn("RELEASE_LICENSE_REVIEWED", read(".github/workflows/cross-platform-build-release.yml"))
+
+    def test_portable_build_bundles_updater_and_payload_evidence(self) -> None:
+        builder = read("tools/build_windows_release_phase.ps1")
+        self.assertIn('Join-Path $portableDirectory "FormatFoundry_Updater.exe"', builder)
+        self.assertIn("native-payload-windows.json", builder)
+        self.assertIn("collect_build_evidence.py", builder)
+
     def test_app_updater_and_installer_versions_match(self) -> None:
         identity_source = read("app_identity.py")
         app_source = read("modular_file_utility_suite.py")
@@ -50,7 +69,7 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("RELEASE_TRANSPORT_TAG = MIGRATION_RELEASE_TAG", runtime)
         self.assertIn(f'"latest_version": "{TRANSPORT_TAG}"', manifest)
         self.assertIn(f'"release_tag": "{TRANSPORT_TAG}"', manifest)
-        self.assertIn(f'const fallbackReleaseTag = "{TRANSPORT_TAG}"', site)
+        self.assertIn('const fallbackReleaseTag = "v1.8.17"', site)
         self.assertIn("detectPackageVersion", site)
         self.assertIn("steps.prep.outputs.package_version", workflow)
 
@@ -94,7 +113,7 @@ class ReleaseContractTests(unittest.TestCase):
 
     def test_debian_control_version_sorts_beta_before_future_stable(self) -> None:
         build_script = read("build_linux.sh")
-        self.assertIn('DEBIAN_VERSION="${PACKAGE_VERSION/-beta/~beta}"', build_script)
+        self.assertIn('DEBIAN_VERSION="1:${PACKAGE_VERSION/-beta/~beta}"', build_script)
         self.assertIn("Version: ${DEBIAN_VERSION}", build_script)
         self.assertIn('mktemp -d "${TMPDIR:-/tmp}/format-foundry-packaging.', build_script)
         self.assertIn('find "${DEB_ROOT}" -type d -exec chmod 755', build_script)
@@ -115,13 +134,15 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn('cp -f "LICENSE" "$TAR_DIR/LICENSE"', linux_builder)
         self.assertIn("deb-smoke/usr/share/doc/format-foundry/copyright", workflow)
 
-    def test_every_historical_changelog_release_is_labeled_alpha(self) -> None:
+    def test_historical_changelog_releases_keep_their_lifecycle_labels(self) -> None:
         changelog = read("CHANGELOG.md")
         headings = re.findall(r"^## \[([^\]]+)\] - (.+)$", changelog, flags=re.MULTILINE)
         self.assertGreater(len(headings), 1)
         for version, suffix in headings:
             if version == PACKAGE_VERSION:
                 self.assertIn(DISPLAY_VERSION, suffix)
+            elif version.endswith("-beta"):
+                self.assertRegex(suffix, r"\(Beta [^)]+\)")
             else:
                 self.assertIn("(Alpha)", suffix)
 

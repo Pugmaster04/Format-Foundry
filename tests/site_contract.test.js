@@ -18,26 +18,26 @@ const { buildSiteConfig } = context.__formatFoundrySiteTest;
 
 const releaseBase = "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18";
 const assets = [
-  "FormatFoundry_Setup_0.5.0-beta.exe",
-  "FormatFoundry_0.5.0-beta.exe",
-  "FormatFoundry_Updater_0.5.0-beta.exe",
-  "FormatFoundry_Portable_0.5.0-beta_windows_x86_64.zip",
-  "format-foundry_0.5.0-beta_amd64.deb",
-  "FormatFoundry_linux_0.5.0-beta_x86_64.AppImage",
-  "FormatFoundry_linux_0.5.0-beta_x86_64.tar.gz",
+  "FormatFoundry_Setup_0.7.1-beta.exe",
+  "FormatFoundry_0.7.1-beta.exe",
+  "FormatFoundry_Updater_0.7.1-beta.exe",
+  "FormatFoundry_Portable_0.7.1-beta_windows_x86_64.zip",
+  "format-foundry_0.7.1-beta_amd64.deb",
+  "FormatFoundry_linux_0.7.1-beta_x86_64.AppImage",
+  "FormatFoundry_linux_0.7.1-beta_x86_64.tar.gz",
 ].map((name) => ({ name, browser_download_url: `${releaseBase}/${name}` }));
 
-const beta = buildSiteConfig("v1.8.18", assets, "Format Foundry Beta 0.5");
-assert.equal(beta.version, "0.5.0-beta");
-assert.equal(beta.displayVersion, "Beta 0.5");
-assert.equal(beta.links.windowsInstaller, `${releaseBase}/FormatFoundry_Setup_0.5.0-beta.exe`);
+const beta = buildSiteConfig("v1.8.18", assets, "Format Foundry Beta 0.7.1");
+assert.equal(beta.version, "0.7.1-beta");
+assert.equal(beta.displayVersion, "Beta 0.7.1");
+assert.equal(beta.links.windowsInstaller, `${releaseBase}/FormatFoundry_Setup_0.7.1-beta.exe`);
 assert.equal(
   beta.links.windowsPortableFolder,
-  `${releaseBase}/FormatFoundry_Portable_0.5.0-beta_windows_x86_64.zip`,
+  `${releaseBase}/FormatFoundry_Portable_0.7.1-beta_windows_x86_64.zip`,
 );
-assert.equal(beta.links.linuxDeb, `${releaseBase}/format-foundry_0.5.0-beta_amd64.deb`);
+assert.equal(beta.links.linuxDeb, `${releaseBase}/format-foundry_0.7.1-beta_amd64.deb`);
 
-const missingInstaller = buildSiteConfig("v1.8.18", assets.slice(1), "Format Foundry Beta 0.5");
+const missingInstaller = buildSiteConfig("v1.8.18", assets.slice(1), "Format Foundry Beta 0.7.1");
 assert.equal(
   missingInstaller.links.windowsInstaller,
   "https://github.com/Pugmaster04/Format-Foundry/releases/tag/v1.8.18",
@@ -46,6 +46,13 @@ assert.equal(
 
 const offlineFallback = buildSiteConfig();
 assert.equal(offlineFallback.releasePage, "https://github.com/Pugmaster04/Format-Foundry/releases/latest");
+assert.equal(offlineFallback.displayVersion, "View current release", "Offline pages must not claim an unpublished or stale version is current");
+const unsafeAsset = buildSiteConfig("v1.8.18", [{ name: "FormatFoundry_Setup_0.7.1-beta.exe", browser_download_url: "javascript:alert(1)" }]);
+assert.equal(unsafeAsset.links.windowsInstaller, "https://github.com/Pugmaster04/Format-Foundry/releases/latest");
+for (const name of ["index.html", "downloads.html", "license.html"]) {
+  const html = fs.readFileSync(path.join(root, "docs", name), "utf8");
+  assert.doesNotMatch(html, /data-link="[^"]+" href="#"/, `${name} needs working no-JavaScript links`);
+}
 
 const alphaAssets = [
   {

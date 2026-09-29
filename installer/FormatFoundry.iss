@@ -1,6 +1,6 @@
 #define MyAppName "Format Foundry"
-#define MyAppVersion "0.5.0-beta"
-#define MyAppDisplayVersion "Beta 0.5"
+#define MyAppVersion "0.7.1-beta"
+#define MyAppDisplayVersion "Beta 0.7.1"
 #define MyAppPublisher "Format Foundry"
 #define MyAppExeName "FormatFoundry.exe"
 #define MyUpdaterExeName "FormatFoundry_Updater.exe"
@@ -35,8 +35,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppDisplayVersion}
-VersionInfoVersion=0.5.0.0
-VersionInfoProductVersion=0.5.0.0
+VersionInfoVersion=0.7.1.0
+VersionInfoProductVersion=0.7.1.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -52,6 +52,8 @@ Source: "..\PROJECT_PLAN.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\update_manifest.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build\third-party-notices\*"; DestDir: "{app}\third-party-notices"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\Format Foundry"; Filename: "{app}\{#MyAppExeName}"

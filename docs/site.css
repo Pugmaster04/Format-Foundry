@@ -467,8 +467,8 @@ code {
 }
 
 .reveal {
-  opacity: 0;
-  transform: translateY(26px);
+  opacity: 1;
+  transform: none;
   transition: opacity 700ms cubic-bezier(.22,.61,.36,1), transform 700ms cubic-bezier(.22,.61,.36,1);
 }
 
@@ -476,6 +476,14 @@ code {
 .reveal.is-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal.is-visible { animation: content-reveal 220ms ease-out both; }
+  @keyframes content-reveal {
+    from { transform: translateY(6px); }
+    to { transform: translateY(0); }
+  }
 }
 
 @media (max-width: 1040px) {

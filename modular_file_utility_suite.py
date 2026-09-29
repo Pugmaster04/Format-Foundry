@@ -1,7 +1,7 @@
-﻿import ctypes
-import colorsys
 import argparse
+import colorsys
 import csv
+import ctypes
 import hashlib
 import heapq
 import json
@@ -10,31 +10,42 @@ import os
 import platform
 import queue
 import re
-import signal
+import secrets
 import shlex
 import shutil
+import signal
 import socket
 import subprocess
 import sys
-import tarfile
 import tempfile
 import threading
 import time
+import tkinter as tk
+import tkinter.font as tkfont
 import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-import zipfile
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, ClassVar
-
-import tkinter as tk
-import tkinter.font as tkfont
 from tkinter import END, SINGLE, BooleanVar, IntVar, StringVar, filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
+from typing import Any, ClassVar
 
+from adobe_support import (
+    PDF_INPUT_EXTS,
+    PDF_RASTER_FORMATS,
+    PHOTOSHOP_INPUT_EXTS,
+    UNSUPPORTED_ADOBE_EXTS,
+    export_pdf,
+    first_pdf_image,
+    pdf_summary,
+    tiff_to_pdf,
+    unsupported_adobe_message,
+    validate_photoshop,
+)
 from app_identity import (
     APP_EXECUTABLE_BASENAME,
     DEBIAN_PACKAGE_NAME,
@@ -47,20 +58,57 @@ from app_identity import (
     PRODUCT_SLUG,
     UPDATER_EXECUTABLE_BASENAME,
 )
-from aria2_support import build_download_command, call_rpc, process_is_running, terminate_process
+from archive_support import create_archive as create_safe_archive
 from archive_support import safe_extract_tar, safe_extract_zip
+from aria2_support import (
+    CompletionMonitor,
+    build_download_command,
+    call_rpc,
+    process_is_running,
+    reap_process,
+    redacted_command,
+    terminate_process,
+)
 from backend_support import (
     BACKEND_DESCRIPTIONS as SHARED_BACKEND_DESCRIPTIONS,
+)
+from backend_support import (
     BACKEND_LINKS as SHARED_BACKEND_LINKS,
+)
+from backend_support import (
     backend_install_command,
     detect_backend_paths,
 )
+from checksum_support import hash_file, verify_checksums
+from code_translation import (
+    TYPESCRIPT_DOCS_URL,
+    TranslationCanceled,
+    TranslationError,
+    find_typescript_compiler,
+    supported_translation,
+)
+from code_translation import (
+    output_suffix as code_output_suffix,
+)
+from code_translation import (
+    translate_file as translate_code_file,
+)
+from code_translation import (
+    translate_project as translate_code_project,
+)
+from file_operation_support import apply_renames, available_path, commit_output, file_identity, plan_renames
 from format_foundry_provenance import runtime_provenance_json
 from job_ledger import ACTIVE_JOB_STATUSES, JobLedger
+from language_support import (
+    LanguageLibraryError,
+    bundled_language_library,
+    compare_languages,
+    format_profile,
+    inspect_source,
+)
 from optional_dependencies import imageio_ffmpeg_module, torrent_class, windnd_module, yaml_module
 from settings_support import load_settings_document, save_settings_document
 from support_runtime import (
-    BACKEND_KEY_TO_NAME,
     BACKEND_NAME_TO_KEY,
     DEFAULT_GITHUB_RELEASE_API_URL,
     DEFAULT_GITHUB_REPO_URL,
@@ -77,6 +125,7 @@ from support_runtime import (
     validate_trusted_remote_url,
 )
 from task_runner_support import execute_action
+from update_security import MAX_METADATA_BYTES, policy_opener
 
 try:
     from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
@@ -222,7 +271,7 @@ CAMERA_RAW_IMAGE_EXTS = {
 
 IMAGEMAGICK_IMAGE_INPUT_EXTS = {
     ".jxl",
-} | CAMERA_RAW_IMAGE_EXTS
+} | CAMERA_RAW_IMAGE_EXTS | PHOTOSHOP_INPUT_EXTS
 
 IMAGEMAGICK_IMAGE_TARGET_FORMATS = {
     "jxl",
@@ -255,7 +304,7 @@ IMAGE_EXTS = {
     ".ico",
 } | (HEIF_IMAGE_EXTS if register_heif_opener is not None else set())
 
-SUPPORTED_IMAGE_INPUT_EXTS = IMAGE_EXTS | IMAGEMAGICK_IMAGE_INPUT_EXTS
+SUPPORTED_IMAGE_INPUT_EXTS = IMAGE_EXTS | IMAGEMAGICK_IMAGE_INPUT_EXTS | PDF_INPUT_EXTS
 
 AUDIO_EXTS = {
     ".mp3",
@@ -318,7 +367,7 @@ MEDIA_FORMATS = ["mp4", "mkv", "mov", "webm", "mp3", "wav", "flac", "ogg", "m4a"
 DATA_FORMATS = ["json", "yaml", "csv", "tsv"]
 DOC_FORMATS = ["pdf", "docx", "odt", "html", "md", "txt", "epub", "rtf"]
 ARCHIVE_FORMATS = ["zip", "tar", "tar.gz", "tar.bz2", "tar.xz"]
-ARCHIVE_INPUT_EXTS = {".zip", ".tar", ".gz", ".bz2", ".xz", ".7z"}
+ARCHIVE_INPUT_EXTS = {".zip", ".tar", ".gz", ".bz2", ".xz"}
 AUDIO_BITRATE_HELP_TEXT = "Higher bitrate = better audio and larger files. 128k-192k is a common balance."
 VIDEO_PRESET_HELP_TEXT = "Controls speed vs compression efficiency. Slower presets take longer but can make smaller files."
 VIDEO_CRF_HELP_TEXT = "Lower CRF = higher quality and larger files. Higher CRF = smaller files and lower quality. Typical: 18-23 high quality."
@@ -556,13 +605,6 @@ def is_archive_input_path(path: Path) -> bool:
 def is_version_newer(candidate: str, current: str) -> bool:
     return is_release_newer(candidate, current)
 
-
-def hash_file(path: Path, algorithm: str = "sha256") -> str:
-    digest = hashlib.new(algorithm)
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def quick_file_fingerprint(path: Path, size: int, sample_bytes: int = 1024 * 64) -> str:
@@ -1062,7 +1104,7 @@ class TaskEngine:
     def _prepare_output_path(self, target_path: Path, context: str) -> Path:
         resolved = self.app.resolve_output_path(target_path, context=context)
         if resolved is None:
-            raise RuntimeError("Operation canceled by user.")
+            raise OperationCanceledError("Operation canceled by user.")
         return resolved
 
     def _ffmpeg_thread_args(self) -> list[str]:
@@ -1080,6 +1122,8 @@ class TaskEngine:
         target_format = requested_format.strip().lower()
         if target_format in {"", "keep", "source"}:
             target_format = source.suffix.lower().lstrip(".")
+            if source.suffix.lower() in PDF_INPUT_EXTS | PHOTOSHOP_INPUT_EXTS:
+                target_format = "png"
         aliases = {"jpeg": "jpg", "jpe": "jpg", "jfif": "jpg", "tif": "tiff", "hif": "heif"}
         return aliases.get(target_format, target_format)
 
@@ -1099,7 +1143,11 @@ class TaskEngine:
     def _should_use_imagemagick_for_image(self, source: Path, target_format: str) -> bool:
         suffix = source.suffix.lower()
         normalized_target = self._normalized_image_format(source, target_format)
-        return normalized_target in IMAGEMAGICK_IMAGE_TARGET_FORMATS or suffix in (IMAGEMAGICK_IMAGE_INPUT_EXTS - {".raw"})
+        return (
+            normalized_target in IMAGEMAGICK_IMAGE_TARGET_FORMATS
+            or suffix in (IMAGEMAGICK_IMAGE_INPUT_EXTS - {".raw", ".psd"})
+            or (suffix == ".psd" and bool(self.app.backends.imagemagick))
+        )
 
     def _imagemagick_convert_cmd(self, source_ref: str, *args: str) -> list[str]:
         magick = self.app.backends.imagemagick
@@ -1133,11 +1181,19 @@ class TaskEngine:
     def _load_image_with_pillow(self, source: Path):
         if Image is None:
             raise RuntimeError("Pillow is not installed; cannot process image files.")
+        if source.suffix.lower() in PDF_INPUT_EXTS:
+            return first_pdf_image(source)
+        if source.suffix.lower() in PHOTOSHOP_INPUT_EXTS:
+            validate_photoshop(source)
         try:
             with Image.open(source) as opened:
                 image = ImageOps.exif_transpose(opened) if ImageOps is not None else opened.copy()
                 if image is opened:
                     image = image.copy()
+            if source.suffix.lower() in PHOTOSHOP_INPUT_EXTS and image.mode == "CMYK":
+                converted = image.convert("RGB")
+                image.close()
+                image = converted
             return image
         except UnidentifiedImageError as exc:
             if source.suffix.lower() == ".raw":
@@ -1145,7 +1201,7 @@ class TaskEngine:
             raise
 
     def _prepare_imagemagick_source(self, source: Path) -> tuple[Path, tempfile.TemporaryDirectory | None]:
-        if source.suffix.lower() != ".raw":
+        if source.suffix.lower() not in {".raw", *PDF_INPUT_EXTS}:
             return source, None
         image = self._load_image_with_pillow(source)
         if image.mode not in {"RGB", "RGBA", "L", "LA"}:
@@ -1168,11 +1224,15 @@ class TaskEngine:
         magick = self.app.backends.imagemagick
         if not magick:
             raise RuntimeError(
-                "ImageMagick is required for JPEG XL and camera-raw image conversions. Install ImageMagick and try again."
+                "ImageMagick is required for this JPEG XL, camera-raw or Photoshop conversion. Install it from the Backend Center and try again."
             )
+        if source.suffix.lower() in PHOTOSHOP_INPUT_EXTS:
+            validate_photoshop(source)
         magick_source, temp_dir = self._prepare_imagemagick_source(source)
         try:
             cmd = self._imagemagick_convert_cmd(f"{magick_source}[0]", "-auto-orient")
+            if out_path.suffix.lower() in {".jpg", ".jpeg"}:
+                cmd += ["-background", "white", "-alpha", "remove", "-alpha", "off"]
             if max_width > 0 or max_height > 0:
                 width_part = str(max_width) if max_width > 0 else ""
                 height_part = str(max_height) if max_height > 0 else ""
@@ -1180,17 +1240,46 @@ class TaskEngine:
             if sharpen_amount > 0:
                 sharpen_radius = max(0.3, min(4.0, sharpen_amount / 100.0))
                 cmd += ["-unsharp", f"0x{sharpen_radius:.2f}"]
-            cmd += ["-quality", str(max(1, min(100, quality))), str(out_path)]
-            self.app.run_process(cmd)
+            previous = file_identity(out_path)
+            with tempfile.TemporaryDirectory(prefix=".foundry-image-", dir=out_path.parent) as directory:
+                staged = Path(directory) / ("converted" + out_path.suffix)
+                cmd += ["-quality", str(max(1, min(100, quality))), str(staged)]
+                self.app.run_process(cmd)
+                if not staged.is_file() or staged.stat().st_size == 0:
+                    raise RuntimeError("ImageMagick did not produce a nonempty image.")
+                getattr(self.app, "check_current_task_cancelled", lambda: None)()
+                commit_output(staged, out_path, previous)
         finally:
             if temp_dir is not None:
                 temp_dir.cleanup()
         return out_path
 
     def _convert_image_document_to_pdf(self, source: Path, final_path: Path) -> Path:
+        previous = file_identity(final_path)
+        with tempfile.TemporaryDirectory(prefix=".foundry-image-pdf-", dir=final_path.parent) as raw_stage:
+            staged = Path(raw_stage) / "converted.pdf"
+            if source.suffix.lower() in {".tif", ".tiff"}:
+                tiff_to_pdf(source, staged, getattr(self.app, "check_current_task_cancelled", lambda: None))
+            else:
+                self._render_image_document_to_pdf(source, staged)
+            getattr(self.app, "check_current_task_cancelled", lambda: None)()
+            commit_output(staged, final_path, previous)
+        return final_path
+
+    def _export_pdf_document(self, source: Path, final_path: Path, target_format: str, quality: int = 92) -> Path:
+        previous = file_identity(final_path)
+        check = getattr(self.app, "check_current_task_cancelled", lambda: None)
+        with tempfile.TemporaryDirectory(prefix=".foundry-pdf-", dir=final_path.parent) as raw_stage:
+            staged = Path(raw_stage) / f"converted.{target_format}"
+            export_pdf(source, staged, target_format, quality=quality, check_cancelled=check)
+            check()
+            commit_output(staged, final_path, previous)
+        return final_path
+
+    def _render_image_document_to_pdf(self, source: Path, final_path: Path) -> Path:
         try:
             image = self._load_image_with_pillow(source)
-        except UnidentifiedImageError:
+        except (UnidentifiedImageError, OSError):
             image = None
         if image is not None:
             if "A" in image.getbands():
@@ -1199,13 +1288,26 @@ class TaskEngine:
                 image = flattened
             elif image.mode not in {"RGB", "L"}:
                 image = image.convert("RGB")
-            image.save(final_path, format="PDF", resolution=300.0)
+            try:
+                image.save(final_path, format="PDF", resolution=300.0)
+            finally:
+                image.close()
             return final_path
 
         suffix = source.suffix.lower()
         if self.app.backends.imagemagick and self._should_use_imagemagick_for_image(source, "pdf"):
-            cmd = self._imagemagick_convert_cmd(f"{source}[0]", "-auto-orient", str(final_path))
-            self.app.run_process(cmd)
+            # Decode to pixels first; PDF writing need not enable ImageMagick's PDF/PostScript policy.
+            with tempfile.TemporaryDirectory() as directory:
+                raster = Path(directory) / "composite.png"
+                self._convert_image_with_imagemagick(source, raster, quality=92)
+                with Image.open(raster) as opened:
+                    image = opened.convert("RGBA")
+                    try:
+                        with Image.new("RGB", image.size, "white") as flattened:
+                            flattened.paste(image, mask=image.getchannel("A"))
+                            flattened.save(final_path, format="PDF", resolution=300.0)
+                    finally:
+                        image.close()
             return final_path
 
         if suffix == ".raw":
@@ -1442,6 +1544,12 @@ class TaskEngine:
         out_path = output_dir / f"{source.stem}.{target_format}"
         suffix = source.suffix.lower()
 
+        if suffix in UNSUPPORTED_ADOBE_EXTS:
+            raise RuntimeError(unsupported_adobe_message(source))
+        if suffix in PDF_INPUT_EXTS:
+            out_path = self._prepare_output_path(out_path, f"Converted PDF / Illustrator file for {source.name}")
+            return self._export_pdf_document(source, out_path, target_format, int(options.get("image_quality", 92)))
+
         if suffix in SUPPORTED_IMAGE_INPUT_EXTS and target_format in IMAGE_FORMATS:
             if Image is None:
                 raise RuntimeError("Pillow is not installed; cannot convert image files.")
@@ -1485,6 +1593,8 @@ class TaskEngine:
             if target_format in {"mp3", "wav", "flac", "ogg", "m4a"}:
                 bitrate = str(options.get("audio_bitrate", "192k"))
                 cmd += ["-vn", "-b:a", bitrate]
+            elif target_format == "webm":
+                cmd += ["-c:v", "libvpx-vp9", "-crf", str(options.get("video_crf", 23)), "-b:v", "0", "-c:a", "libopus"]
             else:
                 preset = str(options.get("video_preset", "medium"))
                 crf = str(options.get("video_crf", 23))
@@ -1570,17 +1680,8 @@ class TaskEngine:
     def create_zip_archive(self, files: list[Path], output_dir: Path, level: int = 6) -> Path:
         ensure_dir(output_dir)
         stamp = time.strftime("%Y%m%d_%H%M%S")
-        archive = output_dir / f"compressed_batch_{stamp}.zip"
-        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=level) as bundle:
-            for source in files:
-                if source.is_file():
-                    bundle.write(source, arcname=source.name)
-                elif source.is_dir():
-                    for candidate in source.rglob("*"):
-                        if candidate.is_file():
-                            arcname = str(Path(source.name) / candidate.relative_to(source))
-                            bundle.write(candidate, arcname=arcname)
-        return archive
+        archive = self._prepare_output_path(output_dir / f"compressed_batch_{stamp}.zip", "Archive output file")
+        return create_safe_archive(files, archive, "zip", self.app.check_current_task_cancelled, level)
 
     def extract_from_media(self, source: Path, output_dir: Path, operation_key: str, options: dict[str, Any]) -> Path:
         ffmpeg = self.app.backends.ffmpeg
@@ -1664,7 +1765,12 @@ class TaskEngine:
             except Exception as exc:
                 info["ffprobe_error"] = str(exc)
 
-        if source.suffix.lower() in SUPPORTED_IMAGE_INPUT_EXTS:
+        if source.suffix.lower() in PDF_INPUT_EXTS:
+            try:
+                info["document"] = pdf_summary(source)
+            except (ValueError, RuntimeError) as exc:
+                info["document_error"] = str(exc)
+        elif source.suffix.lower() in SUPPORTED_IMAGE_INPUT_EXTS:
             if Image is not None:
                 try:
                     with Image.open(source) as image:
@@ -1684,6 +1790,8 @@ class TaskEngine:
                 except UnidentifiedImageError:
                     if source.suffix.lower() == ".raw":
                         info["image_error"] = self._ambiguous_raw_message(source)
+                    elif source.suffix.lower() in PHOTOSHOP_INPUT_EXTS:
+                        info["image_error"] = "Pillow cannot inspect this Photoshop variant. ImageMagick is required to import its saved composite."
                     else:
                         info["image_error"] = "File extension looks like image but data is not recognized."
                 except Exception as exc:
@@ -1755,40 +1863,44 @@ class TaskEngine:
         out_path = output_dir / f"{source.stem}.{target_format}"
         final_path = self._prepare_output_path(out_path, f"Converted document for {source.name}")
 
+        if source.suffix.lower() in UNSUPPORTED_ADOBE_EXTS:
+            raise RuntimeError(unsupported_adobe_message(source))
+        if source.suffix.lower() in PDF_INPUT_EXTS:
+            return self._export_pdf_document(source, final_path, target_format)
+
         if target_format == "pdf" and source.suffix.lower() in SUPPORTED_IMAGE_INPUT_EXTS:
             return self._convert_image_document_to_pdf(source, final_path)
 
-        if self.app.backends.pandoc:
-            cmd = [self.app.backends.pandoc, str(source), "-o", str(final_path)]
-            self.app.run_process(cmd)
-            return final_path
-
-        if self.app.backends.libreoffice:
-            cmd = [
-                self.app.backends.libreoffice,
-                "--headless",
-                "--convert-to",
-                target_format,
-                "--outdir",
-                str(final_path.parent),
-                str(source),
-            ]
-            self.app.run_process(cmd)
-            produced = final_path.parent / f"{source.stem}.{target_format}"
-            if not produced.exists():
-                fallback_matches = list(final_path.parent.glob(f"{source.stem}.*"))
-                produced = fallback_matches[0] if fallback_matches else None
-            if produced and produced != final_path:
-                if final_path.exists():
-                    final_path = self._prepare_output_path(final_path, f"Converted document for {source.name}")
-                ensure_dir(final_path.parent)
-                shutil.move(str(produced), str(final_path))
-                return final_path
-            if produced and produced.exists():
-                return produced
-            fallback_matches = list(final_path.parent.glob(f"{source.stem}.*"))
-            if fallback_matches:
-                return fallback_matches[0]
+        pandoc_inputs = {".md", ".markdown", ".rst", ".html", ".htm", ".docx", ".odt", ".epub", ".tex"}
+        pandoc_outputs = {"md", "markdown", "rst", "html", "docx", "odt", "epub", "tex", "txt"}
+        office_inputs = {".doc", ".docx", ".odt", ".rtf", ".txt", ".html", ".htm", ".xls", ".xlsx", ".ods", ".ppt", ".pptx", ".odp"}
+        commands = []
+        previous = file_identity(final_path)
+        with tempfile.TemporaryDirectory(prefix=".foundry-document-", dir=final_path.parent) as raw_stage:
+            stage = Path(raw_stage)
+            produced = stage / f"{source.stem}.{target_format}"
+            if self.app.backends.pandoc and source.suffix.lower() in pandoc_inputs and target_format in pandoc_outputs:
+                commands.append([self.app.backends.pandoc, str(source.resolve()), "-o", str(produced)])
+            if self.app.backends.libreoffice and source.suffix.lower() in office_inputs:
+                commands.append([
+                    self.app.backends.libreoffice, f"-env:UserInstallation={(stage / 'profile').as_uri()}",
+                    "--headless", "--convert-to", target_format, "--outdir", str(stage), str(source.resolve()),
+                ])
+            errors = []
+            for cmd in commands:
+                try:
+                    produced.unlink(missing_ok=True)
+                    self.app.run_process(cmd)
+                    if not produced.is_file() or produced.stat().st_size == 0:
+                        raise RuntimeError("Backend did not generate the expected nonempty document.")
+                    commit_output(produced, final_path, previous)
+                    return final_path
+                except OperationCanceledError:
+                    raise
+                except Exception as exc:
+                    errors.append(str(exc))
+            if errors:
+                raise RuntimeError("Document conversion failed: " + "; ".join(errors))
 
         if source.suffix.lower() in TEXT_EXTS and target_format in {"txt", "md", "html"}:
             content = source.read_text(encoding="utf-8", errors="replace")
@@ -1800,45 +1912,19 @@ class TaskEngine:
         )
 
     def create_archive(self, inputs: list[Path], out_path: Path, archive_format: str) -> Path:
-        archive_format = archive_format.lower()
         out_path = self._prepare_output_path(out_path, "Archive output file")
         ensure_dir(out_path.parent)
-
-        if archive_format == "zip":
-            with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-                for entry in inputs:
-                    if entry.is_file():
-                        bundle.write(entry, arcname=entry.name)
-                    elif entry.is_dir():
-                        for child in entry.rglob("*"):
-                            if child.is_file():
-                                arcname = str(Path(entry.name) / child.relative_to(entry))
-                                bundle.write(child, arcname=arcname)
-            return out_path
-
-        mode_lookup = {
-            "tar": "w",
-            "tar.gz": "w:gz",
-            "tar.bz2": "w:bz2",
-            "tar.xz": "w:xz",
-        }
-        if archive_format not in mode_lookup:
-            raise RuntimeError(f"Unsupported archive format: {archive_format}")
-
-        with tarfile.open(out_path, mode_lookup[archive_format]) as archive:
-            for entry in inputs:
-                archive.add(entry, arcname=entry.name)
-        return out_path
+        return create_safe_archive(inputs, out_path, archive_format.lower(), self.app.check_current_task_cancelled)
 
     def extract_archive(self, archive_path: Path, destination: Path) -> Path:
-        ensure_dir(destination)
+        destination = available_path(destination)
         suffix = archive_path.suffix.lower()
         lower_name = archive_path.name.lower()
         if suffix == ".zip":
-            safe_extract_zip(archive_path, destination)
+            safe_extract_zip(archive_path, destination, self.app.check_current_task_cancelled)
             return destination
         if suffix in {".tar", ".gz", ".bz2", ".xz"} or lower_name.endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
-            safe_extract_tar(archive_path, destination)
+            safe_extract_tar(archive_path, destination, self.app.check_current_task_cancelled)
             return destination
         raise RuntimeError(f"Unsupported archive format: {archive_path.name}")
 
@@ -2034,7 +2120,6 @@ class SuiteApp:
         dark_mode_var = BooleanVar(value=bool(self.settings.get("dark_mode", False)))
         fullscreen_var = BooleanVar(value=bool(self.settings.get("fullscreen", False)))
         borderless_var = BooleanVar(value=bool(self.settings.get("borderless_maximized", False)))
-        hover_tooltips_var = BooleanVar(value=bool(self.settings.get("use_hover_tooltips", False)))
         update_check_var = BooleanVar(value=bool(self.settings.get("check_updates_on_startup", True)))
         backend_prompt_var = BooleanVar(value=bool(self.settings.get("prompt_backend_install_on_startup", True)))
         startup_animation_var = BooleanVar(value=bool(self.settings.get("show_startup_animation", True)))
@@ -2120,7 +2205,7 @@ class SuiteApp:
 
         ttk.Label(
             content_body,
-            text='Manifest example: {"latest_version":"0.5.0-beta","download_url":"https://example.com/FormatFoundry_Setup_0.5.0-beta.exe","notes":"Release notes"}',
+            text='Manifest example: {"latest_version":"0.7.1-beta","download_url":"https://example.com/FormatFoundry_Setup_0.7.1-beta.exe","notes":"Release notes"}',
             style="Helper.TLabel",
             wraplength=590,
             justify="left",
@@ -3750,6 +3835,7 @@ class SuiteApp:
                     ("Metadata", MetadataTab),
                 ],
             ),
+            ("Development", [("Code Languages", CodeLanguagesTab)]),
             (
                 "Misc",
                 [
@@ -3886,7 +3972,7 @@ class SuiteApp:
             return
         try:
             self._windnd.hook_dropfiles(widget, func=lambda files: self._queue_external_drop(files))
-            setattr(widget, "_uch_drop_hooked", True)
+            widget._uch_drop_hooked = True
         except Exception:
             pass
         for child in widget.winfo_children():
@@ -4334,6 +4420,25 @@ class SuiteApp:
             return True, ""
         return False, f"Unsupported manifest source scheme '{scheme}'."
 
+    def _read_update_metadata(self, request: urllib.request.Request) -> str:
+        allowed, reason = self._validate_manifest_source_policy(request.full_url)
+        if not allowed:
+            raise ValueError(reason)
+        if self._url_scheme(request.full_url) == "file":
+            if urllib.parse.urlsplit(request.full_url).netloc not in {"", "localhost"}:
+                raise ValueError("Remote file-share manifests are not allowed.")
+            opener = urllib.request.urlopen
+        else:
+            opener = policy_opener(
+                require_https=bool(self.settings.get("security_require_https_for_update_manifest", True)),
+                trusted_hosts=self._trusted_update_hosts() if self.settings.get("security_enforce_trusted_update_hosts", True) else None,
+            )
+        with opener(request, timeout=12) as response:
+            data = response.read(MAX_METADATA_BYTES + 1)
+        if len(data) > MAX_METADATA_BYTES:
+            raise ValueError("Update metadata exceeds the size limit.")
+        return data.decode("utf-8", errors="replace")
+
     def _open_external_url(self, url: str, purpose: str = "external link") -> bool:
         value = url.strip()
         if not value:
@@ -4427,6 +4532,10 @@ class SuiteApp:
         ensure_dir(candidate.parent)
         while True:
             exists = candidate.exists()
+            if not exists:
+                return candidate
+            if not self.settings.get("ask_output_conflicts", False):
+                return self._next_available_path(candidate)
             choice = self._show_output_conflict_dialog(candidate, context, exists=exists)
             if choice == "replace":
                 return candidate
@@ -4518,7 +4627,7 @@ class SuiteApp:
 
                 self.call_ui(apply)
             except Exception as exc:
-                self.call_ui(lambda: self.log(f"Backend detection failed: {exc}"))
+                self.call_ui(lambda message=str(exc): self.log(f"Backend detection failed: {message}"))
 
         self._backend_refresh_thread = threading.Thread(target=worker, daemon=True, name="backend-detection")
         self._backend_refresh_thread.start()
@@ -4896,6 +5005,7 @@ class SuiteApp:
         compact_density_var = BooleanVar(value=bool(self.settings.get("compact_density", False)))
         ui_scale_var = StringVar(value=str(int(self.settings.get("ui_scale_percent", 100))))
         hover_tooltips_var = BooleanVar(value=bool(self.settings.get("use_hover_tooltips", False)))
+        ask_output_conflicts_var = BooleanVar(value=bool(self.settings.get("ask_output_conflicts", False)))
         update_check_var = BooleanVar(value=bool(self.settings.get("check_updates_on_startup", True)))
         backend_prompt_var = BooleanVar(value=bool(self.settings.get("prompt_backend_install_on_startup", True)))
         startup_animation_var = BooleanVar(value=bool(self.settings.get("show_startup_animation", True)))
@@ -5018,6 +5128,11 @@ class SuiteApp:
         ).pack(anchor="w", pady=(2, 0))
         ttk.Checkbutton(
             general_tab,
+            text="Ask about existing output files (otherwise use a new name)",
+            variable=ask_output_conflicts_var,
+        ).pack(anchor="w", pady=(2, 0))
+        ttk.Checkbutton(
+            general_tab,
             text="Use compact spacing without reducing text size",
             variable=compact_density_var,
         ).pack(anchor="w", pady=(2, 0))
@@ -5076,7 +5191,7 @@ class SuiteApp:
         ttk.Entry(general_tab, textvariable=update_url_var).pack(fill="x", pady=(4, 0))
         update_example_label = ttk.Label(
             general_tab,
-            text='Example JSON: {"latest_version":"0.5.0-beta","download_url":"https://example.com/FormatFoundry_Setup_0.5.0-beta.exe","notes":"Release notes"}',
+            text='Example JSON: {"latest_version":"0.7.1-beta","download_url":"https://example.com/FormatFoundry_Setup_0.7.1-beta.exe","notes":"Release notes"}',
             style="Helper.TLabel",
             justify="left",
         )
@@ -5252,6 +5367,7 @@ class SuiteApp:
             compact_density_var.set(bool(defaults["compact_density"]))
             ui_scale_var.set(str(defaults["ui_scale_percent"]))
             hover_tooltips_var.set(bool(defaults["use_hover_tooltips"]))
+            ask_output_conflicts_var.set(False)
             update_check_var.set(bool(defaults["check_updates_on_startup"]))
             backend_prompt_var.set(bool(defaults["prompt_backend_install_on_startup"]))
             startup_animation_var.set(bool(defaults["show_startup_animation"]))
@@ -5316,6 +5432,7 @@ class SuiteApp:
             self.settings["compact_density"] = bool(compact_density_var.get())
             self.settings["ui_scale_percent"] = int(ui_scale_percent)
             self.settings["use_hover_tooltips"] = bool(hover_tooltips_var.get())
+            self.settings["ask_output_conflicts"] = bool(ask_output_conflicts_var.get())
             if self.settings["fullscreen"] and self.settings["borderless_maximized"]:
                 self.settings["borderless_maximized"] = False
                 status_var.set("Borderless was disabled because fullscreen is enabled.")
@@ -5658,8 +5775,7 @@ class SuiteApp:
                 manifest_url,
                 headers={"User-Agent": f"FormatFoundry/{APP_VERSION}", "Accept": "application/vnd.github+json, application/json"},
             )
-            with urllib.request.urlopen(request, timeout=12) as response:
-                payload = response.read().decode("utf-8", errors="replace")
+            payload = self._read_update_metadata(request)
             data = normalize_update_metadata(json.loads(payload))
             if not isinstance(data, dict):
                 self.log(f"Startup update check skipped: manifest is not an object ({manifest_url})")
@@ -5734,8 +5850,8 @@ class SuiteApp:
         logo = tk.Canvas(container, width=s(240), height=s(150), bg="#0E1B28", highlightthickness=0, bd=0)
         logo.pack(pady=(self._scaled(10), self._scaled(8)))
         logo.create_oval(s(42), s(112), s(194), s(140), fill="#08111A", outline="")
-        back_plate = logo.create_rectangle(s(62), s(32), s(154), s(114), fill="#14334A", outline="#2F607E", width=max(1, s(2)))
-        mid_plate = logo.create_rectangle(s(78), s(24), s(170), s(106), fill="#19506C", outline="#5AA7C5", width=max(1, s(2)))
+        logo.create_rectangle(s(62), s(32), s(154), s(114), fill="#14334A", outline="#2F607E", width=max(1, s(2)))
+        logo.create_rectangle(s(78), s(24), s(170), s(106), fill="#19506C", outline="#5AA7C5", width=max(1, s(2)))
         front_plate = logo.create_rectangle(s(96), s(16), s(188), s(98), fill="#1F7D8F", outline="#8FE0E0", width=max(1, s(2)))
         front_fold = logo.create_polygon(s(164), s(16), s(188), s(16), s(188), s(40), s(164), s(40), fill="#AEEEF0", outline="#AEEEF0")
         beam = logo.create_rectangle(s(104), s(28), s(180), s(40), fill="#D8FBFF", outline="")
@@ -5867,6 +5983,14 @@ class SuiteApp:
             finally:
                 self._startup_animation_active = False
 
+    def _display_bounds(self) -> tuple[int, int, int, int]:
+        width = max(1, int(self.root.winfo_screenwidth()))
+        height = max(1, int(self.root.winfo_screenheight()))
+        if current_platform_key() == "linux":
+            from display_support import linux_display_bounds
+            return linux_display_bounds(width, height, self.root.winfo_pointerxy())
+        return 0, 0, width, height
+
     def _center_window_on_screen(self, window: tk.Misc) -> None:
         try:
             window.update_idletasks()
@@ -5881,9 +6005,10 @@ class SuiteApp:
                     height = int(raw_h)
             if width <= 1 or height <= 1:
                 return
-            x = max(0, (window.winfo_screenwidth() - width) // 2)
-            y = max(0, (window.winfo_screenheight() - height) // 2)
-            window.geometry(f"{width}x{height}+{x}+{y}")
+            left, top, screen_width, screen_height = self._display_bounds()
+            x = left + max(0, (screen_width - width) // 2)
+            y = top + max(0, (screen_height - height) // 2)
+            window.geometry(f"{width}x{height}{x:+d}{y:+d}")
         except Exception:
             return
 
@@ -5898,8 +6023,7 @@ class SuiteApp:
     def _calculate_display_matched_geometry(self) -> str:
         try:
             self.root.update_idletasks()
-            screen_width = max(1, int(self.root.winfo_screenwidth()))
-            screen_height = max(1, int(self.root.winfo_screenheight()))
+            left, top, screen_width, screen_height = self._display_bounds()
             min_width, min_height = self._preferred_min_window_size()
             margin_x = max(self._scaled(24), int(screen_width * 0.04))
             margin_y = max(self._scaled(36), int(screen_height * 0.05))
@@ -5914,9 +6038,9 @@ class SuiteApp:
 
             width = max(min(720, screen_width), min(screen_width, width))
             height = max(min(520, screen_height), min(screen_height, height))
-            x = max(0, (screen_width - width) // 2)
-            y = max(0, (screen_height - height) // 2)
-            return f"{width}x{height}+{x}+{y}"
+            x = left + max(0, (screen_width - width) // 2)
+            y = top + max(0, (screen_height - height) // 2)
+            return f"{width}x{height}{x:+d}{y:+d}"
         except Exception:
             return "1380x920"
 
@@ -6001,8 +6125,7 @@ class SuiteApp:
                     manifest_url,
                     headers={"User-Agent": f"FormatFoundry/{APP_VERSION}", "Accept": "application/vnd.github+json, application/json"},
                 )
-                with urllib.request.urlopen(request, timeout=12) as response:
-                    payload = response.read().decode("utf-8", errors="replace")
+                payload = self._read_update_metadata(request)
                 data = normalize_update_metadata(json.loads(payload))
                 latest = str(data.get("latest_version") or data.get("version") or "").strip()
                 download_url = str(data.get("download_url") or data.get("url") or "").strip()
@@ -6269,20 +6392,31 @@ class SuiteApp:
                 pending_logs.clear()
 
         try:
-            while True:
-                action, payload = self.ui_queue.get_nowait()
-                if action == "log":
-                    pending_logs.append(str(payload))
-                elif action == "call":
-                    flush_logs()
-                    payload()
-        except queue.Empty:
-            pass
-        flush_logs()
-        self.root.after(100, self._poll_ui_queue)
+            deadline = time.monotonic() + 0.015
+            for _ in range(200):
+                if time.monotonic() >= deadline:
+                    break
+                try:
+                    action, payload = self.ui_queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    if action == "log":
+                        pending_logs.append(str(payload))
+                    elif action == "call":
+                        flush_logs()
+                        payload()
+                except Exception as exc:
+                    pending_logs.append(f"UI callback failed: {type(exc).__name__}: {exc}")
+            flush_logs()
+        finally:
+            try:
+                self.root.after(100, self._poll_ui_queue)
+            except tk.TclError:
+                pass
 
     def run_process(self, cmd: list[str], cwd: Path | None = None) -> None:
-        self.log(f"$ {quote_cmd(cmd)}")
+        self.log(f"$ {quote_cmd(redacted_command(cmd))}")
         owner = threading.get_ident()
         popen_kwargs: dict[str, Any] = hidden_console_process_kwargs()
         if os.name != "nt":
@@ -6321,6 +6455,11 @@ class SuiteApp:
                 raise RuntimeError(detail)
         finally:
             self._unregister_process(owner, proc)
+
+    def check_current_task_cancelled(self) -> None:
+        event = self._task_cancel_events.get(threading.get_ident())
+        if event is not None and event.is_set():
+            raise OperationCanceledError("Operation canceled by user.")
 
     def _register_task_cancel_event(self, owner: int, cancel_event: threading.Event) -> None:
         with self._process_lock:
@@ -6389,6 +6528,9 @@ class SuiteApp:
 class ModuleTab(ttk.Frame):
     tab_name = "Module"
     MODULE_COPY: ClassVar[dict[str, dict[str, Any]]] = {
+        "Code Languages": {
+            "summary": "Browse language rules, inspect source files, and compile TypeScript files or local-import projects to JavaScript.",
+        },
         "Suite Plan": {
             "summary": "Reference view for the app structure, module scope, and planned expansion areas.",
             "highlights": ["Architecture map", "Current scope", "Planned growth"],
@@ -6400,7 +6542,7 @@ class ModuleTab(ttk.Frame):
             "workflow": "Refresh detection, inspect the selected backend, then install only what the workflow needs.",
         },
         "Convert": {
-            "summary": "Convert one source type at a time with format-aware targets, quality controls, and safe output handling.",
+            "summary": "Convert one source type at a time. PDF/AI: TIFF keeps all pages, PNG/JPG use page 1. PSD/PSB exports flattened composites, not layers.",
             "highlights": ["Batch queue", "Valid target filtering", "Quality + bitrate controls"],
             "workflow": "Add files, choose the target format, tune quality if needed, then run the queue.",
         },
@@ -6420,7 +6562,7 @@ class ModuleTab(ttk.Frame):
             "workflow": "Add files, inspect the current metadata, then apply only the fields you need to change.",
         },
         "PDF / Documents": {
-            "summary": "Handle document and image-to-PDF conversion with Pandoc or LibreOffice when available.",
+            "summary": "Convert PDF/AI and TIFF pages, flattened Photoshop composites, and Office documents with the appropriate renderer.",
             "highlights": ["PDF export", "Office fallback", "Image-to-PDF path"],
             "workflow": "Queue documents, choose the target format, then run conversion with the best available backend.",
         },
@@ -6518,6 +6660,8 @@ class ModuleTab(ttk.Frame):
                     task_name=self.tab_name,
                     cancel_exception_type=OperationCanceledError,
                     done_message=done_message,
+                    on_cancel=lambda _exc: self.app.call_ui(lambda: self._set_drop_feedback("Stopped. Unfinished items remain queued.")),
+                    on_error=lambda exc: self.app.call_ui(lambda message=str(exc): self._set_drop_feedback(f"Failed: {message}")),
                     info_cb=self.app.info,
                     error_cb=self.app.error,
                     log_cb=self.log,
@@ -6586,9 +6730,38 @@ class ModuleTab(ttk.Frame):
         if self.cancel_event.is_set():
             raise OperationCanceledError("Operation canceled by user.")
 
+    def _toggle_transfer_pause(self) -> None:
+        process, port, secret = self.download_process, self.download_rpc_port, self.download_rpc_secret
+        if not process_is_running(process) or not port or getattr(self, "_rpc_control_busy", False):
+            return
+        target_state = "Running" if self.session_state_var.get() == "Paused" else "Paused"
+        self._rpc_control_busy = True
+        self.status_var.set("Requesting resume..." if target_state == "Running" else "Requesting pause...")
+
+        def work() -> None:
+            try:
+                result = call_rpc(port, "unpauseAll" if target_state == "Running" else "pauseAll", secret=secret)
+                if result != "OK":
+                    raise RuntimeError("aria2 did not acknowledge the control request.")
+
+                def applied() -> None:
+                    if self.download_process is process and process_is_running(process) and not self.download_cancel_requested.is_set():
+                        self._set_session_state(target_state)
+                        self.status_var.set(f"Transfer {target_state.lower()}.")
+                self.app.call_ui(applied)
+            except Exception as exc:
+                self.app.call_ui(lambda message=str(exc): self.status_var.set(f"Pause/resume failed: {message}"))
+            finally:
+                self.app.call_ui(lambda: setattr(self, "_rpc_control_busy", False))
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _set_cancel_button_running(self, running: bool) -> None:
         if self.module_cancel_button is not None and self.module_cancel_button.winfo_exists():
             self.module_cancel_button.configure(state="normal" if running else "disabled")
+        primary = getattr(self, "module_primary_button", None)
+        if primary is not None and primary.winfo_exists():
+            primary.configure(state="disabled" if running else "normal")
 
     def request_cancel(self, silent: bool = False) -> None:
         worker = self.worker
@@ -6777,7 +6950,7 @@ class ModuleTab(ttk.Frame):
                     label.grid_remove()
                 elif manager == "pack":
                     if not hasattr(label, "_inline_pack_info"):
-                        setattr(label, "_inline_pack_info", label.pack_info())
+                        label._inline_pack_info = label.pack_info()
                     label.pack_forget()
 
     def choose_output_dir(self, variable: StringVar, title: str) -> None:
@@ -6819,6 +6992,27 @@ class ModuleTab(ttk.Frame):
         copy = self.MODULE_COPY.get(self.tab_name, {})
         summary = str(copy.get("summary", "")).strip()
 
+        actions = {
+            "Convert": ("Convert Queue", "convert_queue"),
+            "Compress": ("Run Compression", "run_compress"),
+            "Extract": ("Run Extraction", "run_extract"),
+            "PDF / Documents": ("Convert Documents", "convert_docs"),
+            "Images": ("Process Images", "run_images"),
+            "Audio": ("Process Audio", "run_audio"),
+            "Video": ("Process Video", "run_video"),
+            "Checksums / Integrity": ("Generate Hashes", "generate"),
+        }
+        footer = ttk.Frame(self, style="Surface.TFrame", padding=(12, 6))
+        footer.pack(side="bottom", fill="x")
+        self.module_action_footer = footer
+        self.module_cancel_button = ttk.Button(footer, text="Stop", style="DangerApp.TButton", command=self.request_cancel, state="disabled")
+        self.module_cancel_button.pack(side="right")
+        action = actions.get(self.tab_name)
+        if action:
+            self.module_primary_button = ttk.Button(footer, text=action[0], command=getattr(self, action[1]))
+            self.module_primary_button.pack(side="right", padx=(0, 8))
+        ttk.Label(footer, text=self.tab_name, style="Helper.TLabel").pack(side="left")
+
         viewport = ttk.Frame(self, style="Surface.TFrame")
         viewport.pack(fill="both", expand=True)
 
@@ -6833,6 +7027,7 @@ class ModuleTab(ttk.Frame):
         shell_scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=shell_canvas.yview)
         shell_scrollbar.pack(side="right", fill="y")
         shell_canvas.configure(yscrollcommand=shell_scrollbar.set)
+        self.module_scroll_canvas = shell_canvas
 
         shell = ttk.Frame(shell_canvas, style="Surface.TFrame", padding=12)
         shell_window = shell_canvas.create_window((0, 0), window=shell, anchor="nw")
@@ -6865,14 +7060,6 @@ class ModuleTab(ttk.Frame):
         title_row = ttk.Frame(hero_inner, style="ModuleHeroBody.TFrame")
         title_row.pack(fill="x")
         ttk.Label(title_row, text=self.tab_name, style="ModuleTitle.TLabel").pack(side="left", anchor="w")
-        self.module_cancel_button = ttk.Button(
-            title_row,
-            text="Stop",
-            style="DangerApp.TButton",
-            command=self.request_cancel,
-            state="disabled",
-        )
-        self.module_cancel_button.pack(side="right")
 
         if summary:
             summary_label = ttk.Label(
@@ -7028,6 +7215,346 @@ class ModuleTab(ttk.Frame):
         return True
 
 
+class CodeLanguagesTab(ModuleTab):
+    tab_name = "Code Languages"
+
+    def __init__(self, master, app: SuiteApp):
+        super().__init__(master, app)
+        body = self.build_module_shell()
+        self.status_var = StringVar(master=self, value="Loading local reference library...")
+        status = ttk.Label(self.module_action_footer, textvariable=self.status_var, style="Helper.TLabel", wraplength=560)
+        status.pack(side="left", fill="x", expand=True, padx=12)
+        self.app._bind_responsive_wrap(status, minimum=120)
+        try:
+            self.library = bundled_language_library()
+        except (LanguageLibraryError, ValueError, OSError) as exc:
+            label = ttk.Label(body, text=f"Language reference unavailable. {exc}", wraplength=600)
+            label.pack(fill="x", pady=12)
+            self.app._bind_responsive_wrap(label)
+            self.status_var.set("Other tools remain available. Repair this build to restore the library.")
+            return
+
+        self.profiles_by_name = {profile.name: profile for profile in self.library.profiles}
+        names = list(self.profiles_by_name)
+        self.query_var = StringVar(master=self)
+        self.language_var = StringVar(master=self, value="TypeScript" if "TypeScript" in names else names[0])
+        self.target_var = StringVar(master=self, value="JavaScript" if "JavaScript" in names else names[-1])
+        self.matches_var = StringVar(master=self)
+        self.translator_hint_var = StringVar(master=self)
+        self.report_kind = "rules"
+        self._view_revision = 0
+        self.last_source_path: Path | None = None
+
+        ttk.Label(body, text="Search names, extensions or rule topics", style="Helper.TLabel").pack(anchor="w")
+        self.search_entry = ttk.Entry(body, textvariable=self.query_var)
+        self.search_entry.pack(fill="x", pady=(4, 4))
+        ttk.Label(body, textvariable=self.matches_var, style="Helper.TLabel").pack(anchor="w", pady=(0, 8))
+
+        selectors = ttk.Frame(body)
+        selectors.pack(fill="x")
+        source_field = ttk.Frame(selectors)
+        ttk.Label(source_field, text="Reference language").pack(anchor="w")
+        self.language_combo = ttk.Combobox(source_field, textvariable=self.language_var, state="readonly", width=22)
+        self.language_combo.pack(fill="x", pady=(4, 0))
+        target_field = ttk.Frame(selectors)
+        ttk.Label(target_field, text="Target language").pack(anchor="w")
+        self.target_combo = ttk.Combobox(
+            target_field, textvariable=self.target_var, values=list(self.profiles_by_name), state="readonly", width=22,
+        )
+        self.target_combo.pack(fill="x", pady=(4, 0))
+        self.app._bind_flow_layout(selectors, [source_field, target_field], min_item_width=260, stretch=True)
+
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(10, 8))
+        self.rules_button = ttk.Button(actions, text="Rules & Examples", command=self.show_rules)
+        self.compare_button = ttk.Button(actions, text="Compare Rules", command=self.show_comparison)
+        self.inspect_button = ttk.Button(actions, text="Inspect File...", command=self.choose_source)
+        self.translate_button = ttk.Button(actions, text="Generate JavaScript...", command=self.choose_translation)
+        self.project_button = ttk.Button(actions, text="Compile Project...", command=self.choose_project_translation)
+        self.setup_button = ttk.Button(actions, text="Compiler Setup", command=self.open_compiler_setup)
+        self.docs_button = ttk.Button(actions, text="Official Documentation", command=self.open_reference)
+        self.app._bind_flow_layout(
+            actions, [self.translate_button, self.project_button, self.inspect_button, self.rules_button,
+                      self.compare_button, self.setup_button, self.docs_button], min_item_width=165,
+        )
+        self.module_primary_button = self.inspect_button
+        translator_hint = ttk.Label(body, textvariable=self.translator_hint_var, style="Helper.TLabel", wraplength=700)
+        translator_hint.pack(fill="x", pady=(0, 8))
+        self.app._bind_responsive_wrap(translator_hint, minimum=180)
+        notice = ttk.Label(
+            body, text="Reference browsing needs no compiler, AI service or API key. Files stay local and are never run. "
+            "Inspection: UTF-8, up to 64 KiB; Python AST parsing only, other languages reference-only.",
+            style="Helper.TLabel", wraplength=700, justify="left",
+        )
+        notice.pack(fill="x", pady=(0, 8))
+        self.app._bind_responsive_wrap(notice, minimum=180)
+        self.viewer = ScrolledText(body, height=18, width=1, wrap="word", state="disabled", padx=10, pady=10)
+        self.viewer.pack(fill="both", expand=True)
+        self.query_var.trace_add("write", lambda *_: self.filter_languages())
+        self.language_combo.bind("<<ComboboxSelected>>", lambda _event: self.show_rules())
+        self.target_combo.bind("<<ComboboxSelected>>", lambda _event: self.show_comparison())
+        self.filter_languages()
+
+    def show_report(self, text: str, kind: str, status: str) -> None:
+        self._view_revision += 1
+        self.report_kind = kind
+        self.viewer.configure(state="normal")
+        self.viewer.delete("1.0", END)
+        self.viewer.insert("1.0", text)
+        self.viewer.configure(state="disabled")
+        self.viewer.yview_moveto(0)
+        self.status_var.set(status)
+
+    def filter_languages(self) -> None:
+        names = [profile.name for profile in self.library.search(self.query_var.get())]
+        self.language_combo.configure(values=names, state="readonly" if names else "disabled")
+        self.matches_var.set(f"{len(names)} of {len(self.library.profiles)} profiles | Library {self.library.revision}")
+        for button in (self.rules_button, self.compare_button, self.docs_button):
+            button.configure(state="normal" if names else "disabled")
+        if not names:
+            self.language_var.set("")
+            self.refresh_translation_controls()
+            self.show_report("No matching profiles. Clear the search or try a language, extension or topic such as ownership.",
+                             "rules", "No matching languages.")
+            return
+        if self.language_var.get() not in names:
+            self.language_var.set(names[0])
+        self.show_rules()
+
+    def show_rules(self) -> None:
+        self.refresh_translation_controls()
+        profile = self.profiles_by_name.get(self.language_var.get())
+        if profile:
+            self.show_report(format_profile(profile, self.library.revision), "rules", f"{profile.name}: local reference, not a full specification.")
+
+    def show_comparison(self) -> None:
+        self.refresh_translation_controls()
+        source = self.profiles_by_name.get(self.language_var.get())
+        target = self.profiles_by_name.get(self.target_var.get())
+        if source and target:
+            self.show_report(compare_languages(source, target), "comparison", "Reference comparison only. No code was translated.")
+
+    def open_reference(self) -> None:
+        profile = self.profiles_by_name.get(self.language_var.get())
+        if profile:
+            self.app._open_external_url(profile.reference_url, purpose=f"{profile.name} official documentation")
+
+    def refresh_translation_controls(self) -> None:
+        source = self.profiles_by_name.get(self.language_var.get())
+        target = self.profiles_by_name.get(self.target_var.get())
+        supported = bool(source and target and supported_translation(source.id, target.id))
+        self.translate_button.configure(state="normal" if supported else "disabled")
+        self.project_button.configure(state="normal" if supported else "disabled")
+        if not supported:
+            self.translator_hint_var.set("Code generation currently supports TypeScript -> JavaScript. Choose that pair to enable it.")
+        elif find_typescript_compiler() is None:
+            self.translator_hint_var.set("TypeScript -> JavaScript needs Node.js and the TypeScript compiler. Use Compiler Setup for installation help.")
+        else:
+            self.translator_hint_var.set("TypeScript -> JavaScript is ready. Generate one file or compile a local-import project to a ZIP.")
+
+    def open_compiler_setup(self) -> None:
+        self.app._open_external_url(TYPESCRIPT_DOCS_URL, purpose="TypeScript compiler setup")
+
+    def choose_translation(self) -> None:
+        source_profile = self.profiles_by_name.get(self.language_var.get())
+        target_profile = self.profiles_by_name.get(self.target_var.get())
+        if not source_profile or not target_profile or not supported_translation(source_profile.id, target_profile.id):
+            self.status_var.set("Choose TypeScript as the source and JavaScript as the target.")
+            return
+        if self.worker and self.worker.is_alive():
+            self.status_var.set("Wait for the current file task or stop it before starting another.")
+            return
+        compiler = find_typescript_compiler()
+        if compiler is None:
+            self.show_report(
+                "TypeScript -> JavaScript requires Node.js and the official TypeScript compiler.\n\n"
+                "Install Node.js, then install TypeScript with: npm install -g typescript\n\n"
+                "After installation, restart Format Foundry or select the language pair again. Compiler Setup opens the official instructions.",
+                "translation", "Compiler required. No file was selected or changed.",
+            )
+            return
+        candidate = self.last_source_path
+        if candidate is None or candidate.suffix.casefold() not in {".ts", ".mts", ".cts"}:
+            raw = filedialog.askopenfilename(
+                parent=self, title="Choose one TypeScript file", filetypes=[("TypeScript", "*.ts *.mts *.cts"), ("All files", "*.*")],
+            )
+            if not raw:
+                return
+            candidate = Path(raw)
+        try:
+            suffix = code_output_suffix(candidate, source_profile.id, target_profile.id)
+        except TranslationError as exc:
+            self.status_var.set(str(exc))
+            return
+        raw_output = filedialog.asksaveasfilename(
+            parent=self, title="Save generated JavaScript", initialdir=str(self.app.default_output_root),
+            initialfile=candidate.stem + suffix, defaultextension=suffix,
+            filetypes=[("JavaScript", "*" + suffix), ("All files", "*.*")],
+        )
+        if not raw_output:
+            return
+        proposed = Path(raw_output)
+        if proposed.suffix.casefold() != suffix:
+            self.status_var.set(f"Choose an output filename ending in {suffix}.")
+            return
+        target = available_path(proposed)
+        self.start_translation(candidate, target, compiler)
+
+    def start_translation(self, source: Path, target: Path, compiler=None) -> None:
+        if self.worker and self.worker.is_alive():
+            return
+        initial_view = self._view_revision
+        self.status_var.set("Compiling the selected TypeScript file. The source is unchanged...")
+        result = []
+
+        def work() -> None:
+            try:
+                result.append(translate_code_file(
+                    source, target, "typescript", "javascript", compiler=compiler, cancel_event=self.cancel_event,
+                ))
+            except TranslationCanceled:
+                raise OperationCanceledError("Translation stopped; no output saved.") from None
+            except (TranslationError, OSError, ValueError) as exc:
+                result.append(str(exc) if isinstance(exc, TranslationError) else "The output could not be saved. Check the destination folder.")
+
+        def finished() -> None:
+            if not result:
+                return
+            value = result[0]
+            if isinstance(value, str):
+                self.show_report(value, "translation", "Translation failed; no generated file was saved.")
+            elif initial_view == self._view_revision:
+                self.show_report(
+                    f"Generated {value.output_path.name} with the {value.compiler}.\n"
+                    "The generated code has not been run or checked against the original program's behavior.\n\n"
+                    + value.output_text,
+                    "translation", f"Saved {value.output_path.name} in the selected output folder.",
+                )
+            else:
+                self.status_var.set(f"Saved {value.output_path.name}; kept the reference view you opened.")
+
+        self.run_async_managed(
+            work, on_success=lambda: self.app.call_ui(finished),
+            on_cancel=lambda _exc: self.app.call_ui(
+                lambda: finished() if result and not isinstance(result[0], str)
+                else self.status_var.set("Translation stopped; no output saved.")
+            ),
+        )
+
+    def choose_project_translation(self) -> None:
+        source_profile = self.profiles_by_name.get(self.language_var.get())
+        target_profile = self.profiles_by_name.get(self.target_var.get())
+        if not source_profile or not target_profile or not supported_translation(source_profile.id, target_profile.id):
+            self.status_var.set("Choose TypeScript as the source and JavaScript as the target.")
+            return
+        if self.worker and self.worker.is_alive():
+            self.status_var.set("Wait for the current code task or stop it before starting another.")
+            return
+        compiler = find_typescript_compiler()
+        if compiler is None:
+            self.show_report(
+                "Project compilation needs Node.js and the TypeScript compiler.\n\n"
+                "Install Node.js, then install TypeScript with: npm install -g typescript\n\n"
+                "Compiler Setup opens the official instructions. No project was selected or changed.",
+                "translation", "Compiler required. No project was changed.",
+            )
+            return
+        raw_project = filedialog.askdirectory(parent=self, title="Choose a TypeScript project with tsconfig.json")
+        if not raw_project:
+            return
+        project = Path(raw_project)
+        if not (project / "tsconfig.json").is_file():
+            self.status_var.set("Choose a folder containing tsconfig.json.")
+            return
+        raw_output = filedialog.asksaveasfilename(
+            parent=self, title="Save compiled JavaScript project ZIP", initialdir=str(self.app.default_output_root),
+            initialfile=project.name + "_javascript.zip", defaultextension=".zip",
+            filetypes=[("ZIP archive", "*.zip"), ("All files", "*.*")],
+        )
+        if not raw_output:
+            return
+        proposed = Path(raw_output)
+        if proposed.suffix.casefold() != ".zip":
+            self.status_var.set("Choose an output filename ending in .zip.")
+            return
+        self.start_project_translation(project, available_path(proposed), compiler)
+
+    def start_project_translation(self, project: Path, target: Path, compiler=None) -> None:
+        if self.worker and self.worker.is_alive():
+            return
+        initial_view = self._view_revision
+        self.status_var.set("Compiling a staged copy of the project. Original source files are unchanged...")
+        result = []
+
+        def work() -> None:
+            try:
+                result.append(translate_code_project(project, target, compiler=compiler, cancel_event=self.cancel_event))
+            except TranslationCanceled:
+                raise OperationCanceledError("Project compilation stopped; no ZIP saved.") from None
+            except (TranslationError, OSError, ValueError) as exc:
+                result.append(str(exc) if isinstance(exc, TranslationError) else "The project ZIP could not be saved. Check the folders.")
+
+        def finished() -> None:
+            if not result:
+                return
+            value = result[0]
+            if isinstance(value, str):
+                self.show_report(value, "translation", "Project compilation failed; no ZIP was saved.")
+            elif initial_view == self._view_revision:
+                self.show_report(
+                    f"Compiled {len(value.files)} files into {value.output_path.name} with the {value.compiler}.\n"
+                    "The ZIP contains generated files only. Review dependencies and test behavior before use.\n\n"
+                    + "\n".join(value.files),
+                    "translation", f"Saved {value.output_path.name} with {len(value.files)} generated files.",
+                )
+            else:
+                self.status_var.set(f"Saved {value.output_path.name}; kept the reference view you opened.")
+
+        self.run_async_managed(
+            work, on_success=lambda: self.app.call_ui(finished),
+            on_cancel=lambda _exc: self.app.call_ui(
+                lambda: finished() if result and not isinstance(result[0], str)
+                else self.status_var.set("Project compilation stopped; no ZIP saved.")
+            ),
+        )
+
+    def choose_source(self) -> None:
+        if self.worker and self.worker.is_alive():
+            self.status_var.set("An inspection is already running. Stop it or wait before choosing another file.")
+            return
+        raw = filedialog.askopenfilename(parent=self, title="Inspect one UTF-8 source file (read-only; 64 KiB maximum)")
+        if raw:
+            self.inspect_path(Path(raw))
+
+    def inspect_path(self, path: Path) -> None:
+        if self.worker and self.worker.is_alive():
+            return
+        self.last_source_path = path
+        self.status_var.set("Inspecting locally without running code...")
+        result = []
+        initial_view = self._view_revision
+
+        def inspect() -> None:
+            try:
+                result.append(inspect_source(path, self.library))
+            except ValueError as exc:
+                result.append(f"Inspection not completed: {exc}\n\nThe source file was not changed or executed.")
+            except OSError:
+                result.append("Cannot read the selected file. Check permissions and availability. No file was changed or executed.")
+
+        def present_result() -> None:
+            if initial_view == self._view_revision:
+                self.show_report(result[0], "inspection", "Inspection finished. Review the report.")
+            else:
+                self.status_var.set("Inspection finished; kept your current reference view. Inspect again to view its report.")
+
+        self.run_async_managed(
+            inspect,
+            on_success=lambda: self.app.call_ui(present_result),
+            on_cancel=lambda _exc: self.app.call_ui(lambda: self.status_var.set("Inspection canceled; source unchanged.")),
+        )
+
+
 class SuitePlanTab(ModuleTab):
     tab_name = "Suite Plan"
 
@@ -7061,6 +7588,7 @@ class SuitePlanTab(ModuleTab):
             "- Images: batch resize/export/sharpen workflow\n"
             "- Audio: format/sample-rate/normalize/trim-silence workflow\n"
             "- Video: remux/trim/stream-preset/thumbnail-sheet workflow\n\n"
+            "- Development / Code Languages: offline rules and comparisons, plus file and local-import project TypeScript compilation\n\n"
             "Notes\n"
             "- External tools improve coverage (FFmpeg, Pandoc, LibreOffice, 7-Zip, ImageMagick).\n"
             "- Built-in Python handlers still provide useful fallback for many operations.\n"
@@ -7101,23 +7629,23 @@ class BackendLinksTab(ModuleTab):
             ),
             wraplength=1180,
         )
-        intro_label.pack(anchor="w", pady=(0, 8))
+        intro_label.pack(fill="x", pady=(0, 8))
         self.inline_help_labels.append(intro_label)
 
         top_controls = ttk.Frame(outer)
         top_controls.pack(fill="x", pady=(0, 8))
         refresh_button = ttk.Button(top_controls, text="Refresh Detection", command=self.refresh_detection)
-        refresh_button.pack(side="left")
         open_homepage_button = ttk.Button(top_controls, text="Open Homepage", command=lambda: self._open_url(self.homepage_var.get()))
-        open_homepage_button.pack(side="left", padx=(8, 0))
         open_docs_button = ttk.Button(top_controls, text="Open Docs", command=lambda: self._open_url(self.docs_var.get()))
-        open_docs_button.pack(side="left", padx=(8, 0))
         open_download_button = ttk.Button(top_controls, text="Open Download", command=lambda: self._open_url(self.download_var.get()))
-        open_download_button.pack(side="left", padx=(8, 0))
         copy_install_button = ttk.Button(top_controls, text="Copy Install Command", command=self._copy_install_command)
-        copy_install_button.pack(side="left", padx=(8, 0))
         open_detected_button = ttk.Button(top_controls, text="Open Detected Path", command=self._open_detected_path)
-        open_detected_button.pack(side="left", padx=(8, 0))
+
+        self.app._bind_flow_layout(top_controls, [
+            refresh_button, open_homepage_button, open_docs_button,
+            open_download_button, copy_install_button, open_detected_button,
+        ], min_item_width=150, stretch=True)
+        self.app._bind_responsive_wrap(intro_label)
 
         self.add_hover_tooltip(
             refresh_button,
@@ -7144,7 +7672,7 @@ class BackendLinksTab(ModuleTab):
             lambda: self._backend_field_tooltip("Detected Path", self.detected_path_var, "Open the installed location for the selected backend."),
         )
 
-        split = ttk.Panedwindow(outer, orient="horizontal")
+        split = ttk.Panedwindow(outer, orient="vertical")
         split.pack(fill="both", expand=True)
 
         left = ttk.Labelframe(split, text="Backends")
@@ -7152,7 +7680,7 @@ class BackendLinksTab(ModuleTab):
         split.add(left, weight=2)
         split.add(right, weight=3)
 
-        self.tree = ttk.Treeview(left, columns=("backend", "status", "version", "path"), show="headings")
+        self.tree = ttk.Treeview(left, columns=("backend", "status", "version", "path"), show="headings", height=7)
         self.tree.heading("backend", text="Backend")
         self.tree.heading("status", text="Status")
         self.tree.heading("version", text="Version")
@@ -7161,6 +7689,9 @@ class BackendLinksTab(ModuleTab):
         self.tree.column("status", width=110)
         self.tree.column("version", width=140)
         self.tree.column("path", width=420)
+        tree_scroll = ttk.Scrollbar(left, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(xscrollcommand=tree_scroll.set)
+        tree_scroll.pack(side="bottom", fill="x", padx=8)
         self.tree.pack(fill="both", expand=True, padx=8, pady=8)
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
         self.add_hover_tooltip(
@@ -7234,9 +7765,11 @@ class BackendLinksTab(ModuleTab):
         support_box.pack(fill="x", pady=(10, 0))
         support_actions = ttk.Frame(support_box)
         support_actions.pack(fill="x", padx=8, pady=(8, 4))
-        ttk.Button(support_actions, text="Refresh Support Snapshot", command=self.refresh_detection).pack(side="left")
-        ttk.Button(support_actions, text="Copy Environment", command=self.app._copy_environment_snapshot).pack(side="left", padx=(8, 0))
-        ttk.Button(support_actions, text="Export Bug Report", command=self.app._export_bug_report).pack(side="left", padx=(8, 0))
+        self.app._bind_flow_layout(support_actions, [
+            ttk.Button(support_actions, text="Refresh Support Snapshot", command=self.refresh_detection),
+            ttk.Button(support_actions, text="Copy Environment", command=self.app._copy_environment_snapshot),
+            ttk.Button(support_actions, text="Export Bug Report", command=self.app._export_bug_report),
+        ], stretch=True)
         ttk.Label(
             support_box,
             textvariable=self.environment_summary_var,
@@ -7570,7 +8103,9 @@ class ConvertTab(ModuleTab):
 
     def _targets_for_source_suffix(self, source_suffix: str) -> list[str]:
         suffix = self._normalize_source_suffix(source_suffix)
-        if suffix in SUPPORTED_IMAGE_INPUT_EXTS:
+        if suffix in PDF_INPUT_EXTS:
+            targets = [*PDF_RASTER_FORMATS, "pdf"] if suffix == ".ai" else list(PDF_RASTER_FORMATS)
+        elif suffix in SUPPORTED_IMAGE_INPUT_EXTS:
             targets = list(IMAGE_FORMATS)
         elif suffix in DATA_EXTS:
             targets = list(DATA_FORMATS)
@@ -7838,7 +8373,8 @@ class ConvertTab(ModuleTab):
         out_dir = Path(self.output_dir.get().strip()).expanduser()
         ensure_dir(out_dir)
         options = self.export_preset()
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             failures = []
@@ -7848,7 +8384,7 @@ class ConvertTab(ModuleTab):
                     self.status_var.set(f"Processing 0/{total_files}..."),
                 )
             )
-            for index, file_path in enumerate(list(self.files), start=1):
+            for index, file_path in enumerate(files, start=1):
                 self.check_cancelled()
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name: (
@@ -7857,10 +8393,14 @@ class ConvertTab(ModuleTab):
                     )
                 )
                 try:
-                    result = self.app.engine.convert_file(file_path, out_dir, self.target_format.get(), options)
+                    result = self.app.engine.convert_file(file_path, out_dir, options["target_format"], options)
                     self.log(f"{file_path.name} -> {result.name}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{file_path.name}: {exc}")
+                    self.app.call_ui(lambda name=file_path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 percent = int((index / total) * 100) if total else 0
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name, p=percent: (
@@ -8069,7 +8609,8 @@ class CompressTab(ModuleTab):
         ensure_dir(out_dir)
         preset = self.export_preset()
         mode_key = preset["mode_key"]
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             self.app.call_ui(lambda: self.progress.configure(value=0, maximum=total))
@@ -8082,13 +8623,17 @@ class CompressTab(ModuleTab):
                 return
 
             failures = []
-            for index, file_path in enumerate(list(self.files), start=1):
+            for index, file_path in enumerate(files, start=1):
                 self.check_cancelled()
                 try:
                     out_path = self.app.engine.compress_file(file_path, out_dir, mode_key, preset)
                     self.log(f"{file_path.name} -> {out_path.name}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{file_path.name}: {exc}")
+                    self.app.call_ui(lambda name=file_path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name: (
                         self.progress.configure(value=i),
@@ -8289,18 +8834,23 @@ class ExtractTab(ModuleTab):
         ensure_dir(out_dir)
         preset = self.export_preset()
         operation_key = preset["operation_key"]
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             self.app.call_ui(lambda: self.progress.configure(value=0, maximum=total))
             failures = []
-            for index, file_path in enumerate(list(self.files), start=1):
+            for index, file_path in enumerate(files, start=1):
                 self.check_cancelled()
                 try:
                     output = self.app.engine.extract_from_media(file_path, out_dir, operation_key, preset)
                     self.log(f"{file_path.name} -> {output}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{file_path.name}: {exc}")
+                    self.app.call_ui(lambda name=file_path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name: (
                         self.progress.configure(value=i),
@@ -8430,8 +8980,9 @@ class DocumentsTab(ModuleTab):
         info = ttk.Label(
             outer,
             text=(
-                "Starter document conversion tab. Best coverage is available when Pandoc or LibreOffice is installed. "
-                "Without those tools, simple text-based copies (TXT/MD/HTML) still work."
+                "PDF / PDF-compatible AI: TIFF exports all pages; PNG/JPG export page 1 at 150 DPI. "
+                "TIFF to PDF preserves all pages. PSD/PSB export a flattened composite, not editable layers. "
+                "Office/text conversions use LibreOffice or Pandoc. Native Adobe project editing is not supported."
             ),
             wraplength=1200,
         )
@@ -8442,7 +8993,7 @@ class DocumentsTab(ModuleTab):
         ttk.Button(controls, text="Add Files", command=lambda: self.add_files_to_queue(self.files, self.listbox)).pack(side="left")
         ttk.Button(controls, text="Clear", command=lambda: self.clear_queue(self.files, self.listbox)).pack(side="left", padx=6)
         ttk.Label(controls, text="Target format").pack(side="left", padx=(18, 6))
-        ttk.Combobox(controls, textvariable=self.target_format, values=DOC_FORMATS, state="readonly", width=12).pack(side="left")
+        ttk.Combobox(controls, textvariable=self.target_format, values=[*DOC_FORMATS, *PDF_RASTER_FORMATS], state="readonly", width=12).pack(side="left")
         ttk.Button(controls, text="Convert", command=self.convert_docs).pack(side="right")
 
         queue = ttk.Frame(outer)
@@ -8467,17 +9018,22 @@ class DocumentsTab(ModuleTab):
         out_dir = Path(self.output_dir.get().strip())
         ensure_dir(out_dir)
         target = self.target_format.get()
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             failures = []
-            for index, path in enumerate(list(self.files), start=1):
+            for index, path in enumerate(files, start=1):
                 self.check_cancelled()
                 try:
                     output = self.app.engine.convert_document(path, out_dir, target)
                     self.log(f"{path.name} -> {output.name}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{path.name}: {exc}")
+                    self.app.call_ui(lambda name=path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 self.app.call_ui(lambda i=index, total_files=total: self.status_var.set(f"Processing {i}/{total_files}..."))
                 self.app.call_ui(lambda p=path: self.remove_path_from_queue(self.files, self.listbox, p))
             if failures:
@@ -8603,6 +9159,13 @@ class ImagesTab(ModuleTab):
     def _build(self) -> None:
         outer = self.build_module_shell()
 
+        ttk.Label(
+            outer,
+            text="Adobe import: PSD/PSB uses the saved composite; PDF/AI uses page 1 at 150 DPI. Layers are not preserved. "
+                 "'keep' exports these input-only formats as PNG. For all PDF/TIFF pages, use PDF / Documents.",
+            wraplength=900, justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+
         controls = ttk.Frame(outer)
         controls.pack(fill="x")
         ttk.Button(controls, text="Add Images", command=self._add_images).pack(side="left")
@@ -8661,8 +9224,8 @@ class ImagesTab(ModuleTab):
         self.add_hover_tooltip(
             [format_label, format_combo],
             lambda: (
-                "Choose the export format. 'keep' keeps the current image format.\n\n"
-                "JPEG XL output and camera-raw inputs use ImageMagick when that backend is available."
+                "Choose the export format. 'keep' retains writable raster formats; PDF/AI/PSD/PSB export as PNG.\n\n"
+                "JPEG XL, camera-raw and PSB inputs require ImageMagick. Adobe layers are flattened; PDFs use page 1."
             ),
         )
         self.add_hover_tooltip([width_label, width_spin, height_label, height_spin], lambda: IMAGE_RESIZE_HELP_TEXT)
@@ -8753,18 +9316,23 @@ class ImagesTab(ModuleTab):
         out_dir = Path(self.output_dir.get().strip())
         ensure_dir(out_dir)
         options = self.export_preset()
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             self.app.call_ui(lambda: (self.progress.configure(value=0, maximum=total), self.progress_percent_var.set("0%")))
             failures = []
-            for index, file_path in enumerate(list(self.files), start=1):
+            for index, file_path in enumerate(files, start=1):
                 self.check_cancelled()
                 try:
                     result = self.app.engine.process_image_file(file_path, out_dir, options)
                     self.log(f"{file_path.name} -> {result.name}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{file_path.name}: {exc}")
+                    self.app.call_ui(lambda name=file_path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 percent = int((index / total) * 100) if total else 0
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name, p=percent: (
@@ -8934,18 +9502,23 @@ class AudioTab(ModuleTab):
         out_dir = Path(self.output_dir.get().strip())
         ensure_dir(out_dir)
         options = self.export_preset()
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             self.app.call_ui(lambda: (self.progress.configure(value=0, maximum=total), self.progress_percent_var.set("0%")))
             failures = []
-            for index, file_path in enumerate(list(self.files), start=1):
+            for index, file_path in enumerate(files, start=1):
                 self.check_cancelled()
                 try:
                     result = self.app.engine.process_audio_file(file_path, out_dir, options)
                     self.log(f"{file_path.name} -> {result.name}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{file_path.name}: {exc}")
+                    self.app.call_ui(lambda name=file_path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 percent = int((index / total) * 100) if total else 0
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name, p=percent: (
@@ -9217,18 +9790,23 @@ class VideoTab(ModuleTab):
         out_dir = Path(self.output_dir.get().strip())
         ensure_dir(out_dir)
         options = self.export_preset()
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             self.app.call_ui(lambda: (self.progress.configure(value=0, maximum=total), self.progress_percent_var.set("0%")))
             failures = []
-            for index, file_path in enumerate(list(self.files), start=1):
+            for index, file_path in enumerate(files, start=1):
                 self.check_cancelled()
                 try:
                     result = self.app.engine.process_video_file(file_path, out_dir, mode_key, options)
                     self.log(f"{file_path.name} -> {result.name}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{file_path.name}: {exc}")
+                    self.app.call_ui(lambda name=file_path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 percent = int((index / total) * 100) if total else 0
                 self.app.call_ui(
                     lambda i=index, total_files=total, current=file_path.name, p=percent: (
@@ -9362,8 +9940,10 @@ class ArchivesTab(ModuleTab):
                     continue
                 try:
                     out_dir = dest / item.stem
-                    self.app.engine.extract_archive(item, out_dir)
+                    out_dir = self.app.engine.extract_archive(item, out_dir)
                     self.log(f"Extracted {item.name} -> {out_dir}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{item.name}: {exc}")
             if failures:
@@ -9459,20 +10039,12 @@ class RenameOrganizeTab(ModuleTab):
         for row in self.preview_tree.get_children():
             self.preview_tree.delete(row)
 
-        for index, path in enumerate(self.files):
-            candidate_name = self._build_new_name(path, index)
-            target = path.with_name(candidate_name)
-            if target.exists() and target != path:
-                base = target.stem
-                suffix = target.suffix
-                parent = target.parent
-                counter = 1
-                while True:
-                    fallback = parent / f"{base}_{counter}{suffix}"
-                    if not fallback.exists():
-                        target = fallback
-                        break
-                    counter += 1
+        try:
+            rows = plan_renames([(path, path.with_name(self._build_new_name(path, index))) for index, path in enumerate(self.files)])
+        except (ValueError, re.error) as exc:
+            messagebox.showerror(APP_TITLE, f"Invalid rename rules: {exc}")
+            return
+        for path, target in rows:
             self.preview_rows.append((path, target))
             self.preview_tree.insert("", "end", values=(path.name, target.name))
 
@@ -9483,14 +10055,10 @@ class RenameOrganizeTab(ModuleTab):
             messagebox.showwarning(APP_TITLE, "Build preview first.")
             return
 
+        rows = list(self.preview_rows)
+
         def work() -> None:
-            completed = 0
-            for source, target in self.preview_rows:
-                if source == target:
-                    continue
-                source.rename(target)
-                completed += 1
-                self.log(f"Renamed {source.name} -> {target.name}")
+            completed = apply_renames(rows)
             self.app.call_ui(lambda: self.status_var.set(f"Renamed {completed} file(s)."))
             self.app.call_ui(lambda: self.clear_queue(self.files, self.listbox))
             self.app.call_ui(self._clear_preview)
@@ -9703,7 +10271,7 @@ class DuplicateFinderTab(ModuleTab):
                         for item in group:
                             self._check_cancel_scan()
                             try:
-                                digest = hash_file(item, "sha256")
+                                digest = hash_file(item, "sha256", self._check_cancel_scan)
                             except Exception:
                                 continue
                             by_hash.setdefault(digest, []).append(item)
@@ -10419,13 +10987,14 @@ class ChecksumsTab(ModuleTab):
             messagebox.showwarning(APP_TITLE, "Add files before generating hashes.")
             return
         algorithm = self.algo_var.get()
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             rows = []
-            for index, path in enumerate(self.files, start=1):
+            for index, path in enumerate(files, start=1):
                 self.check_cancelled()
-                digest = hash_file(path, algorithm)
+                digest = hash_file(path, algorithm, self.check_cancelled)
                 rows.append((str(path), digest))
                 self.app.call_ui(lambda i=index, total_files=total: self.status_var.set(f"Hashing {i}/{total_files}..."))
 
@@ -10466,31 +11035,22 @@ class ChecksumsTab(ModuleTab):
         if not path:
             return
         report_path = Path(path)
-        lines = report_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        checked = 0
-        mismatches = []
+        algorithm = self.algo_var.get()
 
-        for line in lines:
-            line = line.strip()
-            if not line or "  " not in line:
-                continue
-            digest, file_path = line.split("  ", 1)
-            target = Path(file_path.strip())
-            if not target.exists():
-                mismatches.append(f"Missing: {target}")
-                continue
-            current = hash_file(target, self.algo_var.get())
-            checked += 1
-            if current.lower() != digest.lower():
-                mismatches.append(f"Mismatch: {target}")
+        def work() -> None:
+            checked, mismatches = verify_checksums(report_path, algorithm, self.check_cancelled)
 
-        if mismatches:
-            preview = "\n".join(mismatches[:10])
-            messagebox.showwarning(APP_TITLE, f"Verification completed with issues ({len(mismatches)}):\n{preview}")
-            self.status_var.set(f"Verification found {len(mismatches)} issue(s).")
-        else:
-            messagebox.showinfo(APP_TITLE, f"Verification OK for {checked} file(s).")
-            self.status_var.set(f"Verification passed for {checked} file(s).")
+            def render() -> None:
+                if mismatches:
+                    preview = "\n".join(mismatches[:10])
+                    messagebox.showwarning(APP_TITLE, f"Verification completed with issues ({len(mismatches)}):\n{preview}")
+                    self.status_var.set(f"Verification found {len(mismatches)} issue(s).")
+                else:
+                    messagebox.showinfo(APP_TITLE, f"Verification OK for {checked} file(s).")
+                    self.status_var.set(f"Verification passed for {checked} file(s).")
+            self.app.call_ui(render)
+
+        self.run_async(work)
 
     def handle_external_drop(self, paths: list[Path]) -> bool:
         return self._add_dropped_file_paths(self.files, self.listbox, paths, expand_directories=True)
@@ -10548,11 +11108,12 @@ class SubtitlesTab(ModuleTab):
         target_fmt = self.target_var.get().lower()
         out_dir = Path(self.output_dir.get().strip())
         ensure_dir(out_dir)
-        total = len(self.files)
+        files = list(self.files)
+        total = len(files)
 
         def work() -> None:
             failures = []
-            for index, path in enumerate(list(self.files), start=1):
+            for index, path in enumerate(files, start=1):
                 self.check_cancelled()
                 suffix = path.suffix.lower()
                 out_path = out_dir / f"{path.stem}.{target_fmt}"
@@ -10573,8 +11134,12 @@ class SubtitlesTab(ModuleTab):
                     else:
                         raise RuntimeError("This starter currently supports direct SRT/VTT conversion.")
                     self.log(f"{path.name} -> {out_path.name}")
+                except OperationCanceledError:
+                    raise
                 except Exception as exc:
                     failures.append(f"{path.name}: {exc}")
+                    self.app.call_ui(lambda name=path.name: self.status_var.set(f"Failed: {name}. Kept in queue for retry."))
+                    continue
                 self.app.call_ui(lambda i=index, total_files=total: self.status_var.set(f"Processing {i}/{total_files}..."))
                 self.app.call_ui(lambda p=path: self.remove_path_from_queue(self.files, self.listbox, p))
             if failures:
@@ -10603,6 +11168,7 @@ class Aria2DownloadsTab(ModuleTab):
         self.progress_text_var = StringVar(value="0%")
         self.download_process: subprocess.Popen[str] | None = None
         self.download_rpc_port: int | None = None
+        self.download_rpc_secret = ""
         self.start_button: ttk.Button | None = None
         self.pause_button: ttk.Button | None = None
         self.stop_button: ttk.Button | None = None
@@ -10798,28 +11364,10 @@ class Aria2DownloadsTab(ModuleTab):
     def _aria2_rpc_call(self, method: str, params: list[Any] | None = None) -> Any:
         if not self.download_rpc_port:
             return None
-        return call_rpc(self.download_rpc_port, method, params=params, request_id="uch-aria2")
+        return call_rpc(self.download_rpc_port, method, params=params, request_id="uch-aria2", secret=self.download_rpc_secret)
 
     def toggle_pause_download(self) -> None:
-        process = self.download_process
-        if not process_is_running(process) or not self.download_rpc_port:
-            self.status_var.set("No active aria2 download to pause.")
-            return
-        try:
-            if self.session_state_var.get() == "Paused":
-                self._aria2_rpc_call("unpauseAll")
-                self._set_session_state("Running")
-                if self.pause_button is not None:
-                    self.pause_button.configure(text="Pause")
-                self.status_var.set("Resumed aria2 download.")
-            else:
-                self._aria2_rpc_call("pauseAll")
-                self._set_session_state("Paused")
-                if self.pause_button is not None:
-                    self.pause_button.configure(text="Resume")
-                self.status_var.set("Paused aria2 download.")
-        except Exception as exc:
-            self.status_var.set(f"Pause/resume failed: {exc}")
+        self._toggle_transfer_pause()
 
     def start_download(self) -> None:
         if self.worker and self.worker.is_alive():
@@ -10840,6 +11388,7 @@ class Aria2DownloadsTab(ModuleTab):
         sources = list(self.sources)
         self.download_cancel_requested.clear()
         self.download_rpc_port = reserve_local_tcp_port()
+        self.download_rpc_secret = secrets.token_urlsafe(32)
         self._set_progress(0, "Starting aria2 download...")
         self._set_session_state("Running")
         if self.pause_button is not None:
@@ -10851,6 +11400,7 @@ class Aria2DownloadsTab(ModuleTab):
                 destination,
                 self.download_rpc_port,
                 sources,
+                secret=self.download_rpc_secret,
                 extra_args=[
                     "--summary-interval=1",
                     "--console-log-level=notice",
@@ -10863,7 +11413,7 @@ class Aria2DownloadsTab(ModuleTab):
                     "--seed-time=0",
                 ],
             )
-            self.log(f"Running aria2 command: {quote_cmd(cmd)}")
+            self.log(f"Running aria2 command: {quote_cmd(redacted_command(cmd))}")
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -10874,14 +11424,16 @@ class Aria2DownloadsTab(ModuleTab):
                 **hidden_console_process_kwargs(),
             )
             self.download_process = proc
-            last_detail = ""
-            try:
+            self.app._register_process(threading.get_ident(), proc)
+            detail = {"last": ""}
+
+            def read_output() -> None:
                 assert proc.stdout is not None
                 for raw_line in proc.stdout:
                     line = raw_line.strip()
                     if not line:
                         continue
-                    last_detail = line
+                    detail["last"] = line
                     self.log(line)
                     match = ARIA2_PROGRESS_RE.search(line)
                     if match:
@@ -10889,14 +11441,32 @@ class Aria2DownloadsTab(ModuleTab):
                         self.app.call_ui(lambda p=percent, s=line: self._set_progress(p, s))
                     elif any(keyword in line.lower() for keyword in ("download complete", "complete:", "seeding")):
                         self.app.call_ui(lambda s=line: self.status_var.set(s))
-                code = proc.wait()
+            reader = threading.Thread(target=read_output, daemon=True)
+            reader.start()
+            monitor = CompletionMonitor(self.download_rpc_port, self.download_rpc_secret)
+            unavailable = 0
+            try:
+                while proc.poll() is None and not self.download_cancel_requested.is_set():
+                    try:
+                        if monitor.complete():
+                            break
+                        unavailable = 0
+                    except (urllib.error.URLError, TimeoutError, ConnectionError):
+                        unavailable += 1
+                        if unavailable >= 20:
+                            raise RuntimeError("aria2 RPC did not become available.") from None
+                    time.sleep(0.5)
             finally:
+                code = reap_process(proc)
+                reader.join(timeout=2)
+                self.app._unregister_process(threading.get_ident(), proc)
                 self.download_process = None
                 self.download_rpc_port = None
+                self.download_rpc_secret = ""
             if self.download_cancel_requested.is_set():
                 raise OperationCanceledError("Aria2 download canceled.")
             if code != 0:
-                raise RuntimeError(last_detail or f"aria2 exited with code {code}")
+                raise RuntimeError(detail["last"] or f"aria2 exited with code {code}")
             self.app.call_ui(lambda: self._set_progress(100, f"Downloaded {len(sources)} aria2 source(s)."))
 
         self.run_async_managed(
@@ -10964,6 +11534,7 @@ class TorrentsTab(ModuleTab):
         self.progress_text_var = StringVar(value="0%")
         self.download_process: subprocess.Popen[str] | None = None
         self.download_rpc_port: int | None = None
+        self.download_rpc_secret = ""
         self.start_button: ttk.Button | None = None
         self.pause_button: ttk.Button | None = None
         self.stop_button: ttk.Button | None = None
@@ -11292,6 +11863,9 @@ class TorrentsTab(ModuleTab):
         return "break"
 
     def _set_file_selection(self, selected: bool) -> None:
+        if self.worker and self.worker.is_alive():
+            self.status_var.set("Stop the transfer before changing its file selection.")
+            return
         entry = self._selected_entry()
         if entry is None or not entry.files:
             return
@@ -11311,6 +11885,9 @@ class TorrentsTab(ModuleTab):
         self._set_file_selection(False)
 
     def toggle_selected_files(self) -> None:
+        if self.worker and self.worker.is_alive():
+            self.status_var.set("Stop the transfer before changing its file selection.")
+            return
         entry = self._selected_entry()
         if entry is None or not entry.files:
             return
@@ -11479,28 +12056,10 @@ class TorrentsTab(ModuleTab):
             self.session_state_label.configure(style=session_state_style(state))
 
     def _aria2_rpc_call(self, port: int, method: str, params: list[Any] | None = None) -> Any:
-        return call_rpc(port, method, params=params, request_id="uch")
+        return call_rpc(port, method, params=params, request_id="uch", secret=self.download_rpc_secret)
 
     def toggle_pause_download(self) -> None:
-        process = self.download_process
-        if not process_is_running(process) or not self.download_rpc_port:
-            self.status_var.set("No active torrent download to pause.")
-            return
-        try:
-            if self.session_state_var.get() == "Paused":
-                self._aria2_rpc_call(self.download_rpc_port, "unpauseAll")
-                self._set_session_state("Running")
-                if self.pause_button is not None:
-                    self.pause_button.configure(text="Pause")
-                self.status_var.set("Resumed torrent download.")
-            else:
-                self._aria2_rpc_call(self.download_rpc_port, "pauseAll")
-                self._set_session_state("Paused")
-                if self.pause_button is not None:
-                    self.pause_button.configure(text="Resume")
-                self.status_var.set("Paused torrent download.")
-        except Exception as exc:
-            self.status_var.set(f"Pause/resume failed: {exc}")
+        self._toggle_transfer_pause()
 
     def _choose_status_task(self, tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
         if not tasks:
@@ -11649,11 +12208,13 @@ class TorrentsTab(ModuleTab):
                 self.app.call_ui(self._refresh_entry_views)
                 rpc_port = reserve_local_tcp_port()
                 self.download_rpc_port = rpc_port
+                self.download_rpc_secret = secrets.token_urlsafe(32)
                 cmd = build_download_command(
                     aria2,
                     destination,
                     rpc_port,
                     [entry.source],
+                    secret=self.download_rpc_secret,
                     extra_args=[
                         "--summary-interval=1",
                         "--console-log-level=notice",
@@ -11668,7 +12229,7 @@ class TorrentsTab(ModuleTab):
                 selected_indices = self._selected_file_indices(entry)
                 if entry.entry_type == "torrent" and entry.files and selected_indices and len(selected_indices) != len(entry.files):
                     cmd.insert(-1, f"--select-file={compress_index_ranges(selected_indices)}")
-                self.log(f"$ {quote_cmd(cmd)}")
+                self.log(f"$ {quote_cmd(redacted_command(cmd))}")
                 proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
@@ -11680,9 +12241,12 @@ class TorrentsTab(ModuleTab):
                     **hidden_console_process_kwargs(),
                 )
                 self.download_process = proc
+                self.app._register_process(threading.get_ident(), proc)
                 detail_holder = {"last": f"Starting torrent transfer for {entry.label}..."}
                 reader = threading.Thread(target=self._read_process_output, args=(proc, entry, detail_holder), daemon=True)
                 reader.start()
+                monitor = CompletionMonitor(rpc_port, self.download_rpc_secret)
+                unavailable = 0
                 try:
                     while proc.poll() is None:
                         if self.download_cancel_requested.is_set():
@@ -11692,15 +12256,24 @@ class TorrentsTab(ModuleTab):
                                 pass
                             break
                         self._poll_entry_progress(rpc_port, entry, destination)
+                        try:
+                            if monitor.complete():
+                                break
+                            unavailable = 0
+                        except (urllib.error.URLError, TimeoutError, ConnectionError):
+                            unavailable += 1
+                            if unavailable >= 20:
+                                raise RuntimeError("aria2 RPC did not become available.") from None
                         overall_progress = int(((position - 1) + (entry.progress / 100.0)) / total * 100)
                         self.app.call_ui(lambda p=overall_progress, label=entry.label, s=entry.status: self._set_download_progress(p, f"{label}: {s}"))
                         time.sleep(0.5)
                 finally:
-                    code = proc.wait()
+                    code = reap_process(proc)
                     reader.join(timeout=2)
+                    self.app._unregister_process(threading.get_ident(), proc)
                     self.download_process = None
                     self.download_rpc_port = None
-                self._poll_entry_progress(rpc_port, entry, destination)
+                    self.download_rpc_secret = ""
                 if self.download_cancel_requested.is_set():
                     raise OperationCanceledError("Torrent download canceled.")
                 if code != 0:
@@ -12199,4 +12772,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

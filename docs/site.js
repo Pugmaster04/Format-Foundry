@@ -1,6 +1,6 @@
 (() => {
-  const fallbackPackageVersion = "0.5.0-beta";
-  const fallbackReleaseTag = "v1.8.18";
+  const fallbackPackageVersion = "1.8.17";
+  const fallbackReleaseTag = "v1.8.17";
   const repoOwner = "Pugmaster04";
   const repoName = "Format-Foundry";
   const repoUrl = `https://github.com/${repoOwner}/${repoName}`;
@@ -47,7 +47,7 @@
     const assetUrlByName = new Map(
       (Array.isArray(assets) ? assets : [])
         .map((asset) => [String(asset?.name || ""), String(asset?.browser_download_url || "")])
-        .filter(([name, url]) => name && url),
+        .filter(([name, url]) => name && url.startsWith(`${repoUrl}/releases/download/`)),
     );
     const taggedReleasePage = `${repoUrl}/releases/tag/${releaseTag}`;
     const releasePage = assetUrlByName.size ? taggedReleasePage : `${repoUrl}/releases/latest`;
@@ -55,7 +55,7 @@
 
     return {
       version: packageVersion,
-      displayVersion: formatDisplayVersion(packageVersion, releaseName),
+      displayVersion: assetUrlByName.size ? formatDisplayVersion(packageVersion, releaseName) : "View current release",
       repo: repoUrl,
       releasePage,
       links: {
@@ -110,9 +110,12 @@
   }
 
   async function fetchLatestSiteConfig() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch(githubLatestReleaseApi, {
         headers: { Accept: "application/vnd.github+json" },
+        signal: controller.signal,
       });
       if (!response.ok) {
         throw new Error(`GitHub release request failed with status ${response.status}.`);
@@ -126,6 +129,8 @@
     } catch (error) {
       console.warn("Format Foundry site falling back to embedded release metadata.", error);
       return buildSiteConfig(fallbackReleaseTag);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -148,6 +153,9 @@
       }
       if (href) {
         node.href = href;
+        if (key !== "releasePage" && key !== "repo" && href === site.releasePage) {
+          node.textContent = "View available release downloads";
+        }
       }
     });
   }
@@ -178,7 +186,7 @@
     const lists = buildListContent(site);
     document.querySelectorAll("[data-render-list]").forEach((node) => {
       const listKey = node.getAttribute("data-render-list");
-      const items = lists[listKey] || [];
+      const items = (lists[listKey] || []).filter((item) => item.href !== site.releasePage);
       if (!lists[listKey]) {
         console.warn(`Unknown data-render-list key: ${listKey || "(empty)"}`);
       }
@@ -213,11 +221,12 @@
   }
 
   async function init() {
+    // Content is visible without JS; only release links depend on the network.
+    setupRevealAnimations();
     const site = await fetchLatestSiteConfig();
     applyVersion(site);
     applyLinks(site);
     applyLists(site);
-    setupRevealAnimations();
   }
 
   init();

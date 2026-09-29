@@ -1,8 +1,10 @@
-﻿# Format Foundry
+# Format Foundry
 
 Format Foundry is a cross-platform desktop toolkit for conversion, compression, extraction, media prep, downloads, archives, storage analysis, and repeatable batch workflows.
 
-Canonical release: **Beta 0.5** (package version `0.5.0-beta`). Every earlier release is classified as Alpha.
+Development version: **Beta 0.7.1** (package version `0.7.1-beta`), not yet published.
+The last verified public release is **Alpha 1.8.17** (September 26, 2026).
+The current release page, not this development branch, is authoritative for available downloads.
 
 Website:
 - Overview: [index.html](https://pugmaster04.github.io/Format-Foundry/index.html)
@@ -16,14 +18,15 @@ Website:
 
 The download page resolves the exact filenames from GitHub's current release assets and falls back to the release page instead of constructing a 404 URL. The [current release page](https://github.com/Pugmaster04/Format-Foundry/releases/latest) remains the complete artifact list.
 
-Tagged releases include `SHA256SUMS`. After downloading it beside an installer, Linux users can verify matching files with:
+New coordinated releases will include `SHA256SUMS`; Alpha 1.8.17 does not include that file.
+For releases that supply it, download it beside the installer and verify matching files with:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-Official builds also publish a source-and-artifact provenance manifest plus a GitHub-signed
-attestation. Verify any downloaded artifact with:
+The new release pipeline also produces a source-and-artifact provenance manifest and a GitHub-signed
+attestation. Only when that evidence is attached to the selected release, verify the artifact with:
 
 ```bash
 gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
@@ -31,15 +34,16 @@ gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
 
 ### Windows
 
-1. Download `FormatFoundry_Setup_0.5.0-beta.exe`.
+1. Download the versioned `FormatFoundry_Setup_*.exe` from the current release's asset list (currently `FormatFoundry_Setup_1.8.17.exe`).
 2. Run the installer.
 3. Let the updater review optional feature tools, or clear that setup option to launch Format Foundry immediately.
 
 The installer is self-contained. A normal Windows 10/11 computer does not need Codex, Python, the source repository, or any backend before installation. Setup scans the registered product identity and the standard install folder for older Format Foundry and legacy-name builds, then upgrades those files in place while preserving settings and output folders.
 
-Portable alternatives are published with the same version:
-- `FormatFoundry_0.5.0-beta.exe` is the convenient single-file app.
-- `FormatFoundry_Portable_0.5.0-beta_windows_x86_64.zip` is the extracted one-folder build for faster startup without installation.
+Planned Beta filenames, available only after Beta is published:
+- `FormatFoundry_Setup_0.7.1-beta.exe` is the installer.
+- `FormatFoundry_0.7.1-beta.exe` is the convenient single-file app.
+- `FormatFoundry_Portable_0.7.1-beta_windows_x86_64.zip` is the extracted one-folder build for faster startup without installation.
 
 Uninstall:
 - `File -> Uninstall...`
@@ -54,7 +58,7 @@ Use the packaged app. Normal Linux installs do not require the source folder aft
 Recommended `.deb` install:
 
 ```bash
-sudo apt install ./format-foundry_0.5.0-beta_amd64.deb
+sudo apt install ./format-foundry_1.8.17_amd64.deb
 ```
 
 Launch:
@@ -70,9 +74,15 @@ Packaging note:
 Portable AppImage fallback:
 
 ```bash
-chmod +x FormatFoundry_linux_0.5.0-beta_x86_64.AppImage
-./FormatFoundry_linux_0.5.0-beta_x86_64.AppImage
+chmod +x FormatFoundry_linux_1.8.17_x86_64.AppImage
+./FormatFoundry_linux_1.8.17_x86_64.AppImage
 ```
+
+Use the exact version downloaded if it differs from these examples. Planned Beta files are
+`format-foundry_0.7.1-beta_amd64.deb` and `FormatFoundry_linux_0.7.1-beta_x86_64.AppImage`.
+Beta Debian metadata uses epoch `1:` so upgrading from Alpha is ordered correctly by APT;
+the epoch is not part of the filename. Ubuntu 24.04 x86_64 is the build baseline;
+other distributions need matching runtime libraries and are not promised compatible.
 
 Uninstall:
 - `File -> Uninstall...`
@@ -93,6 +103,7 @@ Uninstall:
 - Checksums / Integrity
 - Subtitles
 - Aria2 downloads and torrents
+- Code Languages: offline language rules, source inspection, and TypeScript-to-JavaScript file or local-import project compilation
 - Presets / Batch Jobs
 
 ## Optional Backends
@@ -102,7 +113,7 @@ The app launches without any separately installed backend. Features tied to a mi
 - FFmpeg + FFprobe
 - Pandoc
 - LibreOffice
-- 7-Zip
+- 7-Zip (external archive tool; in-app extraction currently supports ZIP and TAR, not `.7z`)
 - ImageMagick
 - Aria2
 
@@ -114,7 +125,16 @@ Use `Settings -> Backend Center` or launch `Format Foundry Updater --backends` t
 - Open official project pages and documentation
 - Copy a terminal-ready install command when direct installation is unavailable
 
-Backend installers are intentionally not bundled into the normal app installer. Keeping them separate avoids stale third-party binaries, unexpected installer size, and mixed license/update responsibilities. A future offline backend pack should only be published with per-file licenses, checksums, provenance, and an independent update policy.
+Backend installers are not bundled. However, the `imageio-ffmpeg` Python wheel supplies an FFmpeg
+fallback executable, which is included in frozen builds and has its own redistribution obligations.
+The build collects third-party notices and a dependency inventory; these are not a substitute for
+the corresponding-source and consumer-license review required before publishing Beta.
+
+The Code Languages translator separately requires Node.js and the official TypeScript compiler.
+Its **Compiler Setup** button opens installation guidance; the rest of the language library works
+offline without either tool. **Compile Project...** uses a project's `tsconfig.json` and writes a ZIP
+of generated files without changing source files. See the [user guide](docs/USER_GUIDE.md) for its
+bounded input/output limits and unsupported external-package or project-reference configurations.
 
 ## Optional Add-ons
 
@@ -146,7 +166,7 @@ system, memory, home-disk space, and security-provider status.
 - Beta and later tagged releases fail closed unless all Windows executables have valid, timestamped Authenticode signatures. Azure Artifact Signing with GitHub OIDC is the recommended public-release provider; a protected PFX remains available as a compatible fallback. The release also publishes `SHA256SUMS` and a Windows signature receipt.
 - The portable ZIP contains the same signed application executable and is covered by checksums, provenance, performance evidence, and the GitHub release attestation.
 - Every executable embeds the canonical Format Foundry provenance ID, and tagged releases bind exact artifact hashes to the source commit with `PROVENANCE.json` and a GitHub-signed attestation. Run an executable with `--provenance` to inspect its identity.
-- Beta 0.5 uses Git tag `v1.8.18` as a compatibility bridge for installed Alpha `1.8.17` updaters; the product label and every package filename remain `Beta 0.5` / `0.5.0-beta`.
+- The first published Beta is planned to use Git tag `v1.8.18` as a compatibility bridge for installed Alpha `1.8.17` updaters; this development version's product label and package filenames are `Beta 0.7.1` / `0.7.1-beta`. No Beta tag or assets have been published yet.
 
 ## OpenAI Build Week Collaboration
 
@@ -193,10 +213,6 @@ chmod +x build_linux.sh
 
 `build_linux.sh` is for contributor/source builds. On Ubuntu/Debian it bootstraps a repo-local `.venv` automatically instead of expecting a pre-activated environment.
 The script verifies its downloaded AppImage packaging tool before executing it.
-
-
-
-
 
 
 

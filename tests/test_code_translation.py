@@ -79,7 +79,7 @@ class TranslationAdapterTests(unittest.TestCase):
             return {"node": str(node), "tsc": str(tsc_command)}.get(name)
 
         with patch("code_translation.__file__", str(installed_app)), patch("code_translation.shutil.which", side_effect=which):
-            self.assertEqual(find_typescript_compiler(), Compiler(node, script))
+            self.assertEqual(find_typescript_compiler(), Compiler(node, script.resolve()))
 
     def test_single_file_output_keeps_original_untouched(self):
         source = self.source()

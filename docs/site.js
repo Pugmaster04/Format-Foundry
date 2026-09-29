@@ -134,6 +134,29 @@
     }
   }
 
+  function applyStoreConfig(site, metadata) {
+    const productId = String(metadata?.productId || "");
+    if (metadata?.published !== true || !/^[A-Za-z0-9]{12}$/.test(productId)) return site;
+    return {
+      ...site,
+      windowsStorePublished: true,
+      links: { ...site.links, windowsInstaller: `https://apps.microsoft.com/detail/${productId}` },
+    };
+  }
+
+  async function fetchStoreConfig() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch("windows-store.json", { signal: controller.signal, cache: "no-cache" });
+      return response.ok ? await response.json() : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   function applyVersion(site) {
     document.querySelectorAll("[data-version]").forEach((node) => {
       node.textContent = site.displayVersion;
@@ -141,6 +164,11 @@
   }
 
   function applyLinks(site) {
+    if (site.windowsStorePublished) {
+      document.querySelectorAll("[data-windows-store-status]").forEach((node) => {
+        node.textContent = "Microsoft Store provides installation, app updates, and Windows uninstall support.";
+      });
+    }
     document.querySelectorAll("[data-link]").forEach((node) => {
       const key = node.getAttribute("data-link");
       let href = "";
@@ -153,7 +181,9 @@
       }
       if (href) {
         node.href = href;
-        if (key !== "releasePage" && key !== "repo" && href === site.releasePage) {
+        if (key === "windowsInstaller" && site.windowsStorePublished) {
+          node.textContent = "Get from Microsoft Store";
+        } else if (key !== "releasePage" && key !== "repo" && href === site.releasePage) {
           node.textContent = "View available release downloads";
         }
       }
@@ -223,7 +253,8 @@
   async function init() {
     // Content is visible without JS; only release links depend on the network.
     setupRevealAnimations();
-    const site = await fetchLatestSiteConfig();
+    const [release, store] = await Promise.all([fetchLatestSiteConfig(), fetchStoreConfig()]);
+    const site = applyStoreConfig(release, store);
     applyVersion(site);
     applyLinks(site);
     applyLists(site);

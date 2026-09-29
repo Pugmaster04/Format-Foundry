@@ -34,22 +34,37 @@ gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
 
 ### Windows
 
+**Beta Windows distribution is moving to Microsoft Store MSIX.** Store certification
+provides the package signature, installation, app updates and Windows uninstall support.
+The Store product has not been reserved or published yet. The button currently lists
+the available Alpha downloads; it will switch to the approved Store listing when ready.
+See [Windows MSIX build and submission](docs/WINDOWS_MSIX.md) for the developer path.
+
+For the currently published Alpha EXE:
+
 1. Download the versioned `FormatFoundry_Setup_*.exe` from the current release's asset list (currently `FormatFoundry_Setup_1.8.17.exe`).
 2. Run the installer.
 3. Let the updater review optional feature tools, or clear that setup option to launch Format Foundry immediately.
 
 The installer is self-contained. A normal Windows 10/11 computer does not need Codex, Python, the source repository, or any backend before installation. Setup scans the registered product identity and the standard install folder for older Format Foundry and legacy-name builds, then upgrades those files in place while preserving settings and output folders.
 
-Planned Beta filenames, available only after Beta is published:
-- `FormatFoundry_Setup_0.7.1-beta.exe` is the installer.
-- `FormatFoundry_0.7.1-beta.exe` is the convenient single-file app.
-- `FormatFoundry_Portable_0.7.1-beta_windows_x86_64.zip` is the extracted one-folder build for faster startup without installation.
+Beta Windows developer artifacts (CI/local builds, not public consumer downloads):
+- `FormatFoundry_0.7.1-beta_x64_store.msix` is the unsigned Partner Center submission with the reserved Store identity.
+- `FormatFoundry_0.7.1-beta_x64_development.msix` is an isolated Windows 11 test package.
+- `FormatFoundry_Setup_0.7.1-beta.exe`, `FormatFoundry_0.7.1-beta.exe`, and
+  `FormatFoundry_Portable_0.7.1-beta_windows_x86_64.zip` remain legacy installer/portable test builds.
+
+Store builds keep **Beta 0.7.1** as the product label; the numeric MSIX version is
+`1.7.1.0`. This mapping satisfies the Store's positive-major/four-part version rules.
 
 Uninstall:
 - `File -> Uninstall...`
 - `Settings -> Uninstall App`
 - `Start -> Uninstall Format Foundry`
 - Windows `Apps & Features`
+
+The packaged Beta's in-app uninstall action opens Windows Installed apps. Store
+uninstall removes private package settings; output files and old EXE settings remain.
 
 ### Ubuntu 24.04 / Debian
 
@@ -163,8 +178,8 @@ system, memory, home-disk space, and security-provider status.
 - `File -> Export Bug Report...` exports a JSON snapshot with OS details, backend versions, security settings, and recent log lines.
 - Update checks can be restricted to trusted hosts in `Settings -> Security`.
 - Update manifests can now declare compatibility metadata so the app/updater can avoid surfacing releases that are not targeted to the current OS or architecture.
-- Beta and later tagged releases fail closed unless all Windows executables have valid, timestamped Authenticode signatures. Azure Artifact Signing with GitHub OIDC is the recommended public-release provider; a protected PFX remains available as a compatible fallback. The release also publishes `SHA256SUMS` and a Windows signature receipt.
-- The portable ZIP contains the same signed application executable and is covered by checksums, provenance, performance evidence, and the GitHub release attestation.
+- Beta Windows releases use Microsoft Store MSIX. The Store signs packages after certification; coordinated publication requires installed-package validation and the published Store version. No publisher signing service is required for this channel.
+- MSIX submission/development packages and legacy EXE/portable test builds remain CI artifacts. GitHub consumer releases include Linux installers, `SHA256SUMS`, provenance and Windows MSIX validation evidence.
 - Every executable embeds the canonical Format Foundry provenance ID, and tagged releases bind exact artifact hashes to the source commit with `PROVENANCE.json` and a GitHub-signed attestation. Run an executable with `--provenance` to inspect its identity.
 - The first published Beta is planned to use Git tag `v1.8.18` as a compatibility bridge for installed Alpha `1.8.17` updaters; this development version's product label and package filenames are `Beta 0.7.1` / `0.7.1-beta`. No Beta tag or assets have been published yet.
 
@@ -184,6 +199,7 @@ that truthful contribution, its evidence, and the Codex `/feedback` Session ID b
 
 - Full guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 - Windows release signing: [docs/WINDOWS_SIGNING.md](docs/WINDOWS_SIGNING.md)
+- Windows MSIX / Store: [docs/WINDOWS_MSIX.md](docs/WINDOWS_MSIX.md)
 - Release and ownership verification: [docs/PROVENANCE.md](docs/PROVENANCE.md)
 - OpenAI Build Week audit trail: [hackathon-audit/HACKATHON_WEEK_AUDIT.md](hackathon-audit/HACKATHON_WEEK_AUDIT.md)
 - Optimization audit and recommendations: [docs/OPTIMIZATION_AUDIT.md](docs/OPTIMIZATION_AUDIT.md)
@@ -213,6 +229,4 @@ chmod +x build_linux.sh
 
 `build_linux.sh` is for contributor/source builds. On Ubuntu/Debian it bootstraps a repo-local `.venv` automatically instead of expecting a pre-activated environment.
 The script verifies its downloaded AppImage packaging tool before executing it.
-
-
 

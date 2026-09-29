@@ -126,6 +126,14 @@ from support_runtime import (
 )
 from task_runner_support import execute_action
 from update_security import MAX_METADATA_BYTES, policy_opener
+from windows_package_support import (
+    WINDOWS_UNINSTALL_URI,
+    format_foundry_package,
+    migrate_legacy_settings,
+    open_store_updates,
+    package_runtime_report,
+    packaged_settings_root,
+)
 
 try:
     from PIL import Image, ImageFilter, ImageOps, UnidentifiedImageError
@@ -198,6 +206,9 @@ def current_platform_key() -> str:
 
 def platform_settings_root() -> Path:
     if current_platform_key() == "windows":
+        package_root = packaged_settings_root()
+        if package_root is not None:
+            return package_root
         return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
     xdg_config = os.environ.get("XDG_CONFIG_HOME", "").strip()
     if xdg_config:
@@ -225,6 +236,7 @@ def default_output_root_path() -> Path:
 
 
 def resolve_settings_dir(root: Path, settings_filename: str) -> Path:
+    migrate_legacy_settings(root, settings_filename)
     preferred = root / APP_SLUG
     if preferred.exists():
         return preferred
@@ -677,6 +689,7 @@ class UninstallPlan:
     summary: str
     action_label: str = ""
     launch_command: list[str] | None = None
+    launch_uri: str = ""
     manual_command: str = ""
     install_path: Path | None = None
     notes: list[str] = field(default_factory=list)
@@ -4209,6 +4222,22 @@ class SuiteApp:
         return None, ""
 
     def _build_uninstall_plan(self) -> UninstallPlan:
+        package = format_foundry_package()
+        if package is not None:
+            return UninstallPlan(
+                summary="Remove Format Foundry from Windows Installed apps. Windows manages this packaged installation.",
+                action_label="Open Installed Apps",
+                launch_uri=WINDOWS_UNINSTALL_URI,
+                install_path=package.install_path,
+                notes=[
+                    "Choose Format Foundry, then Uninstall in Windows Settings.",
+                    "Windows removes the package and its private settings and job history.",
+                    "Your converted files and original EXE installation settings remain outside the package.",
+                    "Copy any package settings you want to keep before uninstalling.",
+                    f"Settings folder: {self.settings_path.parent}",
+                    f"Output folder: {self.default_output_root}",
+                ],
+            )
         notes = [
             f"Install files: {self.runtime_dir}",
             f"Settings folder: {self.settings_path.parent}",
@@ -4281,7 +4310,9 @@ class SuiteApp:
             "",
             plan.summary,
         ]
-        if plan.launch_command:
+        if plan.launch_uri:
+            lines.extend(["", f"In-app action: {plan.action_label}", plan.launch_uri])
+        elif plan.launch_command:
             lines.extend(["", f"In-app action: {plan.action_label}", self._format_command_for_display(plan.launch_command)])
         if plan.manual_command:
             lines.extend(["", "Manual command:", plan.manual_command])
@@ -4308,6 +4339,13 @@ class SuiteApp:
         )
 
     def _launch_uninstall_plan(self, plan: UninstallPlan) -> bool:
+        if plan.launch_uri:
+            try:
+                os.startfile(plan.launch_uri)
+                return True
+            except OSError as exc:
+                messagebox.showerror(APP_TITLE, f"Could not open Windows Installed apps:\n{exc}")
+                return False
         if not plan.launch_command:
             return False
         if not self._confirm_uninstall_close():
@@ -4361,7 +4399,7 @@ class SuiteApp:
                 justify="left",
             ).pack(anchor="w", pady=(2, 10))
 
-        ttk.Label(outer, text="What stays behind:", font=self._font(10, semibold=True)).pack(anchor="w")
+        ttk.Label(outer, text="Removal details:", font=self._font(10, semibold=True)).pack(anchor="w")
         notes_box = ScrolledText(outer, height=10, wrap="word")
         notes_box.pack(fill="both", expand=True, pady=(6, 10))
         notes_box.insert("1.0", "\n".join(f"- {note}" for note in plan.notes))
@@ -4375,7 +4413,7 @@ class SuiteApp:
             target = plan.install_path
             ttk.Button(buttons, text="Open Install Location", command=lambda p=target: self._open_path(p)).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="Close", command=dialog.destroy).pack(side="right")
-        if plan.launch_command:
+        if plan.launch_command or plan.launch_uri:
             ttk.Button(
                 buttons,
                 text=plan.action_label,
@@ -5693,6 +5731,9 @@ class SuiteApp:
             return False
 
     def _open_updater_for_updates(self) -> None:
+        if format_foundry_package() is not None:
+            self._check_updates_in_background(interactive=True)
+            return
         if self._launch_updater(wait=False, show_errors=False):
             return
         self._check_updates_in_background(interactive=True)
@@ -5753,6 +5794,9 @@ class SuiteApp:
         return DEFAULT_GITHUB_RELEASE_API_URL
 
     def _run_startup_update_flow(self) -> None:
+        if format_foundry_package() is not None:
+            self._startup_update_flow_handled = True
+            return
         if not bool(self.settings.get("check_updates_on_startup", True)):
             return
         if self._startup_splash_hidden_by_focus_loss:
@@ -6091,6 +6135,13 @@ class SuiteApp:
             self.backend_corner_button.configure(text=f"Backends {available}/{total}")
 
     def _check_updates_in_background(self, interactive: bool) -> None:
+        if format_foundry_package() is not None:
+            if interactive:
+                try:
+                    open_store_updates()
+                except OSError as exc:
+                    self.error(f"Could not open Microsoft Store updates:\n{exc}")
+            return
         if hasattr(self, "_update_thread") and self._update_thread and self._update_thread.is_alive():
             if interactive:
                 self._show_app_modal_dialog(
@@ -6199,6 +6250,9 @@ class SuiteApp:
             self._rerun_setup_wizard()
 
     def _show_update_available(self, latest: str, download_url: str, notes: str, blocked_reason: str = "") -> None:
+        if format_foundry_package() is not None:
+            self._check_updates_in_background(interactive=True)
+            return
         details = notes if notes else "No release notes provided."
         if blocked_reason:
             details = f"{details}\n\n{blocked_reason}"
@@ -12746,7 +12800,7 @@ def _run_cli_mode() -> int | None:
                 "aria2": backends.aria2,
             },
             popen_kwargs=hidden_console_process_kwargs(),
-            extra={"mode": "smoke-test"},
+            extra={"mode": "smoke-test", "windows_package": package_runtime_report()},
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0

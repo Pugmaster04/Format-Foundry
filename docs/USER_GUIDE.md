@@ -4,6 +4,12 @@ This guide keeps the detailed install, build, workflow, backend, and archive not
 
 Version: **Beta 0.7.1** (`0.7.1-beta` package version)
 
+Windows Beta packaging uses Microsoft Store MSIX; the Store listing is pending.
+Use [Windows MSIX instructions](WINDOWS_MSIX.md) for the clean-clone build,
+installed development-package test, Partner Center identity and submission steps.
+The app's Store update/uninstall actions use Windows, while optional backend tools
+continue through the included updater. Current Alpha EXE downloads remain in the archive.
+
 Changelog:
 - `CHANGELOG.md` (full project history and release notes)
 - `archive/ARCHIVE_INDEX.md` (archive map and external archive-root policy)
@@ -360,11 +366,11 @@ Outputs:
 
 `release_bins` is the staging folder for the current release line. Public release assets are versioned so the downloaded filenames match the shipped release exactly.
 
-Official tagged Windows releases require a publicly trusted Authenticode provider. The recommended configuration is Azure Artifact Signing with GitHub OIDC, which keeps the signing key in Microsoft's managed service rather than exporting it into the repository or a general CI secret. A protected PFX remains supported for compatible code-signing certificates.
+Official Beta Windows releases use Microsoft Store MSIX. Microsoft signs the package after certification; the MSIX build does not require a purchased certificate or signing subscription. See [WINDOWS_MSIX.md](WINDOWS_MSIX.md) for build, installed-test, migration and publication instructions.
 
-See [WINDOWS_SIGNING.md](WINDOWS_SIGNING.md) for the PFX explanation, Azure identity and role setup, the secure GitHub environment helper, and the fallback procedure.
+See [WINDOWS_SIGNING.md](WINDOWS_SIGNING.md) only for a future independently signed EXE channel and the PFX explanation.
 
-The tagged build signs the app and updater before compiling the installer, signs the completed installer, verifies all three signatures, and only then allows the coordinated GitHub release job to run. Missing, partial, or invalid credentials fail the tagged build. Normal branch CI stays unsigned and does not receive signing credentials.
+Branch CI validates an isolated development MSIX and, when the real Partner Center identity is configured, a Store submission package. Tagged publication requires installed MSIX validation, Store availability, license review and Ubuntu validation. Unsigned submission/test packages are CI artifacts; public Windows installation goes through Microsoft Store.
 
 Beta 0.7.1 deliberately uses Git transport tag `v1.8.18`, which lets installed Alpha `1.8.17` updaters discover the lifecycle transition. Release titles, application UI, package metadata, and asset filenames continue to use `Beta 0.7.1` / `0.7.1-beta`.
 
@@ -550,8 +556,6 @@ Updater download folder default:
 - Use lawful personal workflows.
 - Test on a small sample before large batch jobs.
 - Keep backups for destructive operations.
-
-
 
 
 

@@ -73,32 +73,27 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("detectPackageVersion", site)
         self.assertIn("steps.prep.outputs.package_version", workflow)
 
-    def test_tagged_windows_release_fails_closed_without_signatures(self) -> None:
-        workflow = read(".github/workflows/cross-platform-build-release.yml")
+    def test_tagged_windows_release_uses_store_msix_and_keeps_test_binaries_private(self) -> None:
+        workflow_text = read(".github/workflows/cross-platform-build-release.yml")
+        import yaml
+
+        workflow = yaml.safe_load(workflow_text)
         build_script = read("build_suite_release.bat")
         phase_script = read("tools/build_windows_release_phase.ps1")
-        self.assertIn("environment: windows-release-signing", workflow)
-        self.assertIn("id-token: write", workflow)
-        self.assertIn("azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43", workflow)
-        self.assertIn("azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82", workflow)
-        self.assertIn("AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME", workflow)
-        self.assertIn("WINDOWS_SIGNING_CERTIFICATE_BASE64", workflow)
-        self.assertIn("verify_windows_signatures.ps1", workflow)
-        self.assertIn("WINDOWS_SIGNATURES_VERIFIED.json", workflow)
-        self.assertIn("TimeStamperCertificate", read("tools/verify_windows_signatures.ps1"))
+        self.assertNotIn("build-windows-release", workflow["jobs"])
+        self.assertNotIn("environment: windows-release-signing", workflow_text)
+        self.assertIn("build-windows", workflow["jobs"]["publish-release"]["needs"])
+        self.assertIn("--mode candidate", workflow_text)
+        self.assertIn("--mode store --skip-freeze", workflow_text)
+        self.assertIn("WINDOWS_STORE_VALIDATED_COMMIT", workflow_text)
+        self.assertIn("WINDOWS_STORE_PUBLISHED_VERSION", workflow_text)
+        self.assertIn("docs/windows-store.json", workflow_text)
+        assemble = next(step["run"] for step in workflow["jobs"]["publish-release"]["steps"] if step["name"] == "Assemble coordinated release")
+        self.assertIn("MSIX-validation.json", assemble)
+        self.assertNotIn('"release-payload/windows/release_bins/FormatFoundry_Setup_', assemble)
+        self.assertNotIn('"release-payload/windows/release_bins/FormatFoundry_Portable_', assemble)
+        self.assertNotIn('.msix"', assemble)
         self.assertIn("sign_windows_artifact.ps1", build_script)
-        self.assertIn("Build Windows binaries for managed signing", workflow)
-        self.assertIn(r"dist\FormatFoundry_Portable\FormatFoundry.exe", workflow)
-        self.assertIn("-AdditionalPaths $portable", workflow)
-        self.assertIn("FormatFoundry_Portable_${VERSION}_windows_x86_64.zip", workflow)
-        self.assertLess(
-            workflow.index("Sign app and updater with Azure Artifact Signing"),
-            workflow.index("Build installer from signed binaries"),
-        )
-        self.assertLess(
-            workflow.index("Build installer from signed binaries"),
-            workflow.index("Sign installer with Azure Artifact Signing"),
-        )
         for phase in ("Binaries", "Installer", "Stage"):
             self.assertIn(f'"{phase}"', phase_script)
 

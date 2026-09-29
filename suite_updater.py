@@ -46,6 +46,14 @@ from support_runtime import (
     validate_trusted_remote_url,
 )
 from update_security import MAX_METADATA_BYTES, download_verified, policy_opener
+from windows_package_support import (
+    format_foundry_package,
+    migrate_legacy_settings,
+    open_store_listing,
+    open_store_updates,
+    package_runtime_report,
+    packaged_settings_root,
+)
 
 APP_TITLE = f"{PRODUCT_NAME} Updater"
 CURRENT_VERSION = PACKAGE_VERSION
@@ -151,6 +159,9 @@ def current_platform_key() -> str:
 
 def platform_settings_root() -> Path:
     if current_platform_key() == "windows":
+        package_root = packaged_settings_root()
+        if package_root is not None:
+            return package_root
         return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
     xdg_config = os.environ.get("XDG_CONFIG_HOME", "").strip()
     if xdg_config:
@@ -171,6 +182,7 @@ def platform_lock_root_path(app_slug: str) -> Path:
 
 
 def resolve_settings_dir(root: Path, settings_filename: str) -> Path:
+    migrate_legacy_settings(root, settings_filename)
     preferred = root / APP_SLUG
     if preferred.exists():
         return preferred
@@ -428,6 +440,11 @@ class UpdaterApp:
 
         self._configure_styles()
         self._build_ui()
+        if format_foundry_package() is not None:
+            self.latest_var.set("App updates: Microsoft Store")
+            self.download_var.set("Use Microsoft Store to install app updates.")
+            self.sha256_var.set("Integrity: Windows verifies the Store package signature.")
+            self._set_notes("Microsoft Store manages updates for this installation. Optional feature tools are managed separately below.")
         self.root.bind_all("<MouseWheel>", self._dispatch_mousewheel_scroll, add="+")
         self.root.bind_all("<Button-4>", self._dispatch_mousewheel_scroll, add="+")
         self.root.bind_all("<Button-5>", self._dispatch_mousewheel_scroll, add="+")
@@ -1352,6 +1369,8 @@ class UpdaterApp:
         summary_label = ttk.Label(
             intro,
             text=(
+                "Microsoft Store manages app updates. Review and manage optional feature tools below."
+                if format_foundry_package() is not None else
                 "Checks the canonical release surface, pulls metadata from a manifest or GitHub repo, "
                 "and downloads the correct installer package for the current platform."
             ),
@@ -1399,6 +1418,8 @@ class UpdaterApp:
         source_row.pack(fill="x")
         ttk.Entry(source_row, textvariable=self.source_var).pack(side="left", fill="x", expand=True)
         ttk.Button(source_row, text="Browse File", style="UpdaterQuiet.TButton", command=self._browse_manifest).pack(side="left", padx=(self._scaled(8), 0))
+        if format_foundry_package() is not None:
+            source_card.pack_forget()
 
         release_card = ttk.Frame(body, style="UpdaterCard.TFrame", padding=(self._scaled(14), self._scaled(12)))
         release_card.pack(fill="x", pady=(self._scaled(10), 0))
@@ -1606,9 +1627,11 @@ class UpdaterApp:
 
         action_row = ttk.Frame(outer, style="Updater.TFrame")
         action_row.pack(fill="x", pady=(self._scaled(10), 0))
-        ttk.Button(action_row, text="Check for Updates", style="UpdaterPrimary.TButton", command=self._check_updates_clicked).pack(side="left")
-        ttk.Button(action_row, text="Download Update", style="UpdaterQuiet.TButton", command=self._download_update_clicked).pack(side="left", padx=(self._scaled(8), 0))
-        ttk.Button(action_row, text="Open Download Link", style="UpdaterQuiet.TButton", command=self._open_download_link).pack(side="left", padx=(self._scaled(8), 0))
+        store_managed = format_foundry_package() is not None
+        ttk.Button(action_row, text="Open Store Updates" if store_managed else "Check for Updates", style="UpdaterPrimary.TButton", command=self._check_updates_clicked).pack(side="left")
+        if not store_managed:
+            ttk.Button(action_row, text="Download Update", style="UpdaterQuiet.TButton", command=self._download_update_clicked).pack(side="left", padx=(self._scaled(8), 0))
+        ttk.Button(action_row, text="Store Listing" if store_managed else "Open Download Link", style="UpdaterQuiet.TButton", command=self._open_download_link).pack(side="left", padx=(self._scaled(8), 0))
 
         self.progress = ttk.Progressbar(outer, mode="determinate", maximum=100, value=0)
         self.progress.pack(fill="x", pady=(self._scaled(10), self._scaled(8)))
@@ -1958,7 +1981,20 @@ class UpdaterApp:
         data = json.loads(path.read_text(encoding="utf-8"))
         return normalize_update_metadata(data) if isinstance(data, dict) else data
 
+    def _open_store_updates(self, *, listing: bool = False) -> None:
+        try:
+            if listing:
+                open_store_listing()
+            else:
+                open_store_updates()
+            self.status_var.set("Opened Microsoft Store. Check for app updates there.")
+        except OSError as exc:
+            messagebox.showerror(APP_TITLE, f"Could not open Microsoft Store:\n{exc}")
+
     def _check_updates_clicked(self) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates()
+            return
         if self.checking:
             return
         self._save_settings()
@@ -2038,6 +2074,9 @@ class UpdaterApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _open_download_link(self) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates(listing=True)
+            return
         url = self.last_download_url.strip() or self.last_release_url.strip()
         if not url:
             messagebox.showwarning(APP_TITLE, "No download URL is available yet. Run Check for Updates first.")
@@ -2062,6 +2101,9 @@ class UpdaterApp:
             self.status_var.set("Opened release page in browser.")
 
     def _download_update_clicked(self) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates()
+            return
         if self.downloading:
             return
         if (getattr(self, "last_compatibility", None) or {}).get("allowed") is False:
@@ -2149,6 +2191,9 @@ class UpdaterApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _offer_verified_package_action(self, target_path: Path) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates()
+            return
         if (getattr(self, "last_compatibility", None) or {}).get("allowed") is False:
             messagebox.showwarning(APP_TITLE, "Installation blocked: this update is incompatible with this environment.")
             return
@@ -2251,7 +2296,7 @@ def _run_cli_mode() -> tuple[int | None, bool]:
             resource_dir=resource_dir,
             backend_paths={},
             popen_kwargs=hidden_console_process_kwargs(),
-            extra={"mode": "smoke-test"},
+            extra={"mode": "smoke-test", "windows_package": package_runtime_report()},
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0, bool(args.backends)

@@ -15,6 +15,13 @@ No changes yet.
 
 This is the next local Beta milestone. Its source, installer, and package versions are aligned; it is not yet a published release. The `v1.8.18` transport tag remains reserved for compatibility with installed Alpha updaters.
 
+### Windows MSIX
+- Added a clean-clone MSIX build with a combined one-folder app and optional-tools updater, launcher logos, bundled notices, SHA-256 block-map verification and extracted frozen startup probes.
+- Added a separate unsigned Windows 11 development identity and a Store submission mode requiring exact Partner Center product identifiers. The app stays Beta 0.7.1; the default numeric MSIX version is 1.7.1.0.
+- Packaged app/update actions use Microsoft Store, and uninstall opens Windows Installed apps instead of selecting a legacy EXE uninstaller. Private package settings copy missing EXE settings without altering originals.
+- CI builds MSIX candidates and configured Store submissions without signing credentials. Coordinated release publication waits for installed MSIX validation and Store availability; GitHub distributes Linux packages and verification evidence.
+- Website Windows buttons switch to the Store only after published product metadata is configured. The Store product is currently unreserved and unpublished.
+
 ### Code Translation
 - Added the first executable translation path: single-file TypeScript `.ts`/`.mts`/`.cts` to JavaScript `.js`/`.mjs`/`.cjs` through the official TypeScript compiler.
 - Added bounded project compilation for local TypeScript imports and `tsconfig.json` settings, saving generated JavaScript as a non-overwriting ZIP while keeping project sources unchanged.

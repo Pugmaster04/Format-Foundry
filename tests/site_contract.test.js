@@ -9,12 +9,12 @@ const marker = /\s+init\(\);\s*\}\)\(\);\s*$/;
 assert.match(source, marker, "site.js bootstrap marker changed");
 const instrumented = source.replace(
   marker,
-  "\n  globalThis.__formatFoundrySiteTest = { buildSiteConfig };\n})();\n",
+  "\n  globalThis.__formatFoundrySiteTest = { buildSiteConfig, applyStoreConfig };\n})();\n",
 );
 const context = { console };
 vm.createContext(context);
 vm.runInContext(instrumented, context, { filename: "site.js" });
-const { buildSiteConfig } = context.__formatFoundrySiteTest;
+const { buildSiteConfig, applyStoreConfig } = context.__formatFoundrySiteTest;
 
 const releaseBase = "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18";
 const assets = [
@@ -64,6 +64,14 @@ const alphaAssets = [
 const alpha = buildSiteConfig("v1.8.17", alphaAssets, "Format Foundry v1.8.17");
 assert.equal(alpha.version, "1.8.17");
 assert.equal(alpha.displayVersion, "Alpha 1.8.17");
+
+for (const metadata of [null, { published: false, productId: "9TEST1234567" }, { published: true, productId: "javascript:alert(1)" }]) {
+  assert.equal(applyStoreConfig(alpha, metadata).links.windowsInstaller, alpha.links.windowsInstaller);
+}
+assert.equal(
+  applyStoreConfig(alpha, { published: true, productId: "9TEST1234567" }).links.windowsInstaller,
+  "https://apps.microsoft.com/detail/9TEST1234567",
+);
 
 const releaseCandidate = buildSiteConfig("v1.8.19", assets, "Format Foundry Release Candidate 0.6");
 assert.equal(releaseCandidate.displayVersion, "Release Candidate 0.6");

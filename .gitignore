@@ -8,6 +8,7 @@ node_modules/
 venv/
 env/
 .env.codex.local
+packaging/windows/store-identity.json
 
 # Code-signing credentials must stay outside version control.
 *.pfx

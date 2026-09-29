@@ -44,7 +44,7 @@ jobs:
 
       - name: Compile and test
         run: |
-          python -m py_compile modular_file_utility_suite.py suite_updater.py adobe_support.py language_support.py code_translation.py
+          python -m py_compile modular_file_utility_suite.py suite_updater.py adobe_support.py language_support.py code_translation.py windows_package_support.py tools/build_msix_package.py
           python -m unittest discover -s tests -v
 
       - name: Lint and type-check dependency-light seams
@@ -52,6 +52,8 @@ jobs:
           python -m ruff check code_translation.py language_support.py adobe_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
           python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           python -m mypy submission-media/tools --follow-imports=skip
+          python -m ruff check windows_package_support.py tools/build_msix_package.py
+          python -m mypy windows_package_support.py tools/build_msix_package.py --follow-imports=skip
 
       - name: Enforce source performance budgets
         run: python tools/performance_budget.py --report build/performance-budget-security-quality.json

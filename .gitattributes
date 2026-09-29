@@ -26,6 +26,7 @@
 *.AppImage binary
 *.deb binary
 *.exe binary
+*.msix binary
 *.gz binary
 *.ico binary
 *.jpg binary

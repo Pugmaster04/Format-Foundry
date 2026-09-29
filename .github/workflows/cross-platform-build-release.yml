@@ -61,6 +61,7 @@ jobs:
           python -m ruff check code_translation.py language_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
           python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           python -m mypy submission-media/tools --follow-imports=skip
+          New-Item -ItemType Directory -Force -Path build | Out-Null
           python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-windows.json
           python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-windows
           python tools/performance_budget.py --report build/performance-budget-source-windows.json
@@ -164,6 +165,7 @@ jobs:
           python -m ruff check code_translation.py language_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
           python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           python -m mypy submission-media/tools --follow-imports=skip
+          New-Item -ItemType Directory -Force -Path build | Out-Null
           python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-windows.json
           python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-windows
           python tools/performance_budget.py --report build/performance-budget-source-windows.json

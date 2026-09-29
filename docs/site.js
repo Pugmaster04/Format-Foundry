@@ -1,6 +1,6 @@
 (() => {
-  const fallbackPackageVersion = "0.5.0-beta";
-  const fallbackReleaseTag = "v1.8.18";
+  const fallbackPackageVersion = "1.8.17";
+  const fallbackReleaseTag = "v1.8.17";
   const repoOwner = "Pugmaster04";
   const repoName = "Format-Foundry";
   const repoUrl = `https://github.com/${repoOwner}/${repoName}`;
@@ -47,7 +47,7 @@
     const assetUrlByName = new Map(
       (Array.isArray(assets) ? assets : [])
         .map((asset) => [String(asset?.name || ""), String(asset?.browser_download_url || "")])
-        .filter(([name, url]) => name && url),
+        .filter(([name, url]) => name && url.startsWith(`${repoUrl}/releases/download/`)),
     );
     const taggedReleasePage = `${repoUrl}/releases/tag/${releaseTag}`;
     const releasePage = assetUrlByName.size ? taggedReleasePage : `${repoUrl}/releases/latest`;
@@ -55,7 +55,7 @@
 
     return {
       version: packageVersion,
-      displayVersion: formatDisplayVersion(packageVersion, releaseName),
+      displayVersion: assetUrlByName.size ? formatDisplayVersion(packageVersion, releaseName) : "View current release",
       repo: repoUrl,
       releasePage,
       links: {
@@ -110,9 +110,12 @@
   }
 
   async function fetchLatestSiteConfig() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
       const response = await fetch(githubLatestReleaseApi, {
         headers: { Accept: "application/vnd.github+json" },
+        signal: controller.signal,
       });
       if (!response.ok) {
         throw new Error(`GitHub release request failed with status ${response.status}.`);
@@ -126,6 +129,31 @@
     } catch (error) {
       console.warn("Format Foundry site falling back to embedded release metadata.", error);
       return buildSiteConfig(fallbackReleaseTag);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function applyStoreConfig(site, metadata) {
+    const productId = String(metadata?.productId || "");
+    if (metadata?.published !== true || !/^[A-Za-z0-9]{12}$/.test(productId)) return site;
+    return {
+      ...site,
+      windowsStorePublished: true,
+      links: { ...site.links, windowsInstaller: `https://apps.microsoft.com/detail/${productId}` },
+    };
+  }
+
+  async function fetchStoreConfig() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch("windows-store.json", { signal: controller.signal, cache: "no-cache" });
+      return response.ok ? await response.json() : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -136,6 +164,11 @@
   }
 
   function applyLinks(site) {
+    if (site.windowsStorePublished) {
+      document.querySelectorAll("[data-windows-store-status]").forEach((node) => {
+        node.textContent = "Microsoft Store provides installation, app updates, and Windows uninstall support.";
+      });
+    }
     document.querySelectorAll("[data-link]").forEach((node) => {
       const key = node.getAttribute("data-link");
       let href = "";
@@ -148,6 +181,11 @@
       }
       if (href) {
         node.href = href;
+        if (key === "windowsInstaller" && site.windowsStorePublished) {
+          node.textContent = "Get from Microsoft Store";
+        } else if (key !== "releasePage" && key !== "repo" && href === site.releasePage) {
+          node.textContent = "View available release downloads";
+        }
       }
     });
   }
@@ -178,7 +216,7 @@
     const lists = buildListContent(site);
     document.querySelectorAll("[data-render-list]").forEach((node) => {
       const listKey = node.getAttribute("data-render-list");
-      const items = lists[listKey] || [];
+      const items = (lists[listKey] || []).filter((item) => item.href !== site.releasePage);
       if (!lists[listKey]) {
         console.warn(`Unknown data-render-list key: ${listKey || "(empty)"}`);
       }
@@ -213,11 +251,13 @@
   }
 
   async function init() {
-    const site = await fetchLatestSiteConfig();
+    // Content is visible without JS; only release links depend on the network.
+    setupRevealAnimations();
+    const [release, store] = await Promise.all([fetchLatestSiteConfig(), fetchStoreConfig()]);
+    const site = applyStoreConfig(release, store);
     applyVersion(site);
     applyLinks(site);
     applyLists(site);
-    setupRevealAnimations();
   }
 
   init();

@@ -1,5 +1,5 @@
-﻿import argparse
-import hashlib
+import argparse
+import ctypes
 import json
 import os
 import platform
@@ -8,18 +8,17 @@ import shutil
 import subprocess
 import sys
 import threading
-import ctypes
+import tkinter as tk
+import tkinter.font as tkfont
 import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable
-
-import tkinter as tk
-import tkinter.font as tkfont
 from tkinter import BooleanVar, StringVar, filedialog, messagebox, ttk
+from typing import Any
 
 from app_identity import DISPLAY_VERSION, LEGACY_PRODUCT_SLUGS, PACKAGE_VERSION, PRODUCT_NAME, PRODUCT_SLUG
 from backend_support import (
@@ -33,10 +32,8 @@ from backend_support import (
 from format_foundry_provenance import runtime_provenance_json
 from settings_support import load_settings_document, save_settings_document
 from support_runtime import (
-    DEFAULT_GITHUB_REPO,
     DEFAULT_GITHUB_REPO_URL,
     DEFAULT_TRUSTED_UPDATE_HOSTS,
-    atomic_write_json,
     build_environment_snapshot,
     collect_backend_details,
     display_path_with_home_alias,
@@ -48,7 +45,15 @@ from support_runtime import (
     release_version_key,
     validate_trusted_remote_url,
 )
-
+from update_security import MAX_METADATA_BYTES, download_verified, policy_opener
+from windows_package_support import (
+    format_foundry_package,
+    migrate_legacy_settings,
+    open_store_listing,
+    open_store_updates,
+    package_runtime_report,
+    packaged_settings_root,
+)
 
 APP_TITLE = f"{PRODUCT_NAME} Updater"
 CURRENT_VERSION = PACKAGE_VERSION
@@ -154,6 +159,9 @@ def current_platform_key() -> str:
 
 def platform_settings_root() -> Path:
     if current_platform_key() == "windows":
+        package_root = packaged_settings_root()
+        if package_root is not None:
+            return package_root
         return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
     xdg_config = os.environ.get("XDG_CONFIG_HOME", "").strip()
     if xdg_config:
@@ -174,6 +182,7 @@ def platform_lock_root_path(app_slug: str) -> Path:
 
 
 def resolve_settings_dir(root: Path, settings_filename: str) -> Path:
+    migrate_legacy_settings(root, settings_filename)
     preferred = root / APP_SLUG
     if preferred.exists():
         return preferred
@@ -431,6 +440,11 @@ class UpdaterApp:
 
         self._configure_styles()
         self._build_ui()
+        if format_foundry_package() is not None:
+            self.latest_var.set("App updates: Microsoft Store")
+            self.download_var.set("Use Microsoft Store to install app updates.")
+            self.sha256_var.set("Integrity: Windows verifies the Store package signature.")
+            self._set_notes("Microsoft Store manages updates for this installation. Optional feature tools are managed separately below.")
         self.root.bind_all("<MouseWheel>", self._dispatch_mousewheel_scroll, add="+")
         self.root.bind_all("<Button-4>", self._dispatch_mousewheel_scroll, add="+")
         self.root.bind_all("<Button-5>", self._dispatch_mousewheel_scroll, add="+")
@@ -948,8 +962,19 @@ class UpdaterApp:
                 "Accept": "application/vnd.github+json, application/json;q=0.9, text/plain;q=0.8",
             },
         )
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return response.read().decode("utf-8", errors="replace")
+        with self._policy_opener()(req, timeout=timeout) as response:
+            data = response.read(MAX_METADATA_BYTES + 1)
+            if len(data) > MAX_METADATA_BYTES:
+                raise ValueError("Update metadata exceeds the size limit.")
+            return data.decode("utf-8", errors="replace")
+
+    def _policy_opener(self, download: bool = False):
+        settings = self.settings
+        hosts = parse_trusted_host_patterns(settings.get("trusted_update_hosts", DEFAULT_TRUSTED_UPDATE_HOSTS))
+        return policy_opener(
+            require_https=bool(settings.get("require_https_download" if download else "require_https_manifest", True)),
+            trusted_hosts=hosts if settings.get("require_trusted_update_hosts", True) else None,
+        )
 
     def _fetch_json_url(self, url: str, timeout: int = 18) -> Any:
         payload = self._fetch_text_url(url, timeout=timeout)
@@ -1058,30 +1083,22 @@ class UpdaterApp:
                 priority_checks.extend(
                     [
                         lambda lower: lower.endswith(".deb") and is_primary_app_asset(lower) and any(marker in lower for marker in arch_markers),
-                        lambda lower: lower.endswith(".deb") and is_primary_app_asset(lower),
                     ]
                 )
             priority_checks.extend(
                 [
                     lambda lower: lower.endswith(".appimage") and "linux" in lower and is_primary_app_asset(lower) and any(marker in lower for marker in arch_markers),
                     lambda lower: lower.endswith(".tar.gz") and "linux" in lower and is_primary_app_asset(lower) and any(marker in lower for marker in arch_markers),
-                    lambda lower: lower.endswith(".appimage") and "linux" in lower and is_primary_app_asset(lower),
-                    lambda lower: lower.endswith(".tar.gz") and "linux" in lower and is_primary_app_asset(lower),
-                    lambda lower: "linux" in lower and is_primary_app_asset(lower),
-                    lambda lower: lower.endswith(".deb") and is_primary_app_asset(lower),
-                    lambda lower: lower.endswith((".appimage", ".tar.gz", ".deb")) and is_primary_app_asset(lower),
-                    lambda lower: is_primary_app_asset(lower) and not lower.endswith(".exe"),
-                    lambda _lower: True,
                 ]
             )
-        else:
+        elif platform_key == "windows" and any(marker in {"amd64", "x86_64"} for marker in arch_markers):
             priority_checks = [
-                lambda lower: lower.endswith(".exe") and "setup" in lower,
+                lambda lower: lower.endswith(".exe") and "setup" in lower and is_primary_app_asset(lower),
                 lambda lower: lower.endswith(".exe") and is_primary_app_asset(lower),
-                lambda lower: lower.endswith(".exe") and "updater" not in lower,
-                lambda lower: lower.endswith(".exe"),
-                lambda _lower: True,
             ]
+            normalized = [entry for entry in normalized if not any(marker in entry[1] for marker in ("arm64", "aarch64", "win32", "i686"))]
+        else:
+            return None, "", ""
         for rule in priority_checks:
             for asset, lower_name, name, url in normalized:
                 if rule(lower_name):
@@ -1209,9 +1226,7 @@ class UpdaterApp:
 
         raw_candidates = [
             f"https://raw.githubusercontent.com/{repo_spec}/main/update_manifest.json",
-            f"https://raw.githubusercontent.com/{repo_spec}/main/update_manifest.example.json",
             f"https://raw.githubusercontent.com/{repo_spec}/master/update_manifest.json",
-            f"https://raw.githubusercontent.com/{repo_spec}/master/update_manifest.example.json",
         ]
         for raw_url in raw_candidates:
             try:
@@ -1354,6 +1369,8 @@ class UpdaterApp:
         summary_label = ttk.Label(
             intro,
             text=(
+                "Microsoft Store manages app updates. Review and manage optional feature tools below."
+                if format_foundry_package() is not None else
                 "Checks the canonical release surface, pulls metadata from a manifest or GitHub repo, "
                 "and downloads the correct installer package for the current platform."
             ),
@@ -1401,6 +1418,8 @@ class UpdaterApp:
         source_row.pack(fill="x")
         ttk.Entry(source_row, textvariable=self.source_var).pack(side="left", fill="x", expand=True)
         ttk.Button(source_row, text="Browse File", style="UpdaterQuiet.TButton", command=self._browse_manifest).pack(side="left", padx=(self._scaled(8), 0))
+        if format_foundry_package() is not None:
+            source_card.pack_forget()
 
         release_card = ttk.Frame(body, style="UpdaterCard.TFrame", padding=(self._scaled(14), self._scaled(12)))
         release_card.pack(fill="x", pady=(self._scaled(10), 0))
@@ -1608,9 +1627,11 @@ class UpdaterApp:
 
         action_row = ttk.Frame(outer, style="Updater.TFrame")
         action_row.pack(fill="x", pady=(self._scaled(10), 0))
-        ttk.Button(action_row, text="Check for Updates", style="UpdaterPrimary.TButton", command=self._check_updates_clicked).pack(side="left")
-        ttk.Button(action_row, text="Download Update", style="UpdaterQuiet.TButton", command=self._download_update_clicked).pack(side="left", padx=(self._scaled(8), 0))
-        ttk.Button(action_row, text="Open Download Link", style="UpdaterQuiet.TButton", command=self._open_download_link).pack(side="left", padx=(self._scaled(8), 0))
+        store_managed = format_foundry_package() is not None
+        ttk.Button(action_row, text="Open Store Updates" if store_managed else "Check for Updates", style="UpdaterPrimary.TButton", command=self._check_updates_clicked).pack(side="left")
+        if not store_managed:
+            ttk.Button(action_row, text="Download Update", style="UpdaterQuiet.TButton", command=self._download_update_clicked).pack(side="left", padx=(self._scaled(8), 0))
+        ttk.Button(action_row, text="Store Listing" if store_managed else "Open Download Link", style="UpdaterQuiet.TButton", command=self._open_download_link).pack(side="left", padx=(self._scaled(8), 0))
 
         self.progress = ttk.Progressbar(outer, mode="determinate", maximum=100, value=0)
         self.progress.pack(fill="x", pady=(self._scaled(10), self._scaled(8)))
@@ -1650,6 +1671,12 @@ class UpdaterApp:
         if detected:
             version = str(detail.get("version") or "").strip()
             version_text = f"Version {version}. " if version else ""
+            if detail.get("source") == "app-bundled":
+                self.backend_detail_var.set(
+                    f"{definition.name}: included in Format Foundry. {version_text}"
+                    f"{definition.enables}. No separate installation is required for the app."
+                )
+                return
             path_text = display_path_with_home_alias(detail.get("path") or self.backend_paths.get(definition.key))
             self.backend_detail_var.set(
                 f"{definition.name}: detected. {version_text}{definition.enables}. Installed at {path_text or '(path unavailable)'}."
@@ -1672,7 +1699,7 @@ class UpdaterApp:
             detected = bool(detail.get("detected"))
             if detected:
                 detected_count += 1
-                status = "Detected"
+                status = "Included in app" if detail.get("source") == "app-bundled" else "Detected"
                 tag = "detected"
             else:
                 status = "Not installed"
@@ -1696,6 +1723,27 @@ class UpdaterApp:
         self.backend_tree.see(target)
         self._on_backend_selection()
 
+    def _app_bundled_ffmpeg_detail(self) -> dict[str, Any] | None:
+        # Ask the matching app, not a cache containing expired one-file temp paths.
+        executable = self.runtime_dir / ("FormatFoundry.exe" if os.name == "nt" else "FormatFoundry")
+        if not executable.is_file():
+            return None
+        try:
+            result = subprocess.run(
+                [str(executable), "--smoke-test"], capture_output=True, text=True,
+                timeout=12, check=False, **hidden_console_process_kwargs(),
+            )
+            if result.returncode:
+                return None
+            report = json.loads(result.stdout)
+            detail = report.get("backends", {}).get("ffmpeg", {})
+            if report.get("app", {}).get("version") != CURRENT_VERSION or not detail.get("detected"):
+                return None
+            return {"detected": True, "version": str(detail.get("version") or ""),
+                    "path": "", "source": "app-bundled", "error": ""}
+        except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError, TypeError):
+            return None
+
     def _refresh_backends_clicked(self, force_refresh: bool = False) -> None:
         if self.backend_checking or self.backend_installing:
             return
@@ -1712,6 +1760,10 @@ class UpdaterApp:
                     cache_path=self.appdata_dir / "backend_versions.json",
                     force_refresh=force_refresh,
                 )
+                if not details.get("ffmpeg", {}).get("detected"):
+                    bundled = self._app_bundled_ffmpeg_detail()
+                    if bundled:
+                        details["ffmpeg"] = bundled
 
                 def apply() -> None:
                     self.backend_paths = paths
@@ -1722,7 +1774,7 @@ class UpdaterApp:
 
                 self.root.after(0, apply)
             except Exception as exc:
-                self.root.after(0, lambda: self.backend_status_var.set(f"Feature tool check failed: {exc}"))
+                self.root.after(0, lambda message=str(exc): self.backend_status_var.set(f"Feature tool check failed: {message}"))
                 self.root.after(0, lambda: self.status_var.set("Feature tool check failed."))
             finally:
                 self.root.after(0, lambda: setattr(self, "backend_checking", False))
@@ -1924,20 +1976,38 @@ class UpdaterApp:
         path = Path(source).expanduser().resolve()
         if not path.exists():
             raise RuntimeError(f"Manifest file was not found:\n{path}")
+        if path.stat().st_size > MAX_METADATA_BYTES:
+            raise ValueError("Update metadata exceeds the size limit.")
         data = json.loads(path.read_text(encoding="utf-8"))
         return normalize_update_metadata(data) if isinstance(data, dict) else data
 
+    def _open_store_updates(self, *, listing: bool = False) -> None:
+        try:
+            if listing:
+                open_store_listing()
+            else:
+                open_store_updates()
+            self.status_var.set("Opened Microsoft Store. Check for app updates there.")
+        except OSError as exc:
+            messagebox.showerror(APP_TITLE, f"Could not open Microsoft Store:\n{exc}")
+
     def _check_updates_clicked(self) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates()
+            return
         if self.checking:
             return
         self._save_settings()
         self.checking = True
         self.status_var.set("Checking updates...")
         self.progress.configure(value=8)
+        source = self.source_var.get()
+        current = self.version_var.get().strip() or CURRENT_VERSION_LABEL
+        snapshot = self._environment_snapshot()
 
         def worker() -> None:
             try:
-                manifest = self._read_update_source(self.source_var.get())
+                manifest = self._read_update_source(source)
                 latest = str(manifest.get("latest_version") or manifest.get("version") or "").strip()
                 download_url = str(manifest.get("download_url") or manifest.get("url") or "").strip()
                 release_url = str(manifest.get("release_url") or "").strip()
@@ -1960,9 +2030,8 @@ class UpdaterApp:
                             blocked_reason = f"Download URL blocked by security settings: {host_reason}"
                             download_url = ""
 
-                current = self.version_var.get().strip() or CURRENT_VERSION_LABEL
                 newer = is_version_newer(latest, current)
-                compatibility = evaluate_manifest_compatibility(self._environment_snapshot(), manifest)
+                compatibility = evaluate_manifest_compatibility(snapshot, manifest)
                 compatibility_messages = [str(item).strip() for item in compatibility.get("messages", []) if str(item).strip()]
                 if compatibility_messages:
                     notes = "\n".join(filter(None, [notes, "Compatibility", *compatibility_messages]))
@@ -1996,7 +2065,7 @@ class UpdaterApp:
                         self.status_var.set(f"Already up to date ({current}).")
                 self.root.after(0, apply)
             except Exception as exc:
-                self.root.after(0, lambda: messagebox.showerror(APP_TITLE, f"Update check failed:\n{exc}"))
+                self.root.after(0, lambda message=str(exc): messagebox.showerror(APP_TITLE, f"Update check failed:\n{message}"))
                 self.root.after(0, lambda: self.status_var.set("Update check failed."))
                 self.root.after(0, lambda: self.progress.configure(value=0))
             finally:
@@ -2005,6 +2074,9 @@ class UpdaterApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _open_download_link(self) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates(listing=True)
+            return
         url = self.last_download_url.strip() or self.last_release_url.strip()
         if not url:
             messagebox.showwarning(APP_TITLE, "No download URL is available yet. Run Check for Updates first.")
@@ -2029,7 +2101,13 @@ class UpdaterApp:
             self.status_var.set("Opened release page in browser.")
 
     def _download_update_clicked(self) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates()
+            return
         if self.downloading:
+            return
+        if (getattr(self, "last_compatibility", None) or {}).get("allowed") is False:
+            messagebox.showwarning(APP_TITLE, "This update is not compatible with this operating system or backend environment.")
             return
         if self.last_download_block_reason:
             messagebox.showwarning(APP_TITLE, f"Cannot download.\n\n{self.last_download_block_reason}")
@@ -2077,6 +2155,8 @@ class UpdaterApp:
             return
 
         target_path = Path(target)
+        self._save_settings()
+        opener = self._policy_opener(download=True)
         self.downloading = True
         self.progress.configure(value=0)
         self.status_var.set(f"Downloading update to {target_path.name}...")
@@ -2084,42 +2164,10 @@ class UpdaterApp:
         def worker() -> None:
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": UPDATER_USER_AGENT})
-                hasher = hashlib.sha256()
-                with urllib.request.urlopen(req, timeout=30) as response, target_path.open("wb") as out_file:
-                    total_header = response.headers.get("Content-Length", "")
-                    total = int(total_header) if total_header.isdigit() else 0
-                    read = 0
-                    while True:
-                        chunk = response.read(1024 * 128)
-                        if not chunk:
-                            break
-                        out_file.write(chunk)
-                        hasher.update(chunk)
-                        read += len(chunk)
-                        if total > 0:
-                            pct = max(1, min(100, int((read / total) * 100)))
-                            self.root.after(0, lambda p=pct: self.progress.configure(value=p))
-                actual_sha256 = hasher.hexdigest().lower()
-                if expected_sha256 and actual_sha256 != expected_sha256:
-                    try:
-                        target_path.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                    raise RuntimeError(
-                        "Downloaded file hash mismatch.\n\n"
-                        f"Expected: {expected_sha256}\n"
-                        f"Actual:   {actual_sha256}\n\n"
-                        "File was removed."
-                    )
-                if bool(self.require_sha256_var.get()) and not expected_sha256:
-                    try:
-                        target_path.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                    raise RuntimeError(
-                        "Downloaded file has no manifest SHA256 to verify against.\n"
-                        "File was removed due to security policy."
-                    )
+                download_verified(
+                    req, target_path, expected_sha256, opener=opener,
+                    progress=lambda p: self.root.after(0, lambda: self.progress.configure(value=p)),
+                )
 
                 def done() -> None:
                     self.progress.configure(value=100)
@@ -2127,23 +2175,14 @@ class UpdaterApp:
                         self.status_var.set(f"Download verified (SHA256): {target_path}")
                     else:
                         self.status_var.set(f"Download complete: {target_path}")
-                    self._offer_verified_package_action(target_path)
+                    if expected_sha256:
+                        self._offer_verified_package_action(target_path)
+                    else:
+                        self.status_var.set("Downloaded without verification. Automatic installation is disabled.")
 
                 self.root.after(0, done)
-            except (urllib.error.URLError, TimeoutError) as exc:
-                try:
-                    target_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                self.root.after(0, lambda: messagebox.showerror(APP_TITLE, f"Download failed:\n{exc}"))
-                self.root.after(0, lambda: self.status_var.set("Download failed."))
-                self.root.after(0, lambda: self.progress.configure(value=0))
             except Exception as exc:
-                try:
-                    target_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                self.root.after(0, lambda: messagebox.showerror(APP_TITLE, f"Download failed:\n{exc}"))
+                self.root.after(0, lambda message=str(exc): messagebox.showerror(APP_TITLE, f"Download failed:\n{message}"))
                 self.root.after(0, lambda: self.status_var.set("Download failed."))
                 self.root.after(0, lambda: self.progress.configure(value=0))
             finally:
@@ -2152,14 +2191,26 @@ class UpdaterApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _offer_verified_package_action(self, target_path: Path) -> None:
+        if format_foundry_package() is not None:
+            self._open_store_updates()
+            return
+        if (getattr(self, "last_compatibility", None) or {}).get("allowed") is False:
+            messagebox.showwarning(APP_TITLE, "Installation blocked: this update is incompatible with this environment.")
+            return
         suffix = target_path.suffix.lower()
         if os.name == "nt" and suffix == ".exe":
             if not messagebox.askyesno(APP_TITLE, "Download verified.\n\nRun the installer now?"):
                 self._reveal_download(target_path)
                 return
             try:
-                subprocess.Popen([str(target_path)], cwd=str(target_path.parent))
-                self.status_var.set(f"Installer launched: {target_path.name}")
+                shell_execute = ctypes.windll.shell32.ShellExecuteW
+                shell_execute.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_int]
+                shell_execute.restype = ctypes.c_void_p
+                result = shell_execute(None, "runas", str(target_path), None, str(target_path.parent), 1)
+                if not result or result <= 32:
+                    raise OSError("Installer launch was declined or failed. No update was installed.")
+                # Exiting mainloop releases the updater's installer mutex in main().
+                self.root.destroy()
             except Exception as exc:
                 messagebox.showerror(APP_TITLE, f"Failed to launch installer:\n{exc}")
                 self._reveal_download(target_path)
@@ -2245,7 +2296,7 @@ def _run_cli_mode() -> tuple[int | None, bool]:
             resource_dir=resource_dir,
             backend_paths={},
             popen_kwargs=hidden_console_process_kwargs(),
-            extra={"mode": "smoke-test"},
+            extra={"mode": "smoke-test", "windows_package": package_runtime_report()},
         )
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0, bool(args.backends)

@@ -37,6 +37,15 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.7.1-beta" type="development" date="2026-09-29">
+      <description>
+        <ul>
+          <li>Added an offline code-language reference and bounded TypeScript-to-JavaScript compilation for files and local-import projects.</li>
+          <li>Expanded PDF, TIFF, and Adobe interchange support with staged, non-overwriting output.</li>
+          <li>Hardened file operations, downloads, updater security, responsive controls, and Linux packaging.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.0-beta" type="development" date="2026-07-18">
       <description>
         <ul>
@@ -63,7 +72,6 @@
     <category>Office</category>
   </categories>
 </component>
-
 
 
 

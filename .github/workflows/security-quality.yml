@@ -26,6 +26,17 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Set up Node.js for real TypeScript translation tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install pinned TypeScript test compiler
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          python -c "from code_translation import find_typescript_compiler; assert find_typescript_compiler() is not None"
+
       - name: Install application and quality dependencies
         run: |
           python -m pip install -r requirements.txt
@@ -33,14 +44,16 @@ jobs:
 
       - name: Compile and test
         run: |
-          python -m py_compile modular_file_utility_suite.py suite_updater.py
+          python -m py_compile modular_file_utility_suite.py suite_updater.py adobe_support.py language_support.py code_translation.py windows_package_support.py tools/build_msix_package.py
           python -m unittest discover -s tests -v
 
       - name: Lint and type-check dependency-light seams
         run: |
-          python -m ruff check app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
-          python -m mypy app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
+          python -m ruff check code_translation.py language_support.py adobe_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
+          python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           python -m mypy submission-media/tools --follow-imports=skip
+          python -m ruff check windows_package_support.py tools/build_msix_package.py
+          python -m mypy windows_package_support.py tools/build_msix_package.py --follow-imports=skip
 
       - name: Enforce source performance budgets
         run: python tools/performance_budget.py --report build/performance-budget-security-quality.json
@@ -51,7 +64,7 @@ jobs:
         run: python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit.json
 
       - name: Generate reproducible CycloneDX SBOM
-        run: python -m cyclonedx_py requirements requirements.txt --output-reproducible --of JSON -o build/FormatFoundry-SBOM.cdx.json
+        run: python -m cyclonedx_py environment --output-reproducible --of JSON -o build/FormatFoundry-SBOM.cdx.json
 
       - name: Upload quality evidence
         if: always()

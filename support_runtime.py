@@ -213,8 +213,8 @@ def format_release_label(value: str) -> str:
 def release_identity_from_github(payload: dict[str, Any]) -> str:
     """Choose the lifecycle identity while retaining a legacy-compatible tag.
 
-    Alpha updaters only compare GitHub's numeric tag. Beta 0.5 therefore ships
-    under a numeric transport tag, while current clients compare the explicit
+    Alpha updaters only compare GitHub's numeric tag. The first published Beta
+    uses a numeric transport tag, while current clients compare the explicit
     lifecycle name published on the same release.
     """
     release_name = str(payload.get("name") or "").strip()
@@ -550,19 +550,25 @@ def evaluate_runtime_support(snapshot: dict[str, Any]) -> dict[str, Any]:
     status = "supported"
 
     if platform_key == "windows":
-        if not version_meets_minimum(str(os_details.get("release", "")), "10"):
+        if architecture not in {"x86_64", "amd64"}:
+            status = "unsupported"
+            messages.append("Official Windows builds require x86_64/AMD64; other architectures are not validated.")
+        elif not version_meets_minimum(str(os_details.get("release", "")), "10"):
             status = "unsupported"
             messages.append("Windows 10 or newer is required for the supported Windows target.")
-        else:
+        elif str(os_details.get("release", "")) in {"10", "11"}:
             messages.append("Windows runtime is within the supported baseline.")
+        else:
+            status = "best_effort"
+            messages.append("This newer Windows release has not been validated.")
     elif platform_key == "linux":
         distro_id = str(os_details.get("distribution_id", "")).lower()
         distro_version = str(os_details.get("distribution_version", ""))
         if architecture not in {"x86_64", "amd64"}:
             status = "best_effort"
             messages.append("Official Linux packaging is currently targeted at x86_64/amd64.")
-        if distro_id == "ubuntu" and version_meets_minimum(distro_version, "24.04"):
-            messages.append("Linux runtime matches the validated Ubuntu 24.04+ baseline.")
+        if distro_id == "ubuntu" and distro_version == "24.04":
+            messages.append("Linux runtime matches the Ubuntu 24.04 build baseline; desktop behavior still requires installation testing.")
         elif distro_id in {"ubuntu", "debian"}:
             if status == "supported":
                 status = "best_effort"
@@ -611,7 +617,9 @@ def evaluate_manifest_compatibility(snapshot: dict[str, Any], manifest: dict[str
         status = "unsupported"
         messages.append(f"Update does not target this platform ({platform_key or 'unknown'}).")
 
-    architectures = [str(item).strip().lower() for item in compatibility.get("architectures", []) if str(item).strip()]
+    aliases = {"amd64": "x86_64", "x64": "x86_64", "arm64": "aarch64"}
+    architecture = aliases.get(architecture, architecture)
+    architectures = [aliases.get(str(item).strip().lower(), str(item).strip().lower()) for item in compatibility.get("architectures", []) if str(item).strip()]
     if architectures and architecture not in architectures:
         allowed = False
         status = "unsupported"
@@ -648,7 +656,7 @@ def evaluate_manifest_compatibility(snapshot: dict[str, Any], manifest: dict[str
                 )
                 continue
             actual_version = str(detail.get("version", "")).strip()
-            if actual_version and not version_meets_minimum(actual_version, str(minimum_version)):
+            if not actual_version or not version_meets_minimum(actual_version, str(minimum_version)):
                 allowed = False
                 status = "unsupported"
                 messages.append(

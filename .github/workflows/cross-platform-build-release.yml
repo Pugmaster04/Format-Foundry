@@ -1,6 +1,7 @@
 name: Cross-Platform Build and Release
 
 on:
+  pull_request:
   workflow_dispatch:
   push:
     branches:
@@ -14,7 +15,6 @@ permissions:
 
 jobs:
   build-windows:
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-latest
 
     steps:
@@ -27,32 +27,83 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install Windows build prerequisites
-        shell: powershell
+      - name: Set up Node.js for TypeScript translation tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install pinned TypeScript test compiler
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm.cmd ci --ignore-scripts --no-audit --no-fund
+          python -c "from code_translation import find_typescript_compiler; assert find_typescript_compiler() is not None"
+
+      - name: Install Windows build prerequisites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           choco install innosetup --no-progress -y
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
 
       - name: Run Windows test suite
-        shell: powershell
+        shell: pwsh
         run: |
-          python -m py_compile modular_file_utility_suite.py suite_updater.py
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m py_compile modular_file_utility_suite.py suite_updater.py language_support.py code_translation.py
           python -m unittest discover -s tests -v
-          python -m ruff check app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
-          python -m mypy app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
+          python -m ruff check code_translation.py language_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
+          python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           python -m mypy submission-media/tools --follow-imports=skip
+          python -m ruff check windows_package_support.py tools/build_msix_package.py
+          python -m mypy windows_package_support.py tools/build_msix_package.py --follow-imports=skip
+          New-Item -ItemType Directory -Force -Path build | Out-Null
           python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-windows.json
           python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-windows
           python tools/performance_budget.py --report build/performance-budget-source-windows.json
+          python -m cyclonedx_py environment --output-reproducible --of JSON -o build/FormatFoundry-SBOM-windows.cdx.json
 
       - name: Build Windows artifacts
         shell: cmd
         run: build_suite_release.bat
 
-      - name: Enforce frozen Windows performance budgets
-        shell: powershell
+      - name: Build and validate MSIX development candidate
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m tools.build_msix_package --mode candidate
+
+      - name: Build Store submission with reserved product identity
+        shell: pwsh
+        env:
+          WINDOWS_STORE_PACKAGE_NAME: ${{ vars.WINDOWS_STORE_PACKAGE_NAME }}
+          WINDOWS_STORE_PUBLISHER: ${{ vars.WINDOWS_STORE_PUBLISHER }}
+          WINDOWS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.WINDOWS_STORE_PUBLISHER_DISPLAY_NAME }}
+          WINDOWS_STORE_PRODUCT_ID: ${{ vars.WINDOWS_STORE_PRODUCT_ID }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $values = @($env:WINDOWS_STORE_PACKAGE_NAME, $env:WINDOWS_STORE_PUBLISHER, $env:WINDOWS_STORE_PUBLISHER_DISPLAY_NAME, $env:WINDOWS_STORE_PRODUCT_ID)
+          $configured = @($values | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+          if ($configured -eq 4) {
+            python -m tools.build_msix_package --mode store --skip-freeze
+          } elseif ($configured -gt 0 -or $env:GITHUB_REF -like 'refs/tags/v*') {
+            throw 'Store submission requires all four WINDOWS_STORE identity repository variables. See docs/WINDOWS_MSIX.md.'
+          } else {
+            Write-Host 'No Partner Center identity reserved yet; development candidate validated.'
+          }
+
+      - name: Enforce frozen Windows performance budgets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           python tools/performance_budget.py `
             --app-binary dist/FormatFoundry.exe `
             --updater-binary dist/FormatFoundry_Updater.exe `
@@ -63,8 +114,10 @@ jobs:
             --report build/performance-budget-portable-windows.json
 
       - name: Validate install surface
-        shell: powershell
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $version = python tools/extract_app_version.py
           if (-not $version) { throw 'Unable to determine APP_VERSION' }
           python tools/validate_install_surface.py --readme README.md --artifacts release_bins installer_output dist --required-asset "FormatFoundry_Setup_${version}.exe"
@@ -83,233 +136,17 @@ jobs:
             release_bins/FormatFoundry_Setup_*.exe
             release_bins/FormatFoundry_Portable_*_windows_x86_64.zip
             release_bins/SHA256SUMS-windows
+            release_bins/msix/*.msix
+            release_bins/msix/*.validation.json
+            release_bins/msix/SHA256SUMS-msix-*
             build/pip-audit-windows.json
-            build/performance-budget-*.json
-            build/ui-layout-probe-windows/**
-
-  build-windows-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: windows-latest
-    environment: windows-release-signing
-    permissions:
-      contents: read
-      id-token: write
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install Windows build prerequisites
-        shell: powershell
-        run: |
-          choco install innosetup --no-progress -y
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-dev.txt
-
-      - name: Run Windows test suite
-        shell: powershell
-        run: |
-          python -m py_compile modular_file_utility_suite.py suite_updater.py
-          python -m unittest discover -s tests -v
-          python -m ruff check app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
-          python -m mypy app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
-          python -m mypy submission-media/tools --follow-imports=skip
-          python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-windows.json
-          python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-windows
-          python tools/performance_budget.py --report build/performance-budget-source-windows.json
-
-      - name: Resolve fail-closed signing provider
-        id: signing
-        shell: powershell
-        env:
-          REQUESTED_PROVIDER: ${{ vars.WINDOWS_SIGNING_PROVIDER }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-          AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-        run: |
-          $azureValues = @(
-            $env:AZURE_CLIENT_ID,
-            $env:AZURE_TENANT_ID,
-            $env:AZURE_SUBSCRIPTION_ID,
-            $env:AZURE_ARTIFACT_SIGNING_ENDPOINT,
-            $env:AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME,
-            $env:AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME
-          )
-          $pfxValues = @(
-            $env:WINDOWS_SIGNING_CERTIFICATE_BASE64,
-            $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD
-          )
-          $azureComplete = @($azureValues | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq $azureValues.Count
-          $pfxComplete = @($pfxValues | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq $pfxValues.Count
-          $provider = ([string]$env:REQUESTED_PROVIDER).Trim().ToLowerInvariant()
-          if ([string]::IsNullOrWhiteSpace($provider)) {
-            if ($azureComplete) {
-              $provider = 'azure-artifact-signing'
-            } elseif ($pfxComplete) {
-              $provider = 'pfx'
-            }
-          }
-          switch ($provider) {
-            'azure-artifact-signing' {
-              if (-not $azureComplete) {
-                throw 'Azure Artifact Signing was selected, but its GitHub environment configuration is incomplete.'
-              }
-            }
-            'pfx' {
-              if (-not $pfxComplete) {
-                throw 'PFX signing was selected, but its GitHub environment secrets are incomplete.'
-              }
-            }
-            default {
-              throw 'Tagged releases require Azure Artifact Signing or a complete PFX signing configuration. See docs/WINDOWS_SIGNING.md.'
-            }
-          }
-          "provider=$provider" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          Write-Host "Using the configured $provider provider for this tagged release."
-
-      - name: Azure login with GitHub OIDC
-        if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Build Windows binaries for managed signing
-        if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        shell: powershell
-        run: .\tools\build_windows_release_phase.ps1 -Phase Binaries
-
-      - name: Sign app and updater with Azure Artifact Signing
-        if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          files: |
-            ${{ github.workspace }}\dist\FormatFoundry.exe
-            ${{ github.workspace }}\dist\FormatFoundry_Updater.exe
-            ${{ github.workspace }}\dist\FormatFoundry_Portable\FormatFoundry.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          description: Format Foundry
-          description-url: https://pugmaster04.github.io/Format-Foundry/index.html
-          exclude-environment-credential: true
-          exclude-workload-identity-credential: true
-          exclude-managed-identity-credential: true
-          exclude-shared-token-cache-credential: true
-          exclude-visual-studio-credential: true
-          exclude-visual-studio-code-credential: true
-          exclude-azure-cli-credential: false
-          exclude-azure-powershell-credential: true
-          exclude-azure-developer-cli-credential: true
-          exclude-interactive-browser-credential: true
-
-      - name: Build installer from signed binaries
-        if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        shell: powershell
-        run: .\tools\build_windows_release_phase.ps1 -Phase Installer
-
-      - name: Sign installer with Azure Artifact Signing
-        if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
-          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          files: ${{ github.workspace }}\installer_output\FormatFoundry_Setup.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-          description: Format Foundry Installer
-          description-url: https://pugmaster04.github.io/Format-Foundry/downloads.html
-          exclude-environment-credential: true
-          exclude-workload-identity-credential: true
-          exclude-managed-identity-credential: true
-          exclude-shared-token-cache-credential: true
-          exclude-visual-studio-credential: true
-          exclude-visual-studio-code-credential: true
-          exclude-azure-cli-credential: false
-          exclude-azure-powershell-credential: true
-          exclude-azure-developer-cli-credential: true
-          exclude-interactive-browser-credential: true
-
-      - name: Stage Azure-signed release assets
-        if: steps.signing.outputs.provider == 'azure-artifact-signing'
-        shell: powershell
-        run: .\tools\build_windows_release_phase.ps1 -Phase Stage
-
-      - name: Build and sign with protected PFX fallback
-        if: steps.signing.outputs.provider == 'pfx'
-        shell: cmd
-        env:
-          REQUIRE_WINDOWS_SIGNING: "1"
-          WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
-          WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
-          WINDOWS_SIGNING_TIMESTAMP_URL: ${{ vars.WINDOWS_SIGNING_TIMESTAMP_URL }}
-        run: build_suite_release.bat
-
-      - name: Validate install surface
-        shell: powershell
-        run: |
-          $version = python tools/extract_app_version.py
-          if (-not $version) { throw 'Unable to determine APP_VERSION' }
-          python tools/validate_install_surface.py --readme README.md --artifacts release_bins installer_output dist --required-asset "FormatFoundry_Setup_${version}.exe"
-
-      - name: Verify tagged Windows release signatures
-        shell: powershell
-        run: |
-          $version = python tools/extract_app_version.py
-          $names = "FormatFoundry_${version}.exe|FormatFoundry_Updater_${version}.exe|FormatFoundry_Setup_${version}.exe"
-          $portable = Join-Path $PWD "dist\FormatFoundry_Portable\FormatFoundry.exe"
-          .\tools\verify_windows_signatures.ps1 -Directory release_bins -ExpectedNames $names -AdditionalPaths $portable -ReceiptPath release_bins\WINDOWS_SIGNATURES_VERIFIED.json
-
-      - name: Enforce signed Windows performance budgets
-        shell: powershell
-        run: |
-          python tools/performance_budget.py `
-            --app-binary dist/FormatFoundry.exe `
-            --updater-binary dist/FormatFoundry_Updater.exe `
-            --installer installer_output/FormatFoundry_Setup.exe `
-            --report build/performance-budget-windows.json
-          python tools/performance_budget.py `
-            --app-binary dist/FormatFoundry_Portable/FormatFoundry.exe `
-            --report build/performance-budget-portable-windows.json
-
-      - name: Upload signed Windows release artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: windows-build-artifacts
-          if-no-files-found: error
-          path: |
-            dist/FormatFoundry.exe
-            dist/FormatFoundry_Updater.exe
-            installer_output/FormatFoundry_Setup.exe
-            release_bins/FormatFoundry_*.exe
-            release_bins/FormatFoundry_Updater_*.exe
-            release_bins/FormatFoundry_Setup_*.exe
-            release_bins/FormatFoundry_Portable_*_windows_x86_64.zip
-            release_bins/SHA256SUMS-windows
-            release_bins/WINDOWS_SIGNATURES_VERIFIED.json
-            build/pip-audit-windows.json
+            build/FormatFoundry-SBOM-windows.cdx.json
+            build/native-payload-windows.json
             build/performance-budget-*.json
             build/ui-layout-probe-windows/**
 
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
@@ -326,17 +163,28 @@ jobs:
           chmod +x build_linux.sh
           ./build_linux.sh
 
+      - name: Set up Node.js for TypeScript translation tests
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install pinned TypeScript test compiler
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          .venv/bin/python -c "from code_translation import find_typescript_compiler; assert find_typescript_compiler() is not None"
+
       - name: Run Linux test suite
         shell: bash
         run: |
           .venv/bin/python -m pip install -r requirements-dev.txt
-          .venv/bin/python -m py_compile modular_file_utility_suite.py suite_updater.py
+          .venv/bin/python -m py_compile modular_file_utility_suite.py suite_updater.py language_support.py code_translation.py
           .venv/bin/python -m unittest discover -s tests -v
-          .venv/bin/python -m ruff check app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
-          .venv/bin/python -m mypy app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
+          .venv/bin/python -m ruff check code_translation.py language_support.py modular_file_utility_suite.py suite_updater.py archive_support.py aria2_support.py file_operation_support.py checksum_support.py update_security.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons submission-media/tools tests tools/performance_budget.py tools/ui_layout_probe.py
+          .venv/bin/python -m mypy code_translation.py language_support.py file_operation_support.py checksum_support.py update_security.py aria2_support.py app_identity.py accessibility_support.py optional_dependencies.py settings_support.py job_ledger.py backend_support.py support_runtime.py addons tools/performance_budget.py
           .venv/bin/python -m mypy submission-media/tools --follow-imports=skip
           .venv/bin/python -m pip_audit -r requirements.txt --progress-spinner off --format json --output build/pip-audit-linux.json
-          .venv/bin/python -m cyclonedx_py requirements requirements.txt --output-reproducible --of JSON -o build/FormatFoundry-SBOM.cdx.json
+          .venv/bin/python -m cyclonedx_py environment --output-reproducible --of JSON -o build/FormatFoundry-SBOM.cdx.json
           FORMAT_FOUNDRY_REAL_BACKENDS=1 .venv/bin/python -m unittest tests.integration.test_real_backends -v
           xvfb-run -a --server-args="-screen 0 1920x1080x24" .venv/bin/python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-linux
           .venv/bin/python tools/performance_budget.py --report build/performance-budget-source-linux.json
@@ -359,6 +207,10 @@ jobs:
           chmod +x "$APPIMAGE_PACKAGE"
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --version
           APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE_PACKAGE" --smoke-test
+
+      - name: Verify Linux packages outside the source tree
+        shell: bash
+        run: bash tools/verify_linux_release.sh
 
       - name: Validate Debian package layout
         shell: bash
@@ -407,15 +259,16 @@ jobs:
             release_bins/SHA256SUMS
             build/FormatFoundry-SBOM.cdx.json
             build/pip-audit-linux.json
+            build/native-payload-linux.json
             build/performance-budget-*.json
             build/ui-layout-probe-linux/**
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
-      - build-windows-release
+      - build-windows
       - build-linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
@@ -453,18 +306,28 @@ jobs:
         env:
           RELEASE_TITLE: ${{ steps.prep.outputs.title }}
           RELEASE_VERSION: ${{ steps.prep.outputs.package_version }}
+          RELEASE_LICENSE_REVIEWED: ${{ vars.RELEASE_LICENSE_REVIEWED }}
+          UBUNTU_VALIDATED_COMMIT: ${{ vars.UBUNTU_VALIDATED_COMMIT }}
+          WINDOWS_STORE_VALIDATED_COMMIT: ${{ vars.WINDOWS_STORE_VALIDATED_COMMIT }}
+          WINDOWS_STORE_PUBLISHED_VERSION: ${{ vars.WINDOWS_STORE_PUBLISHED_VERSION }}
+          WINDOWS_STORE_PRODUCT_ID: ${{ vars.WINDOWS_STORE_PRODUCT_ID }}
         shell: bash
         run: |
           set -euo pipefail
+          test "${RELEASE_LICENSE_REVIEWED:-}" = "true" || { echo "Release blocked: exact bundled native source/license arrangements and consumer terms require review."; exit 1; }
+          test "${UBUNTU_VALIDATED_COMMIT:-}" = "$GITHUB_SHA" || { echo "Release blocked: a real Ubuntu install/run validation of this commit is required."; exit 1; }
           VERSION="$RELEASE_VERSION"
+          test "${WINDOWS_STORE_VALIDATED_COMMIT:-}" = "$GITHUB_SHA" || { echo "Release blocked: installed MSIX validation of this commit is required."; exit 1; }
+          test "${WINDOWS_STORE_PUBLISHED_VERSION:-}" = "$VERSION" || { echo "Release blocked: this Windows version must be available through Microsoft Store."; exit 1; }
+          jq -e '.published == true and .productId == env.WINDOWS_STORE_PRODUCT_ID and .packageVersion == env.RELEASE_VERSION' docs/windows-store.json >/dev/null
+          cp "release-payload/windows/release_bins/msix/FormatFoundry_${VERSION}_x64_store.validation.json" "FormatFoundry_${VERSION}_MSIX-validation.json"
           declare -a ASSETS=(
-            "release-payload/windows/release_bins/FormatFoundry_${VERSION}.exe"
-            "release-payload/windows/release_bins/FormatFoundry_Updater_${VERSION}.exe"
-            "release-payload/windows/release_bins/FormatFoundry_Setup_${VERSION}.exe"
-            "release-payload/windows/release_bins/FormatFoundry_Portable_${VERSION}_windows_x86_64.zip"
-            "release-payload/windows/release_bins/WINDOWS_SIGNATURES_VERIFIED.json"
+            "FormatFoundry_${VERSION}_MSIX-validation.json"
           )
           cp release-payload/linux/build/FormatFoundry-SBOM.cdx.json "FormatFoundry_${VERSION}_SBOM.cdx.json"
+          cp release-payload/windows/build/FormatFoundry-SBOM-windows.cdx.json "FormatFoundry_${VERSION}_windows_SBOM.cdx.json"
+          cp release-payload/windows/build/native-payload-windows.json "FormatFoundry_${VERSION}_native-windows.json"
+          cp release-payload/linux/build/native-payload-linux.json "FormatFoundry_${VERSION}_native-linux.json"
           cp release-payload/linux/build/pip-audit-linux.json "FormatFoundry_${VERSION}_pip-audit-linux.json"
           cp release-payload/linux/build/performance-budget-linux.json "FormatFoundry_${VERSION}_performance-linux.json"
           cp release-payload/windows/build/pip-audit-windows.json "FormatFoundry_${VERSION}_pip-audit-windows.json"
@@ -472,6 +335,9 @@ jobs:
           cp release-payload/windows/build/performance-budget-portable-windows.json "FormatFoundry_${VERSION}_performance-portable-windows.json"
           ASSETS+=(
             "FormatFoundry_${VERSION}_SBOM.cdx.json"
+            "FormatFoundry_${VERSION}_windows_SBOM.cdx.json"
+            "FormatFoundry_${VERSION}_native-windows.json"
+            "FormatFoundry_${VERSION}_native-linux.json"
             "FormatFoundry_${VERSION}_pip-audit-linux.json"
             "FormatFoundry_${VERSION}_pip-audit-windows.json"
             "FormatFoundry_${VERSION}_performance-linux.json"
@@ -494,6 +360,7 @@ jobs:
             --source-commit "$GITHUB_SHA" \
             --output PROVENANCE.json \
             "${PROVENANCE_ARGS[@]}"
+          printf '\nWindows installation and app updates are provided through Microsoft Store. Unsigned MSIX submission/test packages and EXE test builds are CI artifacts, not public installers. See docs/WINDOWS_MSIX.md for the distribution contract.\n' >> RELEASE_NOTES.md
           ASSETS+=("PROVENANCE.json")
           : > SHA256SUMS
           for asset in "${ASSETS[@]}"; do
@@ -510,13 +377,12 @@ jobs:
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
           subject-path: |
-            release-payload/windows/release_bins/FormatFoundry_*.exe
-            release-payload/windows/release_bins/FormatFoundry_Portable_*.zip
-            release-payload/windows/release_bins/WINDOWS_SIGNATURES_VERIFIED.json
+            FormatFoundry_*_MSIX-validation.json
             release-payload/linux/release_bins/format-foundry_*.deb
             release-payload/linux/release_bins/FormatFoundry_linux_*.AppImage
             release-payload/linux/release_bins/FormatFoundry_linux_*.tar.gz
             FormatFoundry_*_SBOM.cdx.json
+            FormatFoundry_*_native-*.json
             FormatFoundry_*_pip-audit-*.json
             FormatFoundry_*_performance-*.json
             PROVENANCE.json

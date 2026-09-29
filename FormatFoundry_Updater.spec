@@ -9,6 +9,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
+        ('build/third-party-notices', 'third-party-notices'),
         ('assets/universal_file_utility_suite.ico', 'assets'),
         ('assets/universal_file_utility_suite_preview.png', 'assets'),
         ('update_manifest.example.json', '.'),

@@ -1,0 +1,9 @@
+{
+  "name": "format-foundry-code-tooling",
+  "version": "0.7.1-beta",
+  "private": true,
+  "description": "Developer-only compiler for testing Format Foundry's TypeScript adapter",
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

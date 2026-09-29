@@ -1,16 +1,22 @@
-﻿# Format Foundry User Guide
+# Format Foundry User Guide
 
 This guide keeps the detailed install, build, workflow, backend, and archive notes that used to live in the repo front-page README.
 
-Version: **Beta 0.5** (`0.5.0-beta` package version)
+Version: **Beta 0.7.1** (`0.7.1-beta` package version)
+
+Windows Beta packaging uses Microsoft Store MSIX; the Store listing is pending.
+Use [Windows MSIX instructions](WINDOWS_MSIX.md) for the clean-clone build,
+installed development-package test, Partner Center identity and submission steps.
+The app's Store update/uninstall actions use Windows, while optional backend tools
+continue through the included updater. Current Alpha EXE downloads remain in the archive.
 
 Changelog:
 - `CHANGELOG.md` (full project history and release notes)
 - `archive/ARCHIVE_INDEX.md` (archive map and external archive-root policy)
 
 Canonical release line:
-- Beta 0.5 is the current Windows + Linux consumer-installation and backend-management milestone.
-- Every release before Beta 0.5 is classified as Alpha, regardless of its historical numeric identifier.
+- Beta 0.7.1 is the current unpublished Windows + Linux development milestone.
+- Every public release through 1.8.17 is classified as Alpha, regardless of its historical numeric identifier. The earlier local Beta 0.5 milestone remains documented as Beta.
 
 This is a modular desktop suite for practical file workflows:
 - Convert
@@ -27,6 +33,36 @@ This is a modular desktop suite for practical file workflows:
 - Subtitles
 - Torrents
 - Presets / Batch Jobs
+- Development / Code Languages (offline reference and TypeScript-to-JavaScript generation)
+
+### Code Language Library
+
+Open **Workspace -> Development -> Code Languages** to browse rules, compare languages, inspect files and generate JavaScript from supported TypeScript files.
+
+The bundled profiles cover Python, JavaScript, TypeScript, Java, C, C++, C#, Go, Rust, Swift, Kotlin, PHP, Ruby, R, Bash, PowerShell, SQL, Dart, Lua, HTML and CSS. HTML is labeled markup, CSS stylesheet, SQL query, and Bash/PowerShell shell; they are not all interchangeable programming languages.
+
+1. Search by name, extension or topic, such as `.rs`, `ownership` or `nullable`.
+2. Choose **Rules & Examples** for the selected language's baseline, typing, blocks, comments, variables, functions, control flow, collections, error handling, modules, runtime and porting pitfalls.
+3. Choose a second language and **Compare Rules** to review semantic differences and a porting checklist. The comparison itself does not generate code.
+4. Use **Inspect File...** for one UTF-8 source file up to 64 KiB. The app suggests languages from the extension, which is not proof of language. Shared extensions such as `.h` remain ambiguous. It does not scan a project or its dependencies.
+5. Select **TypeScript** as source and **JavaScript** as target, then choose **Generate JavaScript...**. The app can reuse a selected `.ts`, `.mts` or `.cts` source, or ask you to select one. Choose an output filename; if it exists, the app picks a new numbered name. The source stays intact.
+6. For a project with local imports, choose **Compile Project...**, select the folder containing `tsconfig.json`, then choose a `.zip` filename. The ZIP contains the generated JavaScript file tree and can be extracted into a separate folder. An existing ZIP is not overwritten. This action does not edit the source project.
+7. **Compiler Setup** opens the official TypeScript instructions. Both compilation actions need Node.js and an installed TypeScript compiler (`npm install -g typescript`). Browsing the library needs neither tool, an AI service, an API key nor credits.
+8. **Official Documentation** opens a browser through the app's external-link confirmation policy.
+
+The single-file action uses the official compiler with strict checks, isolated module handling, a 25-second time limit and a 64 KiB UTF-8 input limit. It does not resolve imports or use a project configuration. `.ts` becomes `.js`, `.mts` becomes `.mjs`, and `.cts` becomes `.cjs`. Compiler errors do not create an output file. The app previews emitted JavaScript but does not run it or verify behavior against the source.
+
+Project mode stages up to 256 regular UTF-8 files (512 KiB per file, 4 MiB total) from a folder no deeper than 16 levels. It uses TypeScript's resolved `tsconfig.json` to select files and honor ordinary compiler options, including local imports and include/exclude rules. It can take up to 60 seconds for each compiler pass. The combined generated text is limited to 8 MiB. The output is a staged, non-overwriting ZIP; source files and configured build folders are not modified. The generated code is not executed automatically.
+
+Project mode skips `node_modules`, `.git`, `.venv`, `venv`, `build`, `dist`, `coverage`, and `.next`. It does not bundle external npm packages, run a bundler, or support TypeScript project references. It rejects configs that request `outFile`, declaration directories, incremental build metadata, or other settings that could write outside the staged output. Missing package dependencies or unsupported options produce an inline error and no ZIP. Runtime dependencies and behavioral equivalence still need your own review and tests after extraction.
+
+Developers can install the pinned test compiler from the repo root with `npm ci --ignore-scripts --no-audit --no-fund`. This is a developer dependency, not a compiler bundled into consumer packages. Users of the installed app can install Node.js and TypeScript separately with the official instructions if they want this feature; the app explains when they are missing.
+
+Inspection never executes code, imports a selected file, renders HTML, connects to a database, modifies originals, or uploads file contents. Reports omit source text, filenames and full paths; they are held in the interface rather than automatically saved. Python `.py`/`.pyw` files receive AST parsing using the Python version bundled with the app. Parse success is not proof of correct scope, types, imports, behavior or safety. Inspection of other languages is reference-only; the separate TypeScript-to-JavaScript action runs the TypeScript compiler. Legacy encodings and binary files are rejected rather than silently reinterpreted.
+
+The library uses original, curated core summaries with named baselines, not downloaded specification text or a claim to support every latest feature. Official links may describe newer editions. SQL rules are deliberately a common subset; its documentation link is a PostgreSQL dialect reference, not a vendor-neutral SQL standard. Further cross-language pairs need separate, tested adapters or reviewed porting work, including library/API mapping and behavioral tests.
+
+Contributors can extend `assets/code_languages.json` using schema version 1. Keep each profile's ten rule topics, baseline, original example, porting pitfalls and official HTTPS documentation link; bump the library revision when its content changes. Run `python -m unittest discover -s tests -p "test_language*.py" -v` after editing. The loader validates the bounded asset at runtime, and an unavailable/corrupt library disables only this section rather than the entire app.
 
 Advanced media modules now include:
 - Images: resize to fit, export to a chosen format, and optional sharpen pass
@@ -37,6 +73,32 @@ Image conversion coverage includes:
 - Standard raster formats such as PNG, JPG, WEBP, BMP, GIF, TIFF, and ICO
 - Modern Apple/HEIF-family formats such as HEIC, HEIF, and AVIF when the bundled `pillow-heif` plugin is available
 - JPEG XL (`.jxl`) output plus common camera-raw inputs such as DNG, CR2/CR3, NEF, ARW, RAF, ORF, RW2, and PEF through the `ImageMagick` backend
+
+### Adobe Interchange Files
+
+Format Foundry converts supported interchange content, not editable Adobe projects. Adobe applications or a Creative Cloud subscription are not needed for the supported paths.
+
+| Input | Supported workflow | Limits |
+| --- | --- | --- |
+| PDF | Convert / PDF Documents: all pages to TIFF, or page 1 to PNG/JPG at 150 DPI | No PDF-to-editable-Word conversion, OCR, form execution, or password entry |
+| Illustrator AI saved with PDF compatibility | Same raster exports as PDF; also export the PDF document | Legacy PostScript AI is rejected; Illustrator editability is not retained |
+| Photoshop PSD | Saved composite to standard raster formats; PDF through PDF / Documents | Basic 8-bit composites use Pillow; ImageMagick enables broader PSD variants |
+| Photoshop PSB | Saved composite to standard raster formats or PDF | Requires ImageMagick; large files above the import limits are rejected |
+| TIFF / TIF | Raster conversion; all pages to PDF in PDF / Documents | Images pipeline processes the first frame; layered TIFF is flattened |
+| Camera RAW / DNG | Existing ImageMagick import to raster formats/PDF | Not Adobe Camera Raw's proprietary develop settings or Lightroom catalog support |
+
+For all-page PDF-to-TIFF export, select **Convert** or **PDF / Documents**, add the PDF/AI, and choose `tiff`.
+For multipage TIFF-to-PDF, use **PDF / Documents**, choose `pdf`, and add the TIFF.
+The **Images** pipeline uses only the first PDF page / first TIFF frame; `keep` exports input-only PDF/AI/PSD/PSB as PNG.
+PNG/JPEG exports are flattened pixels, not vectors. Layers, editable text objects, smart objects, spot colors and Adobe-specific color-management fidelity are not guaranteed.
+PDF raster output and image-to-PDF paths use RGB pixels; do not use them as a lossless round trip for 16/32-bit channels or print-production color separations.
+The native `.indd`, `.idml`, `.aep`, `.prproj`, `.fla`, `.xd`, and legacy `.eps`/`.ps` workflows are not supported. Export PDF, TIFF, PNG or standard media from the authoring app first.
+
+PDF/AI rendering uses the bundled `pypdfium2` package. Source builds must install the updated `requirements.txt`; missing-renderer errors do not affect other modules.
+This renderer does not initialize PDF forms or JavaScript actions. No ImageMagick PDF/PostScript security policy changes are needed.
+Import limits are 128 MiB for PDF/AI/PSD/PSB, 100 pages for PDF/TIFF, 16 million rendered pixels per page, and 64 million pixels per all-page batch.
+Conversions use staged files for PDF and image-to-PDF output, preserving an existing destination on failure or cancellation.
+These limits are defensive resource bounds, not a sandbox or a guarantee that arbitrary untrusted documents are safe.
 
 This file is the combined **README + How-To** guide.
 
@@ -144,6 +206,10 @@ Settings page includes:
 Convert queue behavior:
 - Queue is limited to one source extension at a time.
 - Target format list updates to valid outputs for the current source type.
+- Successful inputs leave the queue; failed or canceled inputs remain available for retry.
+- Existing output names are preserved by choosing a numbered name. Enable `Settings -> Ask about existing output files` to choose replacement explicitly instead.
+- Common processing tools keep their primary action and Stop button below the scrolling content.
+- ZIP/TAR extraction uses a new destination rather than overwriting an existing extracted folder.
 
 ## 5) Optional Backends
 
@@ -151,7 +217,7 @@ The app opens without separately installed backends. Missing tools only disable 
 - FFmpeg + FFprobe
 - Pandoc
 - LibreOffice
-- 7-Zip
+- 7-Zip (external app only; in-app extraction supports ZIP/TAR, not `.7z`)
 - ImageMagick
 - Aria2 (for torrent download / extraction)
 
@@ -254,9 +320,9 @@ Example:
 ```json
 {
   "latest_version": "v1.8.18",
-  "release_label": "Beta 0.5",
-  "package_version": "0.5.0-beta",
-  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18/FormatFoundry_Setup_0.5.0-beta.exe",
+  "release_label": "Beta 0.7.1",
+  "package_version": "0.7.1-beta",
+  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18/FormatFoundry_Setup_0.7.1-beta.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "notes": "Release notes here",
   "compatibility": {
@@ -300,13 +366,13 @@ Outputs:
 
 `release_bins` is the staging folder for the current release line. Public release assets are versioned so the downloaded filenames match the shipped release exactly.
 
-Official tagged Windows releases require a publicly trusted Authenticode provider. The recommended configuration is Azure Artifact Signing with GitHub OIDC, which keeps the signing key in Microsoft's managed service rather than exporting it into the repository or a general CI secret. A protected PFX remains supported for compatible code-signing certificates.
+Official Beta Windows releases use Microsoft Store MSIX. Microsoft signs the package after certification; the MSIX build does not require a purchased certificate or signing subscription. See [WINDOWS_MSIX.md](WINDOWS_MSIX.md) for build, installed-test, migration and publication instructions.
 
-See [WINDOWS_SIGNING.md](WINDOWS_SIGNING.md) for the PFX explanation, Azure identity and role setup, the secure GitHub environment helper, and the fallback procedure.
+See [WINDOWS_SIGNING.md](WINDOWS_SIGNING.md) only for a future independently signed EXE channel and the PFX explanation.
 
-The tagged build signs the app and updater before compiling the installer, signs the completed installer, verifies all three signatures, and only then allows the coordinated GitHub release job to run. Missing, partial, or invalid credentials fail the tagged build. Normal branch CI stays unsigned and does not receive signing credentials.
+Branch CI validates an isolated development MSIX and, when the real Partner Center identity is configured, a Store submission package. Tagged publication requires installed MSIX validation, Store availability, license review and Ubuntu validation. Unsigned submission/test packages are CI artifacts; public Windows installation goes through Microsoft Store.
 
-Beta 0.5 deliberately uses Git transport tag `v1.8.18`, which lets installed Alpha `1.8.17` updaters discover the lifecycle transition. Release titles, application UI, package metadata, and asset filenames continue to use `Beta 0.5` / `0.5.0-beta`.
+Beta 0.7.1 deliberately uses Git transport tag `v1.8.18`, which lets installed Alpha `1.8.17` updaters discover the lifecycle transition. Release titles, application UI, package metadata, and asset filenames continue to use `Beta 0.7.1` / `0.7.1-beta`.
 
 ### Linux build (preview)
 
@@ -490,16 +556,6 @@ Updater download folder default:
 - Use lawful personal workflows.
 - Test on a small sample before large batch jobs.
 - Keep backups for destructive operations.
-
-
-
-
-
-
-
-
-
-
 
 
 

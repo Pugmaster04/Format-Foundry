@@ -12,6 +12,18 @@ Website:
 - Downloads: [downloads.html](https://pugmaster04.github.io/Format-Foundry/downloads.html)
 - License status: [license.html](https://pugmaster04.github.io/Format-Foundry/license.html)
 
+## Customize the website
+
+Double-click **[Customize Website.cmd](Customize%20Website.cmd)** in the project folder to open the visual appearance editor. Choose a preset, adjust colors, fonts, spacing, and corners, and preview any page at desktop or phone size.
+
+- **Save to project** updates the local appearance files and creates a recovery copy in `build/website-theme-backups/`.
+- **Publish to website** asks you to confirm the preview, then publishes only the two appearance files to the website. The editor confirms when GitHub Pages finishes deploying. Publishing uses your existing GitHub CLI sign-in; if needed, install `gh` and run `gh auth login` once.
+- **Export settings** and **Import settings** let you keep and reuse designs. **Undo** and **Original design** help you compare changes.
+
+The launcher needs Python 3.11 or newer and uses the project's Python environment when available. On Linux, run `python3 -m tools.website_editor` from the project folder. Use **Close editor** when finished. The [online editor](https://pugmaster04.github.io/Format-Foundry/appearance.html) supports preview and export; direct saves and publishing are enabled only by the local project launcher.
+
+The saved appearance lives in `docs/theme.json` and its generated `docs/theme.css`. Keep these two files together when sharing a design. This editor changes the website's appearance; page text and download compatibility rules remain in their existing files.
+
 ## Install
 
 [![Windows installer](https://img.shields.io/badge/Windows-Download%20Installer-19786B?style=for-the-badge&logo=windows&logoColor=white)](https://pugmaster04.github.io/Format-Foundry/downloads.html#windows-download)

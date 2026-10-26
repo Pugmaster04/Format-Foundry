@@ -189,6 +189,9 @@ jobs:
           xvfb-run -a --server-args="-screen 0 1920x1080x24" .venv/bin/python tools/ui_layout_probe.py --output-dir build/ui-layout-probe-linux
           .venv/bin/python tools/performance_budget.py --report build/performance-budget-source-linux.json
           node --check docs/site.js
+          node --check docs/theme.js
+          node --check docs/appearance.js
+          node --test tests/website_theme.test.js
           node tests/site_contract.test.js
 
       - name: Smoke test Linux binaries

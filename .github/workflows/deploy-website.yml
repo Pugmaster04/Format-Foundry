@@ -7,6 +7,11 @@ on:
       - main
     paths:
       - docs/**
+      - tests/website_theme.test.js
+      - tests/site_contract.test.js
+      - tests/test_website_editor.py
+      - tools/website_editor.py
+      - tools/website_theme.py
       - .github/workflows/deploy-website.yml
 
 permissions:
@@ -37,7 +42,11 @@ jobs:
           test -f docs/site.css
           test -f docs/site.js
           node --check docs/site.js
+          node --check docs/theme.js
+          node --check docs/appearance.js
           node tests/site_contract.test.js
+          node --test tests/website_theme.test.js
+          python3 -m unittest discover -s tests -p test_website_editor.py -v
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6

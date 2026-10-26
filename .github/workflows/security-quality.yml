@@ -57,6 +57,15 @@ jobs:
           python -m mypy windows_package_support.py tools/build_msix_package.py tools/security_scan.py --follow-imports=skip
           python -m mypy windows_package_support.py tools/build_msix_package.py tools/security_scan.py --follow-imports=skip --platform win32
 
+      - name: Check website appearance editor
+        run: |
+          node --check docs/theme.js
+          node --check docs/appearance.js
+          node --test tests/website_theme.test.js
+          node tests/site_contract.test.js
+          python -m ruff check tools/website_editor.py tools/website_theme.py
+          python -m mypy tools/website_editor.py tools/website_theme.py
+
       - name: Enforce source performance budgets
         run: python tools/performance_budget.py --report build/performance-budget-security-quality.json
 

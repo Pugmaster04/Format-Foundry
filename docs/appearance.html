@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance-editor="true">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Website Appearance | Format Foundry</title>
+  <link rel="icon" href="site-assets/format-foundry.ico">
+  <link rel="stylesheet" href="appearance.css">
+  <script defer src="theme.js"></script>
+  <script defer src="appearance.js"></script>
+</head>
+<body>
+  <header class="editor-header">
+    <div class="editor-brand"><span class="brand-mark" aria-hidden="true">FF</span><div><h1>Website appearance</h1><p>Format Foundry <span class="mode-badge" id="mode-badge">Preview mode</span></p></div></div>
+    <div class="header-actions">
+      <span id="save-indicator">Loading settings…</span>
+      <button id="save-local" class="button secondary" disabled>Save to project</button>
+      <button id="publish" class="button primary" disabled>Publish to website</button>
+      <button id="close-editor" class="button quiet" hidden>Close editor</button>
+    </div>
+  </header>
+  <main class="editor-layout">
+    <aside class="controls-pane" aria-label="Appearance controls">
+      <div class="intro"><p class="overline">Make it yours</p><h2>Start with a look.</h2><p>Choose a preset, then fine-tune it. Your changes appear in the preview immediately.</p></div>
+      <div id="presets" class="presets" aria-label="Theme presets"></div>
+      <form id="controls" novalidate>
+        <fieldset><legend>Colors</legend><div id="color-controls" class="color-controls"></div><p id="contrast-info" class="contrast-note" aria-live="polite"></p></fieldset>
+        <fieldset><legend>Typography</legend>
+          <label class="setting">Body font<select id="bodyFont" data-setting="bodyFont"><option value="plex">IBM Plex Sans</option><option value="system">System sans serif</option></select></label>
+          <label class="setting">Heading font<select id="headingFont" data-setting="headingFont"><option value="grotesk">Space Grotesk</option><option value="system">System sans serif</option><option value="serif">Georgia serif</option></select></label>
+          <label class="range-setting" for="textSize"><span>Text size <output id="textSize-value"></output></span><input id="textSize" data-setting="textSize" type="range" min="14" max="20" step="1"></label>
+        </fieldset>
+        <fieldset><legend>Layout &amp; details</legend>
+          <label class="range-setting" for="contentWidth"><span>Content width <output id="contentWidth-value"></output></span><input id="contentWidth" data-setting="contentWidth" type="range" min="960" max="1600" step="20"></label>
+          <label class="range-setting" for="sectionSpacing"><span>Section spacing <output id="sectionSpacing-value"></output></span><input id="sectionSpacing" data-setting="sectionSpacing" type="range" min="24" max="104" step="4"></label>
+          <label class="range-setting" for="cornerRadius"><span>Corner roundness <output id="cornerRadius-value"></output></span><input id="cornerRadius" data-setting="cornerRadius" type="range" min="0" max="48" step="1"></label>
+          <label class="setting">Button shape<select id="buttonShape" data-setting="buttonShape"><option value="pill">Pill</option><option value="soft">Soft corners</option><option value="square">Almost square</option></select></label>
+          <label class="toggle"><span>Background grid</span><input id="showGrid" data-setting="showGrid" type="checkbox" role="switch"></label>
+          <label class="toggle"><span>Background glow</span><input id="backgroundGlow" data-setting="backgroundGlow" type="checkbox" role="switch"></label>
+        </fieldset>
+      </form>
+      <div class="utility-actions"><button id="undo" class="button secondary" disabled>Undo</button><button id="reset" class="button secondary">Original design</button><button id="export" class="button quiet">Export settings</button><button id="import" class="button quiet">Import settings</button><input type="file" id="import-file" accept="application/json,.json" hidden></div>
+      <p id="connection-help" class="connection-help">To save directly and publish, open <strong>Customize Website.cmd</strong> in your project folder. This page can also preview and export settings.</p>
+    </aside>
+    <section class="preview-pane" aria-label="Live website preview">
+      <div class="preview-toolbar"><label>Preview page<select id="preview-page"><option value="index.html">Overview</option><option value="downloads.html">Downloads</option><option value="license.html">License</option><option value="404.html">404 page</option></select></label><div class="device-switch" aria-label="Preview size"><button id="desktop" aria-pressed="true">Desktop</button><button id="mobile" aria-pressed="false">Phone</button></div><span id="preview-dimensions">1280 px</span></div>
+      <div class="preview-scroller" id="preview-host"><div class="preview-viewport" id="preview-viewport"><iframe id="preview" title="Live website appearance preview" sandbox="allow-scripts allow-same-origin"></iframe></div></div>
+      <div class="editor-status" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span id="status-message">Loading your website preview…</span><a id="publication-link" hidden target="_blank" rel="noreferrer">Open website</a></div>
+    </section>
+  </main>
+  <dialog id="publish-dialog" aria-labelledby="publish-title"><h2 id="publish-title">Publish this appearance?</h2><p>The appearance shown in your preview will be saved to your project and published to the live Format Foundry website.</p><p class="publish-domain">pugmaster04.github.io/Format-Foundry</p><p>Your previous local appearance is backed up automatically.</p><div class="dialog-actions"><button id="cancel-publish" class="button secondary">Cancel</button><button id="confirm-publish" class="button primary">Publish appearance</button></div></dialog>
+</body>
+</html>

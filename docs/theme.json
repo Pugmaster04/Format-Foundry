@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "background": "#07131a",
+  "panel": "#0b1b23",
+  "text": "#eff5f2",
+  "muted": "#a7b9b2",
+  "accent": "#1fa58e",
+  "highlight": "#f6efe6",
+  "border": "#add8e6",
+  "bodyFont": "plex",
+  "headingFont": "grotesk",
+  "textSize": 16,
+  "contentWidth": 1180,
+  "sectionSpacing": 48,
+  "cornerRadius": 32,
+  "buttonShape": "pill",
+  "showGrid": true,
+  "backgroundGlow": true
+}

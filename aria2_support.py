@@ -33,10 +33,12 @@ def call_rpc(
     request_id: str = "uch",
     secret: str = "",
     timeout: float = 1.5,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] | None = None,
 ) -> Any:
     request = build_rpc_request(port, method, params=params, request_id=request_id, secret=secret)
-    with opener(request, timeout=timeout) as response:
+    # Local control requests carry the RPC secret and must never inherit an HTTP proxy.
+    open_request = opener or urllib.request.build_opener(urllib.request.ProxyHandler({})).open
+    with open_request(request, timeout=timeout) as response:
         data = json.loads(response.read().decode("utf-8", errors="replace"))
     if not isinstance(data, dict) or data.get("jsonrpc") != "2.0" or data.get("id") != request_id:
         raise RuntimeError("Invalid aria2 RPC response.")

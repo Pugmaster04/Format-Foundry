@@ -10,6 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from PIL import Image
+
 from archive_support import create_archive, safe_extract_zip
 from aria2_support import CompletionMonitor, call_rpc
 from checksum_support import verify_checksums
@@ -26,6 +28,35 @@ class Response(io.BytesIO):
 
 
 class AuditRegressions(unittest.TestCase):
+    def test_integer_tiff_exports_to_png_without_changing_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "integer.tiff"
+            with Image.new("I", (3, 2)) as image:
+                image.putdata([-1, 0, 255, 256, 65535, 70000])
+                image.save(source)
+            original = source.read_bytes()
+            app = SimpleNamespace(
+                backends=SimpleNamespace(imagemagick=None), settings={},
+                resolve_output_path=lambda path, **_: path, check_current_task_cancelled=lambda: None,
+            )
+            task = TaskEngine(app)
+            for workflow in ("convert", "images"):
+                with self.subTest(workflow=workflow):
+                    output_dir = root / workflow
+                    if workflow == "convert":
+                        output = task.convert_file(source, output_dir, "png", {})
+                    else:
+                        output = task.process_image_file(source, output_dir, {"target_format": "png"})
+                    with Image.open(output) as image:
+                        self.assertEqual(image.format, "PNG")
+                        self.assertEqual(image.size, (3, 2))
+                        self.assertEqual(
+                            [image.getpixel((x, y)) for y in range(2) for x in range(3)],
+                            [0, 0, 255, 256, 65535, 65535],
+                        )
+                    self.assertEqual(source.read_bytes(), original)
+
     def test_newer_os_is_not_claimed_as_validated(self):
         report = evaluate_runtime_support({"os": {"platform_key": "linux", "architecture": "x86_64", "distribution_id": "ubuntu", "distribution_version": "26.04"}})
         self.assertEqual(report["status"], "best_effort")

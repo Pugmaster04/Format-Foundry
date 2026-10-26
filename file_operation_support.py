@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -88,3 +91,19 @@ def commit_output(staged: Path, target: Path, previous: tuple[int, int, int, int
         staged.unlink()
     else:
         os.replace(staged, target)
+
+
+@contextmanager
+def staged_output(target: Path, check_cancelled: Callable[[], None] = lambda: None) -> Iterator[Path]:
+    """Keep the previous file until a complete, uncancelled output is ready."""
+    previous = file_identity(target)
+    check_cancelled()
+    with tempfile.TemporaryDirectory(prefix=".foundry-output-", dir=target.parent) as directory:
+        staged = Path(directory) / target.name
+        yield staged
+        check_cancelled()
+        if file_identity(staged) is None:
+            raise RuntimeError("The operation did not create its expected output file.")
+        with staged.open("r+b") as handle:
+            os.fsync(handle.fileno())
+        commit_output(staged, target, previous)

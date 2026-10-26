@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def hash_file(path: Path, algorithm: str = "sha256", check_cancelled: Callable[[], None] = lambda: None) -> str:
-    digest = hashlib.new(algorithm)
+    digest = hashlib.new(algorithm, usedforsecurity=False)
     with path.open("rb") as source:
         while True:
             check_cancelled()
@@ -18,7 +18,7 @@ def hash_file(path: Path, algorithm: str = "sha256", check_cancelled: Callable[[
 
 
 def verify_checksums(report: Path, algorithm: str, check_cancelled: Callable[[], None] = lambda: None) -> tuple[int, list[str]]:
-    digest_length = hashlib.new(algorithm).digest_size * 2
+    digest_length = hashlib.new(algorithm, usedforsecurity=False).digest_size * 2
     entries = []
     if report.stat().st_size > 16 * 1024 * 1024:
         raise ValueError("Checksum report exceeds the 16 MiB limit.")

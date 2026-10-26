@@ -1,6 +1,9 @@
 (() => {
-  const fallbackPackageVersion = "1.8.17";
-  const fallbackReleaseTag = "v1.8.17";
+  const fallbackPackageVersion = "";
+  const fallbackReleaseTag = "v1.8.18";
+  const minimumCompatibleVersion = "7.1.5-beta";
+  const minimumCompatibleLabel = "Beta 7.1.5 Security Update";
+  const securityNoticeUrl = "downloads.html#security-update-required";
   const repoOwner = "Pugmaster04";
   const repoName = "Format-Foundry";
   const repoUrl = `https://github.com/${repoOwner}/${repoName}`;
@@ -26,18 +29,33 @@
 
   function formatDisplayVersion(packageVersion, releaseName) {
     const explicit = String(releaseName || "").match(
-      /\b(Release Candidate|RC|Beta|Alpha|Stable)\s+v?([0-9]+(?:\.[0-9]+)*)\b/i,
+      /\b(Release Candidate|RC|Beta|Alpha|Stable)\s+v?([0-9]+(?:\.[0-9]+)*)\b(?:\s+(Security Update))?/i,
     );
     if (explicit) {
       const phase = /^(?:release candidate|rc)$/i.test(explicit[1])
         ? "Release Candidate"
         : explicit[1][0].toUpperCase() + explicit[1].slice(1).toLowerCase();
-      return `${phase} ${explicit[2]}`;
+      return `${phase} ${explicit[2]}${explicit[3] ? " Security Update" : ""}`;
     }
     if (/beta/i.test(packageVersion)) {
       return `Beta ${packageVersion.replace(/^v/i, "").replace(/-?beta/i, "").replace(/\.0$/, "")}`;
     }
     return `Alpha ${packageVersion.replace(/^v/i, "")}`;
+  }
+
+  function isCompatibleRelease(packageVersion, releaseName = "") {
+    const match = String(packageVersion).match(/^v?(\d+)\.(\d+)\.(\d+)(?:-(beta|rc)(?:[.-]\d+)?)?$/i);
+    if (!match || /\b(alpha|incompatible|withdrawn)\b/i.test(releaseName)) return false;
+    const explicit = String(releaseName).match(/\b(Release Candidate|RC|Beta|Stable)\s+v?(\d+(?:\.\d+){1,2})\b/i);
+    if (!match[4] && !explicit) return false;
+    const numeric = match.slice(1, 4).map(Number);
+    if (!numeric.every(Number.isSafeInteger)) return false;
+    if (explicit && [...explicit[2].split(".").map(Number), 0, 0].slice(0, 3).join(".") !== numeric.join(".")) return false;
+    const minimum = minimumCompatibleVersion.split("-")[0].split(".").map(Number);
+    for (let index = 0; index < minimum.length; index += 1) {
+      if (numeric[index] !== minimum[index]) return numeric[index] > minimum[index];
+    }
+    return true;
   }
 
   function buildSiteConfig(tagName, assets = [], releaseName = "") {
@@ -50,12 +68,15 @@
         .filter(([name, url]) => name && url.startsWith(`${repoUrl}/releases/download/`)),
     );
     const taggedReleasePage = `${repoUrl}/releases/tag/${releaseTag}`;
-    const releasePage = assetUrlByName.size ? taggedReleasePage : `${repoUrl}/releases/latest`;
-    const resolveAssetUrl = (name) => assetUrlByName.get(name) || releasePage;
+    const compatible = assetUrlByName.size > 0 && isCompatibleRelease(packageVersion, releaseName);
+    const releasePage = compatible ? taggedReleasePage : securityNoticeUrl;
+    const resolveAssetUrl = (name) => compatible ? assetUrlByName.get(name) || releasePage : securityNoticeUrl;
 
     return {
       version: packageVersion,
-      displayVersion: assetUrlByName.size ? formatDisplayVersion(packageVersion, releaseName) : "View current release",
+      compatible,
+      displayVersion: compatible ? formatDisplayVersion(packageVersion, releaseName)
+        : packageVersion ? `${formatDisplayVersion(packageVersion, releaseName)} (Incompatible)` : `${minimumCompatibleLabel} required`,
       repo: repoUrl,
       releasePage,
       links: {
@@ -136,10 +157,12 @@
 
   function applyStoreConfig(site, metadata) {
     const productId = String(metadata?.productId || "");
-    if (metadata?.published !== true || !/^[A-Za-z0-9]{12}$/.test(productId)) return site;
+    if (metadata?.published !== true || !/^[A-Za-z0-9]{12}$/.test(productId)
+      || !isCompatibleRelease(metadata?.packageVersion || "", metadata?.releaseLabel || "")) return site;
     return {
       ...site,
       windowsStorePublished: true,
+      displayVersion: formatDisplayVersion(metadata.packageVersion, metadata.releaseLabel || ""),
       links: { ...site.links, windowsInstaller: `https://apps.microsoft.com/detail/${productId}` },
     };
   }
@@ -164,6 +187,11 @@
   }
 
   function applyLinks(site) {
+    document.querySelectorAll("[data-security-release-status]").forEach((node) => {
+      node.textContent = site.compatible || site.windowsStorePublished
+        ? `Compatible release: ${site.displayVersion}. Earlier versions remain incompatible.`
+        : `${minimumCompatibleLabel} is required. Older downloads are withdrawn; compatible downloads will activate after publication.`;
+    });
     if (site.windowsStorePublished) {
       document.querySelectorAll("[data-windows-store-status]").forEach((node) => {
         node.textContent = "Microsoft Store provides installation, app updates, and Windows uninstall support.";
@@ -183,6 +211,8 @@
         node.href = href;
         if (key === "windowsInstaller" && site.windowsStorePublished) {
           node.textContent = "Get from Microsoft Store";
+        } else if (key !== "repo" && !site.compatible) {
+          node.textContent = "Security update required";
         } else if (key !== "releasePage" && key !== "repo" && href === site.releasePage) {
           node.textContent = "View available release downloads";
         }

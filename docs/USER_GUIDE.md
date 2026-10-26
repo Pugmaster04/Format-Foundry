@@ -2,21 +2,21 @@
 
 This guide keeps the detailed install, build, workflow, backend, and archive notes that used to live in the repo front-page README.
 
-Version: **Beta 0.7.1** (`0.7.1-beta` package version)
+Version: **Beta 7.1.5 Security Update** (`7.1.5-beta` package version)
 
 Windows Beta packaging uses Microsoft Store MSIX; the Store listing is pending.
 Use [Windows MSIX instructions](WINDOWS_MSIX.md) for the clean-clone build,
 installed development-package test, Partner Center identity and submission steps.
 The app's Store update/uninstall actions use Windows, while optional backend tools
-continue through the included updater. Current Alpha EXE downloads remain in the archive.
+continue through the included updater. All Alpha releases and every version before Beta 7.1.5 Security Update are incompatible; their downloads are withdrawn.
 
 Changelog:
 - `CHANGELOG.md` (full project history and release notes)
 - `archive/ARCHIVE_INDEX.md` (archive map and external archive-root policy)
 
 Canonical release line:
-- Beta 0.7.1 is the current unpublished Windows + Linux development milestone.
-- Every public release through 1.8.17 is classified as Alpha, regardless of its historical numeric identifier. The earlier local Beta 0.5 milestone remains documented as Beta.
+- Beta 7.1.5 Security Update is the current unpublished Windows + Linux development milestone.
+- Every Alpha release and all earlier Beta milestones are incompatible. Only Beta 7.1.5 Security Update or a newer compatible release may be downloaded.
 
 This is a modular desktop suite for practical file workflows:
 - Convert
@@ -320,9 +320,9 @@ Example:
 ```json
 {
   "latest_version": "v1.8.18",
-  "release_label": "Beta 0.7.1",
-  "package_version": "0.7.1-beta",
-  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18/FormatFoundry_Setup_0.7.1-beta.exe",
+  "release_label": "Beta 7.1.5 Security Update",
+  "package_version": "7.1.5-beta",
+  "download_url": "https://github.com/Pugmaster04/Format-Foundry/releases/download/v1.8.18/FormatFoundry_Setup_7.1.5-beta.exe",
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "notes": "Release notes here",
   "compatibility": {
@@ -372,7 +372,7 @@ See [WINDOWS_SIGNING.md](WINDOWS_SIGNING.md) only for a future independently sig
 
 Branch CI validates an isolated development MSIX and, when the real Partner Center identity is configured, a Store submission package. Tagged publication requires installed MSIX validation, Store availability, license review and Ubuntu validation. Unsigned submission/test packages are CI artifacts; public Windows installation goes through Microsoft Store.
 
-Beta 0.7.1 deliberately uses Git transport tag `v1.8.18`, which lets installed Alpha `1.8.17` updaters discover the lifecycle transition. Release titles, application UI, package metadata, and asset filenames continue to use `Beta 0.7.1` / `0.7.1-beta`.
+Beta 7.1.5 Security Update deliberately uses Git transport tag `v1.8.18`, which lets installed Alpha `1.8.17` updaters discover the lifecycle transition. Release titles, application UI, package metadata, and asset filenames continue to use `Beta 7.1.5 Security Update` / `7.1.5-beta`.
 
 ### Linux build (preview)
 

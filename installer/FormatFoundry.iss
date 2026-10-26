@@ -1,6 +1,6 @@
 #define MyAppName "Format Foundry"
-#define MyAppVersion "0.7.1-beta"
-#define MyAppDisplayVersion "Beta 0.7.1"
+#define MyAppVersion "7.1.5-beta"
+#define MyAppDisplayVersion "Beta 7.1.5 Security Update"
 #define MyAppPublisher "Format Foundry"
 #define MyAppExeName "FormatFoundry.exe"
 #define MyUpdaterExeName "FormatFoundry_Updater.exe"
@@ -35,8 +35,8 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppDisplayVersion}
-VersionInfoVersion=0.7.1.0
-VersionInfoProductVersion=0.7.1.0
+VersionInfoVersion=7.1.5.0
+VersionInfoProductVersion=7.1.5.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

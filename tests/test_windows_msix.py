@@ -26,10 +26,14 @@ from tools.build_msix_package import (
     validate_msix,
 )
 from windows_package_support import (
+    STORE_UPDATES_URI,
     WINDOWS_UNINSTALL_URI,
     WindowsPackage,
+    current_package_identity,
     format_foundry_package,
     migrate_legacy_settings,
+    open_store_listing,
+    open_store_updates,
     packaged_settings_root,
 )
 
@@ -58,7 +62,7 @@ class MSIXBuildTests(unittest.TestCase):
         self.assertIn("Publisher & Tools", "".join(root.itertext()))
 
     @staticmethod
-    def write_test_package(path, *, corrupt=False, omit_block=False):
+    def write_test_package(path, *, corrupt=False, omit_block=False, manifest_dtd=False):
         identity = package_identity("candidate")
         pe = bytearray(128)
         pe[:2] = b"MZ"
@@ -78,6 +82,12 @@ class MSIXBuildTests(unittest.TestCase):
             output = io.BytesIO()
             Image.new("RGBA", (size, size)).save(output, format="PNG")
             files[f"Assets/{name}"] = output.getvalue()
+        if manifest_dtd:
+            manifest = files["AppxManifest.xml"].split(b"?>", 1)[1]
+            manifest = manifest.replace(identity["package_name"].encode(), b"&packageName;", 1)
+            files["AppxManifest.xml"] = (
+                b'<!DOCTYPE Package [<!ENTITY packageName "' + identity["package_name"].encode() + b'">]>' + manifest
+            )
         blockmap = ET.Element(f"{{{BLOCKMAP}}}BlockMap", {"HashMethod": "http://www.w3.org/2001/04/xmlenc#sha256"})
         for name, content in files.items():
             if omit_block and name == "App/multiblock+data.bin":
@@ -107,6 +117,24 @@ class MSIXBuildTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_msix(path, identity, "1.7.1.0", "candidate")
 
+    def test_package_validator_rejects_dtd_before_payload_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "test.msix"
+            identity = self.write_test_package(path, manifest_dtd=True)
+            with self.assertRaisesRegex(ValueError, "DTD/entity"):
+                validate_msix(path, identity, "1.7.1.0", "candidate")
+
+    def test_package_validator_bounds_metadata_and_rejects_case_aliases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "test.msix"
+            identity = self.write_test_package(path)
+            with patch("tools.build_msix_package.MAX_MSIX_XML_BYTES", 32), self.assertRaisesRegex(ValueError, "size limit"):
+                validate_msix(path, identity, "1.7.1.0", "candidate")
+            with zipfile.ZipFile(path, "a") as archive:
+                archive.writestr("app/formatfoundry.exe", b"case alias")
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                validate_msix(path, identity, "1.7.1.0", "candidate")
+
 
 class WindowsPackageRuntimeTests(unittest.TestCase):
     def setUp(self):
@@ -114,6 +142,58 @@ class WindowsPackageRuntimeTests(unittest.TestCase):
 
     def tearDown(self):
         format_foundry_package.cache_clear()
+
+    def test_package_identity_skips_windows_api_on_other_platforms(self):
+        for platform in ("linux", "darwin"):
+            with (
+                self.subTest(platform=platform),
+                patch("windows_package_support.sys.platform", platform),
+                patch("windows_package_support.ctypes.WinDLL", create=True) as load_library,
+            ):
+                self.assertIsNone(current_package_identity())
+                load_library.assert_not_called()
+
+    def test_package_identity_queries_windows_api(self):
+        with (
+            patch("windows_package_support.sys.platform", "win32"),
+            patch("windows_package_support.ctypes.WinDLL", create=True) as load_library,
+            patch("windows_package_support._read_package_string", side_effect=["family", "full", "install"]),
+        ):
+            self.assertEqual(current_package_identity(), WindowsPackage("family", "full", Path("install")))
+            load_library.assert_called_once_with("kernel32", use_last_error=True)
+
+    def test_store_actions_reject_other_platforms_without_launching(self):
+        for platform in ("linux", "darwin"):
+            for action in (open_store_updates, open_store_listing):
+                with (
+                    self.subTest(platform=platform, action=action.__name__),
+                    patch("windows_package_support.sys.platform", platform),
+                    patch("windows_package_support.os.startfile", create=True) as launch,
+                ):
+                    with self.assertRaisesRegex(OSError, "only available on Windows"):
+                        action()
+                    launch.assert_not_called()
+
+    def test_store_actions_use_windows_uris(self):
+        identity = WindowsPackage("family", "full", Path("install"), store_product_id="9TEST1234567")
+        with (
+            patch("windows_package_support.sys.platform", "win32"),
+            patch("windows_package_support.os.startfile", create=True) as launch,
+            patch("windows_package_support.format_foundry_package", return_value=identity),
+        ):
+            open_store_updates()
+            launch.assert_called_once_with(STORE_UPDATES_URI)
+            launch.reset_mock()
+            open_store_listing()
+            launch.assert_called_once_with(identity.store_uri)
+
+        with (
+            patch("windows_package_support.sys.platform", "win32"),
+            patch("windows_package_support.os.startfile", create=True) as launch,
+            patch("windows_package_support.format_foundry_package", return_value=None),
+        ):
+            open_store_listing()
+            launch.assert_called_once_with(STORE_UPDATES_URI)
 
     def test_source_run_under_store_python_is_not_treated_as_our_package(self):
         with patch("windows_package_support.sys.frozen", False, create=True), patch("windows_package_support.current_package_identity") as query:

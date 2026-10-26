@@ -1,4 +1,4 @@
-﻿# Format Foundry - Project Plan
+# Format Foundry - Project Plan
 
 ## Vision
 Build one desktop app with modular tools instead of a single tangled interface.  
@@ -68,7 +68,9 @@ Each module should be independently testable, replaceable, and extensible.
 - Optional read-only PC Health Snapshot workspace
 
 ## Current Release Target
-- Canonical coordinated release target: `Beta 0.7.1` (`0.7.1-beta` package version)
+All Alpha versions and releases older than Beta 7.1.5 Security Update are incompatible; old release downloads must remain disabled.
+
+- Canonical coordinated release target: `Beta 7.1.5 Security Update` (`7.1.5-beta` package version)
 - Migration transport tag: `v1.8.18` for installed Alpha `1.8.17` clients
 - App version, updater version, installer metadata, manifest version, and public install docs must stay aligned through release-contract tests.
 

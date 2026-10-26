@@ -17,11 +17,11 @@ a = Analysis(
         ('update_manifest.example.json', '.'),
         ('packaging/provenance/project-identity.json', 'provenance'),
     ],
-    hiddenimports=['yaml', 'imageio_ffmpeg', 'torrentool.api', 'pypdfium2', 'pypdfium2_raw', 'addons.idea_bank', 'addons.pc_health'] + (['windnd'] if sys.platform == 'win32' else []),
+    hiddenimports=['yaml', 'torrentool.api', 'pypdfium2', 'pypdfium2_raw', 'addons.idea_bank', 'addons.pc_health'] + (['windnd'] if sys.platform == 'win32' else []),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['imageio_ffmpeg'],
     noarchive=False,
     optimize=0,
 )

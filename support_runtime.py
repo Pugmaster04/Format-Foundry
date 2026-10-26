@@ -15,7 +15,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app_identity import GITHUB_RELEASE_API_URL, GITHUB_REPOSITORY, GITHUB_REPOSITORY_URL, MIGRATION_RELEASE_TAG
+from app_identity import (
+    GITHUB_RELEASE_API_URL,
+    GITHUB_REPOSITORY,
+    GITHUB_REPOSITORY_URL,
+    MIGRATION_RELEASE_TAG,
+    MINIMUM_COMPATIBLE_LABEL,
+    MINIMUM_COMPATIBLE_VERSION,
+)
 
 DEFAULT_GITHUB_REPO = GITHUB_REPOSITORY
 DEFAULT_GITHUB_REPO_URL = GITHUB_REPOSITORY_URL
@@ -202,12 +209,23 @@ def format_release_label(value: str) -> str:
     numeric_label = ".".join(str(number) for number in numbers) or normalized
     lowered = normalized.lower()
     if "beta" in lowered:
-        return f"Beta {numeric_label}"
+        suffix = " Security Update" if re.search(r"\bsecurity\s+update\b", lowered) else ""
+        return f"Beta {numeric_label}{suffix}"
     if "release candidate" in lowered or re.search(r"(?:^|[^a-z])rc(?:[^a-z]|$)", lowered):
         return f"Release Candidate {numeric_label}"
     if "stable" in lowered or "release" in lowered:
         return f"Stable {numeric_label}"
     return f"Alpha {numeric_label}"
+
+
+def is_compatible_release(value: str) -> bool:
+    """Accept only explicitly supported lifecycle versions at the security floor."""
+    if not value or len(value) > 256 or re.search(r"\b(?:alpha|incompatible)\b", value, re.IGNORECASE):
+        return False
+    phase, numbers = release_version_key(value)
+    minimum = version_tuple(MINIMUM_COMPATIBLE_VERSION)
+    width = max(len(numbers), len(minimum))
+    return phase >= 2 and bool(numbers) and numbers + (0,) * (width - len(numbers)) >= minimum + (0,) * (width - len(minimum))
 
 
 def release_identity_from_github(payload: dict[str, Any]) -> str:
@@ -593,6 +611,17 @@ def evaluate_runtime_support(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def evaluate_manifest_compatibility(snapshot: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    identities = [str(manifest.get(key) or "").strip() for key in ("package_version", "release_label")]
+    identities = [value for value in identities if value]
+    if not identities:
+        identity = str(manifest.get("latest_version") or manifest.get("version") or manifest.get("tag_name") or "").strip()
+        identities = [identity] if identity else []
+    has_download = bool(manifest.get("download_url") or manifest.get("url") or manifest.get("assets"))
+    if (identities and not all(is_compatible_release(value) for value in identities)) or (has_download and not identities):
+        return {
+            "status": "incompatible", "allowed": False,
+            "messages": [f"Incompatible release. All Alpha versions and versions before {MINIMUM_COMPATIBLE_LABEL} are blocked."],
+        }
     compatibility = manifest.get("compatibility")
     if not isinstance(compatibility, dict):
         return {

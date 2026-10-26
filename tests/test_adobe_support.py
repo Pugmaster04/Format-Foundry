@@ -120,7 +120,7 @@ class AdobeInputTests(unittest.TestCase):
 
     def test_freezer_includes_pdf_renderer(self):
         root = Path(__file__).resolve().parents[1]
-        self.assertIn("pypdfium2==5.13.0", (root/"requirements.txt").read_text())
+        self.assertRegex((root/"requirements.txt").read_text(), r"(?m)^pypdfium2==\d+\.\d+\.\d+$")
         for name in ("FormatFoundry.spec", "FormatFoundry_Portable.spec"):
             content = (root/name).read_text()
             self.assertIn("'pypdfium2'", content)

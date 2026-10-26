@@ -11,7 +11,26 @@ This changelog includes:
 
 No changes yet.
 
-## [0.7.1-beta] - 2026-09-29 (Beta 0.7.1)
+## [7.1.5-beta] - 2026-10-26 (Beta 7.1.5 Security Update)
+
+This security update is the minimum compatible release. All Alpha versions and every earlier version are incompatible, and their download access is withdrawn. The update is being prepared and is not yet published.
+
+### Security
+- Updated Pillow to 13.0.0, pillow-heif to 1.8.1, and pypdfium2 to 5.14.0; removed the old bundled FFmpeg fallback from future packages.
+- Prevented local aria2 RPC tokens from passing through system HTTP proxies and stopped TypeScript project exports from including sources outside the selected project.
+- Hardened MSIX XML and metadata parsing, archive filename validation, updater manifests, release shell inputs, and persistent source/dependency security checks.
+- Blocked older release downloads in the application, updater, and website; labeled all previous versions incompatible.
+
+### Fixed
+- Preserved existing outputs on conversion failure or cancellation and protected existing frame-extraction folders.
+- Fixed settings recovery and migration failures, invalid presets, per-job batch failures, bounded metadata probes, and Windows compiler-child cleanup.
+- Fixed Linux quality/type-check failures and kept audit evidence available after earlier quality-check failures.
+
+### Validation
+- Full audit before this version/policy change: 228 discovered unit tests on each platform (218 passed, 10 skipped), 8 real-backend tests per platform, 900 generated boundary cases, and 19 headless GUI cases.
+- Current release-label and download-policy checks are recorded separately under build/security-release-7.1.5.
+
+## [0.7.1-beta] - 2026-09-29 (Beta 0.7.1) [Incompatible]
 
 This is the next local Beta milestone. Its source, installer, and package versions are aligned; it is not yet a published release. The `v1.8.18` transport tag remains reserved for compatibility with installed Alpha updaters.
 
@@ -87,7 +106,7 @@ This is the next local Beta milestone. Its source, installer, and package versio
 - Devpost media now carries visible copyright attribution, PNG provenance metadata, and a SHA-256 media manifest without collecting user or device data.
 - Branch and tagged builds now generate vulnerability-audit reports, reproducible CycloneDX SBOMs, performance reports, and cross-platform layout evidence.
 
-## [0.5.0-beta] - 2026-07-17 (Beta 0.5)
+## [0.5.0-beta] - 2026-07-17 (Beta 0.5) [Incompatible]
 
 This was the first local Beta milestone; it was not published. The public releases listed below it are classified as Alpha.
 
@@ -116,7 +135,7 @@ This was the first local Beta milestone; it was not published. The public releas
 - Human-facing version text now uses `Beta 0.5`; package and release assets use `0.5.0-beta`, and Debian control metadata uses `0.5.0~beta`.
 - Beta 0.5 uses transport tag `v1.8.18` solely so Alpha `1.8.17` clients can discover the lifecycle migration; package filenames remain tied to `0.5.0-beta`.
 
-## [1.8.17] - 2026-07-05 (Alpha)
+## [1.8.17] - 2026-07-05 (Alpha) [Incompatible]
 
 ### Fixed
 - LibreOffice backend detection no longer reports a hard error when `soffice --version` exceeds the short probe timeout; the backend remains detected and usable with a diagnostic note instead.
@@ -126,7 +145,7 @@ This was the first local Beta milestone; it was not published. The public releas
 - Added a top-level proprietary `LICENSE` file so the public repository metadata no longer appears license-less on GitHub.
 - Updated the public repo description and license page copy to match the current proprietary distribution model.
 
-## [1.8.16] - 2026-04-17 (Alpha)
+## [1.8.16] - 2026-04-17 (Alpha) [Incompatible]
 
 ### Changed
 - Public Windows and Linux download assets now use explicit versioned filenames instead of `latest` aliases, so downloaded files match the actual release version.
@@ -135,14 +154,14 @@ This was the first local Beta milestone; it was not published. The public releas
 - Linux release staging now produces `FormatFoundry_linux_<version>_<arch>.tar.gz` and `FormatFoundry_linux_<version>_<arch>.AppImage` without publishing `latest` alias duplicates.
 - Coordinated release CI now validates and publishes only versioned public artifacts, and the updater now explicitly recognizes `Format Foundry`-named release assets during GitHub release checks.
 
-## [1.8.15] - 2026-04-17 (Alpha)
+## [1.8.15] - 2026-04-17 (Alpha) [Incompatible]
 
 ### Fixed
 - The main window header and quick-action shell now reflow when the window narrows, instead of clipping chips and top-level actions.
 - The settings dialog now uses scrollable notebook tabs, so shrinking the window no longer hides lower sections or action buttons.
 - Settings dialog button rows now wrap more consistently across Windows and Linux, which keeps session controls, maintenance actions, and footer buttons reachable at smaller widths.
 
-## [1.8.14] - 2026-04-17 (Alpha)
+## [1.8.14] - 2026-04-17 (Alpha) [Incompatible]
 
 ### Fixed
 - The updater now uses Linux-friendly fonts, display-aware scaling, and responsive window sizing instead of a fixed Windows-first dialog layout.
@@ -150,7 +169,7 @@ This was the first local Beta milestone; it was not published. The public releas
 - The redundant internal drag strip was removed from the updater, which makes the packaged Linux window behave more like a native desktop utility.
 - Release notes now have a proper scrollable pane, and the updater hero/source/release sections adapt more cleanly as the window narrows.
 
-## [1.8.13] - 2026-04-17 (Alpha)
+## [1.8.13] - 2026-04-17 (Alpha) [Incompatible]
 
 ### Fixed
 - Mouse-wheel scrolling now works through the app's shared viewport canvases on both Windows and Linux, including the main module shell and torrent per-file progress panel.
@@ -162,13 +181,13 @@ This was the first local Beta milestone; it was not published. The public releas
 - Linux startup animation now uses a safer splash-window mode instead of the Windows-only borderless/topmost path that could fail to appear on Linux desktops.
 - Linux packaging validation now runs AppStream in offline mode, so a transient upstream `502` from a referenced URL can no longer block Debian/AppImage release builds.
 
-## [1.8.9] - 2026-04-17 (Alpha)
+## [1.8.9] - 2026-04-17 (Alpha) [Incompatible]
 
 ### Fixed
 - The top overview and quick-action shell can now be collapsed and restored from a top-level `Overview` control, reducing wasted vertical space on both Windows and Linux.
 - The native menu bar is now organized as `File`, `Edit`, `Settings`, `Overview`, and `Help`, so the overview toggle sits next to the main app controls instead of being buried in the shell.
 
-## [1.8.8] - 2026-04-16 (Alpha)
+## [1.8.8] - 2026-04-16 (Alpha) [Incompatible]
 
 ### Added
 - Backends / Links now shows detected backend versions plus an environment/support summary with trusted update-host status.
@@ -183,19 +202,19 @@ This was the first local Beta milestone; it was not published. The public releas
 - The app and updater now support a trusted-host allowlist for update manifests and download URLs in addition to the existing HTTPS and SHA256 controls.
 - Headless `--smoke-test` output now includes environment/support details instead of only path existence checks.
 
-## [1.8.7] - 2026-04-16 (Alpha)
+## [1.8.7] - 2026-04-16 (Alpha) [Incompatible]
 
 ### Fixed
 - Linux first-run setup now keeps its action buttons visible by using a scrollable content area with a fixed footer, plus keyboard shortcuts to continue or close the wizard.
 - Linux AppStream metadata now validates cleanly and includes richer store details such as release notes, screenshot data, content rating, and license-status links.
 
-## [1.8.6] - 2026-04-16 (Alpha)
+## [1.8.6] - 2026-04-16 (Alpha) [Incompatible]
 
 ### Fixed
 - Linux packaged startup no longer risks attaching the first-run setup wizard to a hidden root window, which could leave the process running without a visible window on fresh installs.
 - Startup splash focus-loss minimization is now Windows-only, preventing Linux windowed launches from being hidden without a visible recovery path while the singleton lock remains held.
 
-## [1.8.5] - 2026-04-16 (Alpha)
+## [1.8.5] - 2026-04-16 (Alpha) [Incompatible]
 
 ### Added
 - New `Torrents` workspace tab for creating `.torrent` files in-app and downloading/extracting torrent contents through the optional `Aria2` backend.
@@ -236,13 +255,13 @@ This was the first local Beta milestone; it was not published. The public releas
 - `build_linux.sh` now self-bootstraps a repo-local virtual environment on Ubuntu/Debian, reuses an already active venv when present, and fails fast with the exact prerequisite install command instead of falling into PEP 668 system-pip errors.
 - Windows installer builds now add a Start-menu uninstall shortcut so installed copies have a standard OS-level removal entry in addition to the in-app uninstall action.
 
-## [0.7.3] - 2026-04-05 (Alpha)
+## [0.7.3] - 2026-04-05 (Alpha) [Incompatible]
 
 ### Fixed
 - `PDF / Documents` now routes image and camera-raw inputs to image-to-PDF conversion instead of sending them through office/document backends that can hang or stall on those files.
 - Windows command-line backend processes now run hidden across the app and updater instead of spawning visible console windows.
 
-## [0.7.2] - 2026-03-27 (Alpha)
+## [0.7.2] - 2026-03-27 (Alpha) [Incompatible]
 
 ### Added
 - Image conversion compatibility now also includes JPEG XL output plus common camera-raw inputs through the `ImageMagick` backend.
@@ -251,7 +270,7 @@ This was the first local Beta milestone; it was not published. The public releas
 - Convert and Images workflows now accept camera-raw inputs such as DNG, CR2/CR3, NEF, ARW, RAF, ORF, RW2, and PEF, routing them through ImageMagick when Pillow is not the right engine.
 - `0.7.2` is now the active app, updater, installer, README, and update-manifest version.
 
-## [0.7.1] - 2026-03-25 (Alpha)
+## [0.7.1] - 2026-03-25 (Alpha) [Incompatible]
 
 ### Added
 - Image conversion compatibility now includes HEIC, HEIF, and AVIF through the `pillow-heif` Pillow plugin.
@@ -262,7 +281,7 @@ This was the first local Beta milestone; it was not published. The public releas
 - JPEG export still flattens alpha, while alpha-capable outputs such as WEBP, HEIC/HEIF, and AVIF no longer take the same forced RGB path.
 - `0.7.1` is now the active app, updater, installer, README, and update-manifest version.
 
-## [0.7] - 2026-03-23 (Alpha)
+## [0.7] - 2026-03-23 (Alpha) [Incompatible]
 
 ### Added
 - Advanced `Images`, `Audio`, and `Video` workspace modules are finalized as first-class tabs instead of roadmap placeholders.
@@ -284,7 +303,7 @@ This was the first local Beta milestone; it was not published. The public releas
 ### Archive
 - `0.6.5`, `0.6.2`, `0.6`, `0.5`, and the imported legacy `0.4.x` line remain preserved under the external archive root.
 
-## [0.6.5] - 2026-03-22 (Alpha)
+## [0.6.5] - 2026-03-22 (Alpha) [Incompatible]
 
 ### Added
 - Accessibility settings for:
@@ -312,7 +331,7 @@ This was the first local Beta milestone; it was not published. The public releas
 - `0.6.2` history remains preserved under the external archive root in `history/v0.6.2`.
 - Imported legacy versions are now preserved under the external archive root in `legacy_universal_file_utility_suite`.
 
-## [0.6.2] - 2026-03-22 (Alpha)
+## [0.6.2] - 2026-03-22 (Alpha) [Incompatible]
 
 ### Added
 - Updater now supports GitHub repo update checks (repo URL input), with detection flow:
@@ -349,7 +368,7 @@ This was the first local Beta milestone; it was not published. The public releas
 ### Removed
 - Obsolete `UniversalFileConverterHub` prototype build config and source entrypoint from the canonical repo. Historical snapshots remain the fallback for that legacy branch.
 
-## [0.5.0] - 2026-03-21 (Alpha)
+## [0.5.0] - 2026-03-21 (Alpha) [Incompatible]
 
 ### Added
 - Modular desktop suite layout with dedicated workflow tabs:
@@ -449,7 +468,7 @@ This was the first local Beta milestone; it was not published. The public releas
 - `2026-03-21 18:29:14` - `startup-popup-wording-install-updates-open-normally`
 - `2026-03-21 18:45:39` - latest release build snapshot (includes splash-before-open-mode flow refinement)
 
-## [0.4.10] - 2026-03-20 (Alpha)
+## [0.4.10] - 2026-03-20 (Alpha) [Incompatible]
 
 ### Legacy Milestone (Pre-v0.5 Refactor)
 - Final `0.4.x` binary before major `0.5` suite hardening.
@@ -459,13 +478,13 @@ This was the first local Beta milestone; it was not published. The public releas
   - version bump to `0.5`
   - automation and snapshot policy introduction
 
-## [0.4.9] - 2026-03-20 (Alpha)
-## [0.4.8] - 2026-03-20 (Alpha)
-## [0.4.7] - 2026-03-20 (Alpha)
-## [0.4.6] - 2026-03-20 (Alpha)
-## [0.4.5] - 2026-03-20 (Alpha)
-## [0.4.4] - 2026-03-20 (Alpha)
-## [0.4.3] - 2026-03-20 (Alpha)
+## [0.4.9] - 2026-03-20 (Alpha) [Incompatible]
+## [0.4.8] - 2026-03-20 (Alpha) [Incompatible]
+## [0.4.7] - 2026-03-20 (Alpha) [Incompatible]
+## [0.4.6] - 2026-03-20 (Alpha) [Incompatible]
+## [0.4.5] - 2026-03-20 (Alpha) [Incompatible]
+## [0.4.4] - 2026-03-20 (Alpha) [Incompatible]
+## [0.4.3] - 2026-03-20 (Alpha) [Incompatible]
 
 ### Legacy Patch Line Notes
 - Rapid binary iteration cycle in Downloads workspace while core UI/packaging foundations were being established.

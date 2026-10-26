@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
+from defusedxml import ElementTree as SafeET
+from defusedxml.common import DefusedXmlException
 from PIL import Image
 
 from app_identity import DISPLAY_VERSION, PACKAGE_VERSION, PRODUCT_NAME, PRODUCT_SLUG
@@ -33,6 +35,9 @@ BLOCKMAP = "http://schemas.microsoft.com/appx/2010/blockmap"
 UNSIGNED_OID = "OID.2.25.311729368913984317654407730594956997722=1"
 IDENTITY_FIELDS = ("package_name", "publisher", "publisher_display_name", "store_product_id")
 LOGOS = {"StoreLogo.png": 50, "Square44x44Logo.png": 44, "Square150x150Logo.png": 150}
+MAX_MSIX_XML_BYTES = 16 * 1024 * 1024
+MAX_MSIX_JSON_BYTES = 64 * 1024
+MAX_MSIX_FILES = 50_000
 
 
 def payload_source_hash() -> str:
@@ -187,12 +192,35 @@ def _is_x64_executable(data: bytes) -> bool:
     return len(data) >= offset + 6 and data[offset:offset + 4] == b"PE\0\0" and struct.unpack_from("<H", data, offset + 4)[0] == 0x8664
 
 
+def _bounded_member_bytes(package: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    if package.getinfo(name).file_size > limit:
+        raise ValueError(f"MSIX metadata exceeds its size limit: {name}")
+    with package.open(name) as stream:
+        content = stream.read(limit + 1)
+    if len(content) > limit:
+        raise ValueError(f"MSIX metadata exceeds its size limit: {name}")
+    return content
+
+
+def _parse_package_xml(content: bytes) -> ET.Element:
+    try:
+        return SafeET.fromstring(content, forbid_dtd=True, forbid_entities=True, forbid_external=True)
+    except (DefusedXmlException, ET.ParseError) as exc:
+        raise ValueError("MSIX XML is invalid or contains a forbidden DTD/entity declaration.") from exc
+
+
 def validate_msix(path: Path, identity: dict[str, str], version: str, mode: str) -> dict[str, Any]:
     with zipfile.ZipFile(path) as package:
+        if len(package.infolist()) > MAX_MSIX_FILES:
+            raise ValueError("MSIX contains too many files.")
         archive_names = {unquote(name): name for name in package.namelist()}
         names = set(archive_names)
-        if len(names) != len(package.infolist()):
+        if len({name.casefold() for name in names}) != len(package.infolist()):
             raise ValueError("MSIX contains duplicate archive entries.")
+        if any(name.startswith("/") or "\\" in name or ":" in name or any(
+            part in {"", ".", ".."} for part in name.split("/")
+        ) for name in names):
+            raise ValueError("MSIX contains an unsafe archive path.")
         required = {
             "AppxManifest.xml", "AppxBlockMap.xml", "[Content_Types].xml", "App/msix-distribution.json",
             "App/msix-build-source.json",
@@ -204,7 +232,7 @@ def validate_msix(path: Path, identity: dict[str, str], version: str, mode: str)
             raise ValueError(f"MSIX is missing required files: {sorted(missing)}")
         if "AppxSignature.p7x" in names:
             raise ValueError("This build path produces unsigned Store submissions and test candidates only.")
-        manifest = ET.fromstring(package.read("AppxManifest.xml"))
+        manifest = _parse_package_xml(_bounded_member_bytes(package, archive_names["AppxManifest.xml"], MAX_MSIX_XML_BYTES))
         manifest_identity = manifest.find(f"{{{FOUNDATION}}}Identity")
         expected = {"Name": identity["package_name"], "Publisher": identity["publisher"], "Version": version, "ProcessorArchitecture": "x64"}
         if manifest_identity is None or manifest_identity.attrib != expected:
@@ -219,20 +247,26 @@ def validate_msix(path: Path, identity: dict[str, str], version: str, mode: str)
         tools_visuals = applications["BackendCenter"].find(f"{{{UAP}}}VisualElements")
         if tools_visuals is None or tools_visuals.get("AppListEntry") != "none":
             raise ValueError("Optional tools must not add a second Start-menu tile.")
-        metadata = json.loads(package.read("App/msix-distribution.json"))
+        metadata = json.loads(_bounded_member_bytes(package, archive_names["App/msix-distribution.json"], MAX_MSIX_JSON_BYTES))
+        if not isinstance(metadata, dict):
+            raise ValueError("MSIX distribution metadata must be a JSON object.")
         if metadata.get("channel") != ("microsoft-store" if mode == "store" else "development") or metadata.get("package_version") != PACKAGE_VERSION:
             raise ValueError("MSIX runtime distribution metadata is inconsistent.")
-        source_evidence = json.loads(package.read("App/msix-build-source.json"))
+        source_evidence = json.loads(_bounded_member_bytes(package, archive_names["App/msix-build-source.json"], MAX_MSIX_JSON_BYTES))
+        if not isinstance(source_evidence, dict):
+            raise ValueError("MSIX frozen-source evidence must be a JSON object.")
         if not re.fullmatch(r"[0-9a-f]{64}", str(source_evidence.get("payload_source_sha256", ""))):
             raise ValueError("MSIX is missing its frozen-source fingerprint.")
         for name in ("App/FormatFoundry.exe", "App/FormatFoundry_Updater.exe"):
-            if not _is_x64_executable(package.read(name)):
+            with package.open(archive_names[name]) as executable_stream:
+                header = executable_stream.read(1024 * 1024)
+            if not _is_x64_executable(header):
                 raise ValueError(f"MSIX contains an invalid or non-x64 executable: {name}")
         for filename, size in LOGOS.items():
             with package.open(f"Assets/{filename}") as handle, Image.open(handle) as logo:
                 if logo.size != (size, size):
                     raise ValueError(f"MSIX logo has incorrect dimensions: {filename}")
-        blockmap = ET.fromstring(package.read("AppxBlockMap.xml"))
+        blockmap = _parse_package_xml(_bounded_member_bytes(package, archive_names["AppxBlockMap.xml"], MAX_MSIX_XML_BYTES))
         if blockmap.get("HashMethod") != "http://www.w3.org/2001/04/xmlenc#sha256":
             raise ValueError("MSIX must use SHA-256 block hashes.")
         verified_files: set[str] = set()

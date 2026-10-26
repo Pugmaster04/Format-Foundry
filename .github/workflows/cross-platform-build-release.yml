@@ -405,11 +405,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ASSET_LIST: ${{ steps.assemble.outputs.asset_list }}
+          RELEASE_TAG: ${{ steps.prep.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.prep.outputs.title }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG_NAME="${{ steps.prep.outputs.tag }}"
-          TITLE="${{ steps.prep.outputs.title }}"
+          TAG_NAME="$RELEASE_TAG"
+          TITLE="$RELEASE_TITLE"
           mapfile -t ASSETS < "$RELEASE_ASSET_LIST"
           test "${#ASSETS[@]}" -gt 0
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then

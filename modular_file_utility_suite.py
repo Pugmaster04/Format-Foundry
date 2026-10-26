@@ -96,7 +96,7 @@ from code_translation import (
 from code_translation import (
     translate_project as translate_code_project,
 )
-from file_operation_support import apply_renames, available_path, commit_output, file_identity, plan_renames
+from file_operation_support import apply_renames, available_path, commit_output, file_identity, plan_renames, staged_output
 from format_foundry_provenance import runtime_provenance_json
 from job_ledger import ACTIVE_JOB_STATUSES, JobLedger
 from language_support import (
@@ -106,7 +106,7 @@ from language_support import (
     format_profile,
     inspect_source,
 )
-from optional_dependencies import imageio_ffmpeg_module, torrent_class, windnd_module, yaml_module
+from optional_dependencies import torrent_class, windnd_module, yaml_module
 from settings_support import load_settings_document, save_settings_document
 from support_runtime import (
     BACKEND_NAME_TO_KEY,
@@ -621,7 +621,7 @@ def is_version_newer(candidate: str, current: str) -> bool:
 
 def quick_file_fingerprint(path: Path, size: int, sample_bytes: int = 1024 * 64) -> str:
     """Build a fast pre-hash fingerprint from file edges to reduce full-file hashing work."""
-    digest = hashlib.sha1()
+    digest = hashlib.sha1(usedforsecurity=False)
     with path.open("rb") as handle:
         digest.update(handle.read(sample_bytes))
         if size > sample_bytes:
@@ -1066,14 +1066,6 @@ class BackendRegistry:
         if not force_refresh and cls._cached is not None:
             return cls._cached
 
-        imageio_ffmpeg_path = None
-        imageio_ffmpeg = imageio_ffmpeg_module()
-        if imageio_ffmpeg is not None:
-            try:
-                imageio_ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-            except Exception:
-                imageio_ffmpeg_path = None
-
         script_dir = Path(__file__).resolve().parent
         runtime_roots = [script_dir, script_dir.parent]
         resource_root = getattr(sys, "_MEIPASS", "")
@@ -1084,7 +1076,6 @@ class BackendRegistry:
             runtime_roots.extend([executable_dir, executable_dir.parent])
 
         paths = detect_backend_paths(
-            ffmpeg_fallback=imageio_ffmpeg_path,
             runtime_search_roots=runtime_roots,
         )
         registry = cls(
@@ -1119,6 +1110,19 @@ class TaskEngine:
         if resolved is None:
             raise OperationCanceledError("Operation canceled by user.")
         return resolved
+
+    def _save_image_output(self, image, target: Path, **options: Any) -> None:
+        check = getattr(self.app, "check_current_task_cancelled", lambda: None)
+        with staged_output(target, check) as staged:
+            image.save(staged, **options)
+
+    def _run_process_output(self, command: list[str], target: Path) -> Path:
+        check = getattr(self.app, "check_current_task_cancelled", lambda: None)
+        with staged_output(target, check) as staged:
+            self.app.run_process([*command[:-1], str(staged)])
+            if not staged.is_file() or staged.stat().st_size == 0:
+                raise RuntimeError("Backend did not generate the expected nonempty output.")
+        return target
 
     def _ffmpeg_thread_args(self) -> list[str]:
         raw = self.app.settings.get("ffmpeg_thread_count", 0)
@@ -1395,6 +1399,8 @@ class TaskEngine:
             elif target_format in {"heic", "heif", "avif"}:
                 save_kwargs["quality"] = quality
             elif target_format == "png":
+                if image.mode == "I":
+                    image = image.convert("I;16")
                 save_kwargs["optimize"] = True
             elif target_format == "ico":
                 if image.mode not in {"RGBA", "RGB"}:
@@ -1404,7 +1410,7 @@ class TaskEngine:
                     image = image.resize((icon_size, icon_size), resampling)
 
             format_name = self._image_save_format_name(target_format)
-            image.save(out_path, format=format_name, **save_kwargs)
+            self._save_image_output(image, out_path, format=format_name, **save_kwargs)
         finally:
             try:
                 image.close()
@@ -1445,8 +1451,7 @@ class TaskEngine:
             cmd += ["-ac", "2"]
         cmd += self._audio_codec_args(target_format, bitrate)
         cmd.append(str(out_path))
-        self.app.run_process(cmd)
-        return out_path
+        return self._run_process_output(cmd, out_path)
 
     def process_video_file(self, source: Path, output_dir: Path, mode_key: str, options: dict[str, Any]) -> Path:
         ffmpeg = self.app.backends.ffmpeg
@@ -1461,8 +1466,7 @@ class TaskEngine:
             out_path = output_dir / f"{source.stem}_remux.{container}"
             out_path = self._prepare_output_path(out_path, f"Remuxed video for {source.name}")
             cmd = [ffmpeg, *self._ffmpeg_thread_args(), "-y", "-i", str(source), "-c", "copy", str(out_path)]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         if mode_key == "trim":
             trim_container = str(options.get("trim_container", "keep")).strip().lower()
@@ -1485,8 +1489,7 @@ class TaskEngine:
             elif end_value:
                 cmd += ["-to", end_value]
             cmd += ["-c", "copy", str(out_path)]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         if mode_key == "stream_prep":
             preset_name = str(options.get("stream_preset_name", next(iter(VIDEO_STREAM_PRESETS)))).strip()
@@ -1534,8 +1537,7 @@ class TaskEngine:
                 "+faststart",
                 str(out_path),
             ]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         if mode_key == "thumbnail_sheet":
             interval = str(options.get("thumb_interval", "15")).strip() or "15"
@@ -1546,8 +1548,7 @@ class TaskEngine:
             out_path = self._prepare_output_path(out_path, f"Thumbnail sheet for {source.name}")
             vf = f"fps=1/{interval},scale={frame_width}:-1,tile={columns}x{rows}"
             cmd = [ffmpeg, *self._ffmpeg_thread_args(), "-y", "-i", str(source), "-vf", vf, "-frames:v", "1", str(out_path)]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         raise RuntimeError(f"Unknown advanced video mode: {mode_key}")
 
@@ -1581,9 +1582,11 @@ class TaskEngine:
                     save_kwargs["quality"] = quality
                     save_kwargs["optimize"] = True
                 if target_format == "png":
+                    if image.mode == "I":
+                        image = image.convert("I;16")
                     save_kwargs["optimize"] = True
                 format_name = self._image_save_format_name(target_format)
-                image.save(out_path, format=format_name, **save_kwargs)
+                self._save_image_output(image, out_path, format=format_name, **save_kwargs)
             finally:
                 try:
                     image.close()
@@ -1594,7 +1597,8 @@ class TaskEngine:
         if suffix in DATA_EXTS and target_format in DATA_FORMATS:
             out_path = self._prepare_output_path(out_path, f"Converted file for {source.name}")
             data = read_structured(source)
-            write_structured(data, out_path, target_format)
+            with staged_output(out_path, getattr(self.app, "check_current_task_cancelled", lambda: None)) as staged:
+                write_structured(data, staged, target_format)
             return out_path
 
         if target_format in MEDIA_FORMATS:
@@ -1613,13 +1617,13 @@ class TaskEngine:
                 crf = str(options.get("video_crf", 23))
                 cmd += ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-c:a", "aac", "-b:a", "160k"]
             cmd.append(str(out_path))
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         if suffix in TEXT_EXTS and target_format in {"txt", "md", "html"}:
             out_path = self._prepare_output_path(out_path, f"Converted file for {source.name}")
             content = source.read_text(encoding="utf-8", errors="replace")
-            out_path.write_text(content, encoding="utf-8")
+            with staged_output(out_path, getattr(self.app, "check_current_task_cancelled", lambda: None)) as staged:
+                staged.write_text(content, encoding="utf-8")
             return out_path
 
         raise RuntimeError(f"Unsupported conversion: {source.suffix} -> .{target_format}")
@@ -1647,7 +1651,7 @@ class TaskEngine:
                 if suffix == ".png":
                     png_level = max(0, min(9, 9 - int(quality / 12)))
                     save_kwargs["compress_level"] = png_level
-                image.save(out_path, format=self._image_save_format_name(normalized_suffix), **save_kwargs)
+                self._save_image_output(image, out_path, format=self._image_save_format_name(normalized_suffix), **save_kwargs)
             return out_path
 
         ffmpeg = self.app.backends.ffmpeg
@@ -1677,16 +1681,14 @@ class TaskEngine:
                 "160k",
                 str(out_path),
             ]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         if mode_key == "audio_bitrate":
             out_path = output_dir / f"{source.stem}_compressed.mp3"
             out_path = self._prepare_output_path(out_path, f"Compressed file for {source.name}")
             bitrate = str(options.get("audio_bitrate", "128k"))
             cmd = [ffmpeg, *self._ffmpeg_thread_args(), "-y", "-i", str(source), "-vn", "-b:a", bitrate, str(out_path)]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         raise RuntimeError(f"Unknown compression mode: {mode_key}")
 
@@ -1707,16 +1709,26 @@ class TaskEngine:
             out_path = output_dir / f"{source.stem}_audio.{audio_fmt}"
             out_path = self._prepare_output_path(out_path, f"Extracted file for {source.name}")
             cmd = [ffmpeg, *self._ffmpeg_thread_args(), "-y", "-i", str(source), "-vn", str(out_path)]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         if operation_key == "frames_from_video":
             fps = str(options.get("fps", "1"))
-            frame_dir = output_dir / f"{source.stem}_frames"
-            ensure_dir(frame_dir)
-            pattern = frame_dir / "frame_%05d.png"
-            cmd = [ffmpeg, *self._ffmpeg_thread_args(), "-y", "-i", str(source), "-vf", f"fps={fps}", str(pattern)]
-            self.app.run_process(cmd)
+            frame_dir = available_path(output_dir / f"{source.stem}_frames")
+            check = getattr(self.app, "check_current_task_cancelled", lambda: None)
+            with tempfile.TemporaryDirectory(prefix=".foundry-frames-", dir=output_dir) as directory:
+                staged = Path(directory) / "frames"
+                staged.mkdir()
+                pattern = staged / "frame_%05d.png"
+                cmd = [ffmpeg, *self._ffmpeg_thread_args(), "-y", "-i", str(source), "-vf", f"fps={fps}", str(pattern)]
+                check()
+                self.app.run_process(cmd)
+                check()
+                first_frame = next(staged.glob("frame_*.png"), None)
+                if first_frame is None or not first_frame.is_file() or first_frame.stat().st_size == 0:
+                    raise RuntimeError("FFmpeg did not generate any nonempty frames.")
+                if os.path.lexists(frame_dir):
+                    raise FileExistsError(f"Frame destination appeared while processing: {frame_dir}")
+                staged.rename(frame_dir)
             return frame_dir
 
         if operation_key == "subtitles_from_video":
@@ -1735,15 +1747,13 @@ class TaskEngine:
                 "srt",
                 str(out_path),
             ]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         if operation_key == "cover_art_from_audio":
             out_path = output_dir / f"{source.stem}_cover.jpg"
             out_path = self._prepare_output_path(out_path, f"Extracted file for {source.name}")
             cmd = [ffmpeg, *self._ffmpeg_thread_args(), "-y", "-i", str(source), "-an", "-vcodec", "copy", str(out_path)]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         raise RuntimeError(f"Unknown extract operation: {operation_key}")
 
@@ -1772,6 +1782,7 @@ class TaskEngine:
                     capture_output=True,
                     text=True,
                     check=True,
+                    timeout=15,
                     **hidden_console_process_kwargs(),
                 )
                 info["ffprobe"] = json.loads(result.stdout)
@@ -1817,6 +1828,7 @@ class TaskEngine:
                         capture_output=True,
                         text=True,
                         check=True,
+                        timeout=15,
                         **hidden_console_process_kwargs(),
                     )
                     fmt, width, height = result.stdout.strip().split("\t")
@@ -1851,8 +1863,7 @@ class TaskEngine:
                 "copy",
                 str(out_path),
             ]
-            self.app.run_process(cmd)
-            return out_path
+            return self._run_process_output(cmd, out_path)
 
         sidecar = output_dir / f"{source.name}.metadata.json"
         payload = {"source": str(source), "metadata": {key: value}}
@@ -1867,7 +1878,8 @@ class TaskEngine:
                         payload = current
             except Exception:
                 pass
-        sidecar.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        with staged_output(sidecar, getattr(self.app, "check_current_task_cancelled", lambda: None)) as staged:
+            staged.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         return sidecar
 
     def convert_document(self, source: Path, output_dir: Path, target_format: str) -> Path:
@@ -1917,7 +1929,8 @@ class TaskEngine:
 
         if source.suffix.lower() in TEXT_EXTS and target_format in {"txt", "md", "html"}:
             content = source.read_text(encoding="utf-8", errors="replace")
-            final_path.write_text(content, encoding="utf-8")
+            with staged_output(final_path, getattr(self.app, "check_current_task_cancelled", lambda: None)) as staged:
+                staged.write_text(content, encoding="utf-8")
             return final_path
 
         raise RuntimeError(
@@ -2218,7 +2231,7 @@ class SuiteApp:
 
         ttk.Label(
             content_body,
-            text='Manifest example: {"latest_version":"0.7.1-beta","download_url":"https://example.com/FormatFoundry_Setup_0.7.1-beta.exe","notes":"Release notes"}',
+            text=f'Manifest example: {{"latest_version":"{PACKAGE_VERSION}","download_url":"https://example.com/FormatFoundry_Setup_{PACKAGE_VERSION}.exe","notes":"Release notes"}}',
             style="Helper.TLabel",
             wraplength=590,
             justify="left",
@@ -5229,7 +5242,7 @@ class SuiteApp:
         ttk.Entry(general_tab, textvariable=update_url_var).pack(fill="x", pady=(4, 0))
         update_example_label = ttk.Label(
             general_tab,
-            text='Example JSON: {"latest_version":"0.7.1-beta","download_url":"https://example.com/FormatFoundry_Setup_0.7.1-beta.exe","notes":"Release notes"}',
+            text=f'Example JSON: {{"latest_version":"{PACKAGE_VERSION}","download_url":"https://example.com/FormatFoundry_Setup_{PACKAGE_VERSION}.exe","notes":"Release notes"}}',
             style="Helper.TLabel",
             justify="left",
         )
@@ -6205,6 +6218,10 @@ class SuiteApp:
                 if compatibility_notes:
                     notes = "\n".join(filter(None, [notes, "Compatibility", *compatibility_notes]))
 
+                if compatibility.get("status") == "incompatible":
+                    if interactive:
+                        self.info(f"Incompatible release: {format_release_label(latest)}. Downloads are disabled.\n\n{notes}")
+                    return
                 if latest and is_version_newer(latest, APP_VERSION):
                     if bool(compatibility.get("allowed", True)):
                         self.call_ui(lambda: self._show_update_available(latest, download_url or release_url, notes, blocked_download_reason))
@@ -10633,7 +10650,7 @@ class StorageAnalyzerTab(ModuleTab):
 
     def _entry_fill_color(self, entry: StorageViewEntry) -> str:
         key = str(entry.path) if entry.path else entry.label
-        digest = hashlib.md5(key.encode("utf-8", errors="ignore")).digest()
+        digest = hashlib.md5(key.encode("utf-8", errors="ignore"), usedforsecurity=False).digest()
         if entry.kind == "folder":
             base_hue = 0.58
         elif entry.kind == "file":
@@ -12487,16 +12504,33 @@ class PresetsBatchTab(ModuleTab):
         ttk.Label(outer, textvariable=self.status_var).pack(anchor="w", pady=(6, 0))
 
     def _load_presets(self) -> None:
+        self._presets_read_only = False
         if self.preset_file.exists():
             try:
                 data = json.loads(self.preset_file.read_text(encoding="utf-8"))
-                if isinstance(data, dict):
-                    self.presets = data
-            except Exception:
-                self.presets = {}
+                if not isinstance(data, dict):
+                    raise ValueError("Preset data must be a JSON object.")
+                self.presets = {
+                    name: preset for name, preset in data.items()
+                    if isinstance(preset, dict) and preset.get("module") in self.SUPPORTED_MODULES
+                    and isinstance(preset.get("config", {}), dict)
+                }
+                if len(self.presets) != len(data):
+                    raise ValueError("Some saved presets have an invalid module or configuration.")
+            except (OSError, UnicodeError, ValueError, TypeError):
+                self._presets_read_only = True
+                self.status_var.set("Some presets could not be loaded. The original preset file is preserved read-only.")
 
-    def _save_presets(self) -> None:
-        atomic_write_json(self.preset_file, self.presets)
+    def _save_presets(self) -> bool:
+        if getattr(self, "_presets_read_only", False):
+            messagebox.showerror(APP_TITLE, f"The preset file contains invalid data and was preserved. Restore or correct it before saving:\n{self.preset_file}")
+            return False
+        try:
+            atomic_write_json(self.preset_file, self.presets)
+        except (OSError, ValueError, TypeError) as exc:
+            messagebox.showerror(APP_TITLE, f"Presets could not be saved. The existing file was preserved:\n{exc}")
+            return False
+        return True
 
     def _refresh_widgets(self) -> None:
         self.preset_list.delete(0, END)
@@ -12564,8 +12598,14 @@ class PresetsBatchTab(ModuleTab):
             messagebox.showerror(APP_TITLE, f"{module_name} does not support presets in this starter.")
             return
         payload = module_tab.export_preset()
+        previous = self.presets.get(preset_name)
         self.presets[preset_name] = {"module": module_name, "config": payload}
-        self._save_presets()
+        if not self._save_presets():
+            if previous is None:
+                self.presets.pop(preset_name, None)
+            else:
+                self.presets[preset_name] = previous
+            return
         self._refresh_widgets()
         self.status_var.set(f"Saved preset '{preset_name}' for {module_name}.")
 
@@ -12591,8 +12631,11 @@ class PresetsBatchTab(ModuleTab):
             return
         if not messagebox.askyesno(APP_TITLE, f"Delete preset '{preset_name}'?\n\nQueued jobs keep their saved settings snapshot."):
             return
-        self.presets.pop(preset_name, None)
-        self._save_presets()
+        previous = self.presets.pop(preset_name, None)
+        if not self._save_presets():
+            if previous is not None:
+                self.presets[preset_name] = previous
+            return
         self._refresh_widgets()
         self.status_var.set(f"Deleted preset '{preset_name}'.")
 
@@ -12709,10 +12752,10 @@ class PresetsBatchTab(ModuleTab):
                 module_name = str(job.get("module"))
                 source = Path(str(job.get("input")))
                 output_dir = Path(str(job.get("output")))
-                ensure_dir(output_dir)
-                config = dict(job.get("config", {}))
                 self._set_job_status(job, "running")
                 try:
+                    ensure_dir(output_dir)
+                    config = dict(job.get("config", {}))
                     if module_name == "Convert":
                         target = str(config.get("target_format", "png"))
                         self.app.engine.convert_file(source, output_dir, target, config)

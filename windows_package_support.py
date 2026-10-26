@@ -47,18 +47,19 @@ def _read_package_string(api: Any) -> str | None:
 
 
 def current_package_identity() -> WindowsPackage | None:
-    if os.name != "nt":
+    if sys.platform == "win32":
+        try:
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            family = _read_package_string(kernel.GetCurrentPackageFamilyName)
+            full_name = _read_package_string(kernel.GetCurrentPackageFullName)
+            install_path = _read_package_string(kernel.GetCurrentPackagePath)
+        except (AttributeError, OSError):
+            return None
+        if not family or not full_name or not install_path:
+            return None
+        return WindowsPackage(family, full_name, Path(install_path))
+    else:
         return None
-    try:
-        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-        family = _read_package_string(kernel.GetCurrentPackageFamilyName)
-        full_name = _read_package_string(kernel.GetCurrentPackageFullName)
-        install_path = _read_package_string(kernel.GetCurrentPackagePath)
-    except (AttributeError, OSError):
-        return None
-    if not family or not full_name or not install_path:
-        return None
-    return WindowsPackage(family, full_name, Path(install_path))
 
 
 @lru_cache(maxsize=1)
@@ -139,12 +140,18 @@ def migrate_legacy_settings(root: Path, settings_filename: str) -> None:
 
 
 def open_store_updates() -> None:
-    os.startfile(STORE_UPDATES_URI)
+    if sys.platform == "win32":
+        os.startfile(STORE_UPDATES_URI)
+    else:
+        raise OSError("Microsoft Store is only available on Windows.")
 
 
 def open_store_listing() -> None:
-    package = format_foundry_package()
-    os.startfile(package.store_uri if package else STORE_UPDATES_URI)
+    if sys.platform == "win32":
+        package = format_foundry_package()
+        os.startfile(package.store_uri if package else STORE_UPDATES_URI)
+    else:
+        raise OSError("Microsoft Store is only available on Windows.")
 
 
 def package_runtime_report() -> dict[str, str]:

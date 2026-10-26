@@ -14,9 +14,9 @@ common_data = [
 ]
 app = Analysis(
     ['modular_file_utility_suite.py'], pathex=[], binaries=[], datas=common_data,
-    hiddenimports=['yaml', 'imageio_ffmpeg', 'torrentool.api', 'pypdfium2', 'pypdfium2_raw',
+    hiddenimports=['yaml', 'torrentool.api', 'pypdfium2', 'pypdfium2_raw',
                    'addons.idea_bank', 'addons.pc_health'] + (['windnd'] if sys.platform == 'win32' else []),
-    hookspath=[], hooksconfig={}, runtime_hooks=[], excludes=[], noarchive=False, optimize=0,
+    hookspath=[], hooksconfig={}, runtime_hooks=[], excludes=['imageio_ffmpeg'], noarchive=False, optimize=0,
 )
 updater = Analysis(
     ['suite_updater.py'], pathex=[], binaries=[], datas=common_data, hiddenimports=[],

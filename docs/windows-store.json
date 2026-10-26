@@ -1,5 +1,6 @@
 {
   "published": false,
   "productId": "",
-  "packageVersion": "0.7.1-beta"
+  "packageVersion": "7.1.5-beta",
+  "releaseLabel": "Beta 7.1.5 Security Update"
 }

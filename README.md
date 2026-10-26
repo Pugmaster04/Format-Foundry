@@ -2,8 +2,8 @@
 
 Format Foundry is a cross-platform desktop toolkit for conversion, compression, extraction, media prep, downloads, archives, storage analysis, and repeatable batch workflows.
 
-Development version: **Beta 0.7.1** (package version `0.7.1-beta`), not yet published.
-The last verified public release is **Alpha 1.8.17** (September 26, 2026).
+Development version: **Beta 7.1.5 Security Update** (package version `7.1.5-beta`), not yet published.
+**All Alpha releases and every version before Beta 7.1.5 Security Update are incompatible. Older release downloads are withdrawn.**
 The current release page, not this development branch, is authoritative for available downloads.
 
 Website:
@@ -16,9 +16,9 @@ Website:
 [![Windows installer](https://img.shields.io/badge/Windows-Download%20Installer-19786B?style=for-the-badge&logo=windows&logoColor=white)](https://pugmaster04.github.io/Format-Foundry/downloads.html#windows-download)
 [![Ubuntu or Debian package](https://img.shields.io/badge/Ubuntu%20%2F%20Debian-Download%20.deb-19786B?style=for-the-badge&logo=ubuntu&logoColor=white)](https://pugmaster04.github.io/Format-Foundry/downloads.html#linux-download)
 
-The download page resolves the exact filenames from GitHub's current release assets and falls back to the release page instead of constructing a 404 URL. The [current release page](https://github.com/Pugmaster04/Format-Foundry/releases/latest) remains the complete artifact list.
+The download page enables only compatible security-update assets from GitHub. It blocks older releases and stays unavailable when a compatible release cannot be verified. The [current release page](https://github.com/Pugmaster04/Format-Foundry/releases/latest) remains the complete artifact list.
 
-New coordinated releases will include `SHA256SUMS`; Alpha 1.8.17 does not include that file.
+Compatible coordinated releases will include `SHA256SUMS`. Do not install older builds from saved copies or external mirrors.
 For releases that supply it, download it beside the installer and verify matching files with:
 
 ```bash
@@ -36,26 +36,25 @@ gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
 
 **Beta Windows distribution is moving to Microsoft Store MSIX.** Store certification
 provides the package signature, installation, app updates and Windows uninstall support.
-The Store product has not been reserved or published yet. The button currently lists
-the available Alpha downloads; it will switch to the approved Store listing when ready.
+The Store product has not been reserved or published yet. Older download buttons are disabled. The Store button will activate only for an approved compatible release.
 See [Windows MSIX build and submission](docs/WINDOWS_MSIX.md) for the developer path.
 
-For the currently published Alpha EXE:
+After a compatible security-update installer is published:
 
-1. Download the versioned `FormatFoundry_Setup_*.exe` from the current release's asset list (currently `FormatFoundry_Setup_1.8.17.exe`).
+1. Download the versioned `FormatFoundry_Setup_*.exe` from the current release's asset list.
 2. Run the installer.
 3. Let the updater review optional feature tools, or clear that setup option to launch Format Foundry immediately.
 
 The installer is self-contained. A normal Windows 10/11 computer does not need Codex, Python, the source repository, or any backend before installation. Setup scans the registered product identity and the standard install folder for older Format Foundry and legacy-name builds, then upgrades those files in place while preserving settings and output folders.
 
 Beta Windows developer artifacts (CI/local builds, not public consumer downloads):
-- `FormatFoundry_0.7.1-beta_x64_store.msix` is the unsigned Partner Center submission with the reserved Store identity.
-- `FormatFoundry_0.7.1-beta_x64_development.msix` is an isolated Windows 11 test package.
-- `FormatFoundry_Setup_0.7.1-beta.exe`, `FormatFoundry_0.7.1-beta.exe`, and
-  `FormatFoundry_Portable_0.7.1-beta_windows_x86_64.zip` remain legacy installer/portable test builds.
+- `FormatFoundry_7.1.5-beta_x64_store.msix` is the unsigned Partner Center submission with the reserved Store identity.
+- `FormatFoundry_7.1.5-beta_x64_development.msix` is an isolated Windows 11 test package.
+- `FormatFoundry_Setup_7.1.5-beta.exe`, `FormatFoundry_7.1.5-beta.exe`, and
+  `FormatFoundry_Portable_7.1.5-beta_windows_x86_64.zip` remain legacy installer/portable test builds.
 
-Store builds keep **Beta 0.7.1** as the product label; the numeric MSIX version is
-`1.7.1.0`. This mapping satisfies the Store's positive-major/four-part version rules.
+Store builds keep **Beta 7.1.5 Security Update** as the product label; the numeric MSIX version is
+`8.1.5.0`. This mapping satisfies the Store's positive-major/four-part version rules.
 
 Uninstall:
 - `File -> Uninstall...`
@@ -73,7 +72,7 @@ Use the packaged app. Normal Linux installs do not require the source folder aft
 Recommended `.deb` install:
 
 ```bash
-sudo apt install ./format-foundry_1.8.17_amd64.deb
+sudo apt install ./format-foundry_7.1.5-beta_amd64.deb
 ```
 
 Launch:
@@ -89,12 +88,12 @@ Packaging note:
 Portable AppImage fallback:
 
 ```bash
-chmod +x FormatFoundry_linux_1.8.17_x86_64.AppImage
-./FormatFoundry_linux_1.8.17_x86_64.AppImage
+chmod +x FormatFoundry_linux_7.1.5-beta_x86_64.AppImage
+./FormatFoundry_linux_7.1.5-beta_x86_64.AppImage
 ```
 
 Use the exact version downloaded if it differs from these examples. Planned Beta files are
-`format-foundry_0.7.1-beta_amd64.deb` and `FormatFoundry_linux_0.7.1-beta_x86_64.AppImage`.
+`format-foundry_7.1.5-beta_amd64.deb` and `FormatFoundry_linux_7.1.5-beta_x86_64.AppImage`.
 Beta Debian metadata uses epoch `1:` so upgrading from Alpha is ordered correctly by APT;
 the epoch is not part of the filename. Ubuntu 24.04 x86_64 is the build baseline;
 other distributions need matching runtime libraries and are not promised compatible.
@@ -140,8 +139,9 @@ Use `Settings -> Backend Center` or launch `Format Foundry Updater --backends` t
 - Open official project pages and documentation
 - Copy a terminal-ready install command when direct installation is unavailable
 
-Backend installers are not bundled. However, the `imageio-ffmpeg` Python wheel supplies an FFmpeg
-fallback executable, which is included in frozen builds and has its own redistribution obligations.
+FFmpeg and the other command-line backends are installed through Backend Center. Current builds
+exclude the old FFmpeg executable supplied by the `imageio-ffmpeg` wheel; it is no longer a bundled
+fallback. Media workflows require a detected FFmpeg installation.
 The build collects third-party notices and a dependency inventory; these are not a substitute for
 the corresponding-source and consumer-license review required before publishing Beta.
 
@@ -181,7 +181,7 @@ system, memory, home-disk space, and security-provider status.
 - Beta Windows releases use Microsoft Store MSIX. The Store signs packages after certification; coordinated publication requires installed-package validation and the published Store version. No publisher signing service is required for this channel.
 - MSIX submission/development packages and legacy EXE/portable test builds remain CI artifacts. GitHub consumer releases include Linux installers, `SHA256SUMS`, provenance and Windows MSIX validation evidence.
 - Every executable embeds the canonical Format Foundry provenance ID, and tagged releases bind exact artifact hashes to the source commit with `PROVENANCE.json` and a GitHub-signed attestation. Run an executable with `--provenance` to inspect its identity.
-- The first published Beta is planned to use Git tag `v1.8.18` as a compatibility bridge for installed Alpha `1.8.17` updaters; this development version's product label and package filenames are `Beta 0.7.1` / `0.7.1-beta`. No Beta tag or assets have been published yet.
+- The first published Beta is planned to use Git tag `v1.8.18` as a compatibility bridge for installed Alpha `1.8.17` updaters; this development version's product label and package filenames are `Beta 7.1.5 Security Update` / `7.1.5-beta`. No Beta tag or assets have been published yet.
 
 ## OpenAI Build Week Collaboration
 

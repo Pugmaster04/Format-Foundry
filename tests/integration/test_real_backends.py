@@ -116,7 +116,7 @@ class RealBackendIntegrationTests(unittest.TestCase):
                 while time.monotonic() < deadline:
                     try:
                         complete = monitor.complete()
-                    except urllib.error.URLError:
+                    except (urllib.error.URLError, TimeoutError, ConnectionError):
                         pass
                     if complete:
                         break

@@ -7,6 +7,7 @@ import tarfile
 import tempfile
 import zipfile
 from collections.abc import Callable
+from itertools import chain
 from pathlib import Path, PureWindowsPath
 from typing import BinaryIO
 
@@ -17,6 +18,12 @@ MAX_ARCHIVE_MEMBERS = 500_000
 
 def _safe_member_target(destination: Path, member_name: str) -> Path:
     normalized = member_name.replace("\\", "/")
+    if os.name == "nt":
+        for part in normalized.split("/"):
+            if part not in {"", ".", ".."} and (PureWindowsPath(part).is_reserved() or part.endswith((".", " ")) or any(
+                ord(character) < 32 or character in '<>"|?*' for character in part
+            )):
+                raise RuntimeError(f"Archive member uses an unsafe Windows filename: {member_name}")
     destination_root = destination.resolve()
     target = (destination_root / normalized).resolve()
     if PureWindowsPath(member_name).drive or normalized.startswith("/") or ":" in normalized or ".." in Path(normalized).parts:
@@ -51,14 +58,14 @@ def _extract(archive_path: Path, destination: Path, kind: str, check: Callable[[
         stage.mkdir()
         archive = zipfile.ZipFile(archive_path) if kind == "zip" else tarfile.open(archive_path, "r:*")
         with archive:
-            members = archive.infolist() if kind == "zip" else archive.getmembers()
-            if len(members) > MAX_ARCHIVE_MEMBERS:
-                raise RuntimeError("Archive contains too many entries.")
+            members = archive.infolist() if kind == "zip" else archive
             entries = []
             reserved: set[str] = set()
             total = 0
             for member in members:
                 check()
+                if len(entries) >= MAX_ARCHIVE_MEMBERS:
+                    raise RuntimeError("Archive contains too many entries.")
                 if kind == "zip":
                     name, size, directory = member.filename, member.file_size, member.is_dir()
                     if stat.S_ISLNK(member.external_attr >> 16):
@@ -104,23 +111,37 @@ def create_archive(inputs: list[Path], output: Path, kind: str, check: Callable[
     previous = file_identity(output)
     files: list[tuple[Path, str]] = []
     names: set[str] = set()
+    if not inputs:
+        raise ValueError("Choose at least one existing file or directory to archive.")
     for entry in inputs:
         check()
         if entry.is_symlink():
             raise ValueError(f"Archive creation does not follow symbolic links: {entry}")
+        if not entry.is_file() and not entry.is_dir():
+            raise ValueError(f"Archive input is missing or is not a regular file or directory: {entry}")
         if entry.resolve() == output.resolve():
             raise ValueError("An archive cannot replace its own input.")
-        for child in ([entry] if entry.is_file() else sorted(entry.rglob("*"))):
+        for child in ([entry] if entry.is_file() else chain([entry], entry.rglob("*"))):
             check()
             if child.is_symlink():
                 raise ValueError(f"Archive creation does not follow symbolic links: {child}")
-            if not child.is_file() or child.resolve() == output.resolve():
+            if not child.resolve().is_relative_to(entry.resolve()):
+                raise ValueError(f"Archive input resolves outside its selected directory: {child}")
+            if child.resolve() == output.resolve():
                 continue
+            if child.is_dir():
+                if next(child.iterdir(), None) is not None:
+                    continue
+            elif not child.is_file():
+                raise ValueError(f"Archive input is not a regular file: {child}")
             name = child.name if child == entry else (Path(entry.name) / child.relative_to(entry)).as_posix()
             if os.path.normcase(name) in names:
                 raise ValueError(f"Duplicate archive member name: {name}")
             names.add(os.path.normcase(name))
             files.append((child, name))
+            if len(files) > MAX_ARCHIVE_MEMBERS:
+                raise ValueError("Archive input contains too many entries.")
+    files.sort(key=lambda item: item[1])
     modes = {"tar": "w", "tar.gz": "w:gz", "tar.bz2": "w:bz2", "tar.xz": "w:xz"}
     if kind != "zip" and kind not in modes:
         raise ValueError(f"Unsupported archive format: {kind}")
@@ -132,12 +153,18 @@ def create_archive(inputs: list[Path], output: Path, kind: str, check: Callable[
                     info = zipfile.ZipInfo.from_file(child, arcname=name)
                     info.compress_type = zipfile.ZIP_DEFLATED
                     info._compresslevel = level  # Python 3.11/3.12 streaming ZipInfo API.
+                    if child.is_dir():
+                        archive.writestr(info, b"")
+                        continue
                     with child.open("rb") as source, archive.open(info, "w", force_zip64=True) as target:
                         copy_cancelable(source, target, check)
         else:
             with tarfile.open(staged, modes[kind]) as archive:
                 for child, name in files:
                     check()
+                    if child.is_dir():
+                        archive.addfile(archive.gettarinfo(str(child), arcname=name))
+                        continue
                     with child.open("rb") as source:
                         class CheckedReader:
                             def read(self, size: int = -1) -> bytes:

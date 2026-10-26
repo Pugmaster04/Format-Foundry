@@ -69,7 +69,7 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("RELEASE_TRANSPORT_TAG = MIGRATION_RELEASE_TAG", runtime)
         self.assertIn(f'"latest_version": "{TRANSPORT_TAG}"', manifest)
         self.assertIn(f'"release_tag": "{TRANSPORT_TAG}"', manifest)
-        self.assertIn('const fallbackReleaseTag = "v1.8.17"', site)
+        self.assertIn(f'const fallbackReleaseTag = "{TRANSPORT_TAG}"', site)
         self.assertIn("detectPackageVersion", site)
         self.assertIn("steps.prep.outputs.package_version", workflow)
 

@@ -30,6 +30,7 @@ from backend_support import (
     unique_install_targets,
 )
 from format_foundry_provenance import runtime_provenance_json
+from language_support import read_regular_file
 from settings_support import load_settings_document, save_settings_document
 from support_runtime import (
     DEFAULT_GITHUB_REPO_URL,
@@ -934,6 +935,7 @@ class UpdaterApp:
         label = {
             "compatible": "Compatibility: update allowed",
             "unsupported": "Compatibility: update not targeted to this environment",
+            "incompatible": "Compatibility: incompatible release; downloads disabled",
             "unknown": "Compatibility: manifest does not declare environment rules",
         }.get(str(compatibility.get("status", "")).strip().lower(), "Compatibility: unknown")
         if messages:
@@ -1976,10 +1978,10 @@ class UpdaterApp:
         path = Path(source).expanduser().resolve()
         if not path.exists():
             raise RuntimeError(f"Manifest file was not found:\n{path}")
-        if path.stat().st_size > MAX_METADATA_BYTES:
-            raise ValueError("Update metadata exceeds the size limit.")
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return normalize_update_metadata(data) if isinstance(data, dict) else data
+        data = json.loads(read_regular_file(path, MAX_METADATA_BYTES).decode("utf-8-sig"))
+        if not isinstance(data, dict):
+            raise ValueError("Update manifest must be a JSON object.")
+        return normalize_update_metadata(data)
 
     def _open_store_updates(self, *, listing: bool = False) -> None:
         try:
@@ -2033,6 +2035,10 @@ class UpdaterApp:
                 newer = is_version_newer(latest, current)
                 compatibility = evaluate_manifest_compatibility(snapshot, manifest)
                 compatibility_messages = [str(item).strip() for item in compatibility.get("messages", []) if str(item).strip()]
+                if compatibility.get("status") == "incompatible":
+                    blocked_reason = " ".join(compatibility_messages)
+                    download_url = ""
+                    release_url = ""
                 if compatibility_messages:
                     notes = "\n".join(filter(None, [notes, "Compatibility", *compatibility_messages]))
 
@@ -2045,6 +2051,8 @@ class UpdaterApp:
                     self.last_download_block_reason = blocked_reason
                     self._refresh_environment_status(manifest)
                     latest_label = format_release_label(latest)
+                    if compatibility.get("status") == "incompatible":
+                        latest_label += " (Incompatible)"
                     self.latest_var.set(f"Latest version: {latest_label}")
                     self.download_var.set(f"Download URL: {download_url or '(not provided)'}")
                     self.sha256_var.set(f"SHA256: {sha256_value or '(not provided)'}")
@@ -2055,7 +2063,9 @@ class UpdaterApp:
                         combined_notes = f"{combined_notes}\n\n{blocked_reason}"
                     self._set_notes(combined_notes)
                     self.progress.configure(value=100)
-                    if newer and bool(compatibility.get("allowed", True)):
+                    if compatibility.get("status") == "incompatible":
+                        self.status_var.set(f"Incompatible release: {latest_label}. Downloads are disabled.")
+                    elif newer and bool(compatibility.get("allowed", True)):
                         self.status_var.set(f"Update available: {current} -> {latest_label}")
                         messagebox.showinfo(APP_TITLE, f"Update available.\n\nCurrent: {current}\nLatest: {latest_label}")
                     elif newer:
@@ -2076,6 +2086,9 @@ class UpdaterApp:
     def _open_download_link(self) -> None:
         if format_foundry_package() is not None:
             self._open_store_updates(listing=True)
+            return
+        if (getattr(self, "last_compatibility", None) or {}).get("allowed") is False:
+            messagebox.showwarning(APP_TITLE, "This release is incompatible. Its download links are disabled.")
             return
         url = self.last_download_url.strip() or self.last_release_url.strip()
         if not url:

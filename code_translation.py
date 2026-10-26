@@ -125,7 +125,18 @@ def _run_compiler(
                     continue
         finally:
             if process.poll() is None:
-                process.kill()
+                if os.name == "nt":
+                    # Windows launchers may own a child that still holds the scratch folder.
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False,
+                        )
+                    except (OSError, subprocess.TimeoutExpired):
+                        pass
+                if process.poll() is None:
+                    process.kill()
                 process.wait()
         if os.fstat(diagnostics_file.fileno()).st_size > MAX_COMPILER_DIAGNOSTICS_BYTES:
             raise TranslationError("TypeScript produced too many diagnostics; no output was saved.")
@@ -375,7 +386,7 @@ def translate_project(
         output_root.mkdir()
         compile_command = [
             str(selected_compiler.node), str(selected_compiler.typescript), "--project", str(config),
-            "--outDir", str(output_root), "--noEmitOnError", "--incremental", "false",
+            "--outDir", str(output_root), "--noEmitOnError", "--noResolve", "--incremental", "false",
             "--declaration", "false", "--declarationMap", "false", "--sourceMap", "false",
             "--inlineSourceMap", "false", "--pretty", "false",
         ]

@@ -1,0 +1,104 @@
+{
+  "minimumCompatibleVersion": "7.1.5-beta",
+  "minimumCompatibleLabel": "Beta 7.1.5 Security Update",
+  "status": "security-update-required",
+  "message": "All Alpha releases and every version before Beta 7.1.5 Security Update are incompatible. Their application downloads are withdrawn.",
+  "incompatibleReleases": [
+    {
+      "tag": "v1.8.17",
+      "label": "Alpha 1.8.17 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.16",
+      "label": "Alpha 1.8.16 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.15",
+      "label": "Alpha 1.8.15 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.14",
+      "label": "Alpha 1.8.14 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.13",
+      "label": "Alpha 1.8.13 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.12",
+      "label": "Alpha 1.8.12 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.11",
+      "label": "Alpha 1.8.11 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.9",
+      "label": "Alpha 1.8.9 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.8",
+      "label": "Alpha 1.8.8 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.7",
+      "label": "Alpha 1.8.7 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.6",
+      "label": "Alpha 1.8.6 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v1.8.5-release",
+      "label": "Alpha 1.8.5 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v0.7.3",
+      "label": "Alpha 0.7.3 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v0.7.2",
+      "label": "Alpha 0.7.2 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v0.7.1",
+      "label": "Alpha 0.7.1 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    },
+    {
+      "tag": "v0.7",
+      "label": "Alpha 0.7 (Incompatible)",
+      "compatible": false,
+      "downloadsEnabled": false
+    }
+  ]
+}

@@ -144,13 +144,15 @@ TAR_PACKAGE="release_bins/${TAR_BASENAME}.tar.gz"
 DEB_PACKAGE="release_bins/${PACKAGE_NAME}_${PACKAGE_VERSION}_${DEB_ARCH}.deb"
 APPIMAGE_PACKAGE="release_bins/${APP_BINARY_NAME}_linux_${PACKAGE_VERSION}_${ARCH}.AppImage"
 APPIMAGE_TOOL="${APPIMAGE_TOOL_DIR}/appimagetool-${APPIMAGE_ARCH}.AppImage"
-APPIMAGE_TOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage"
+# Keep the version and hashes together: upstream replaces continuous-build assets.
+APPIMAGE_TOOL_VERSION="1.9.1"
+APPIMAGE_TOOL_URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGE_TOOL_VERSION}/appimagetool-${APPIMAGE_ARCH}.AppImage"
 case "$APPIMAGE_ARCH" in
   x86_64)
-    APPIMAGE_TOOL_SHA256="${APPIMAGE_TOOL_SHA256:-a6d71e2b6cd66f8e8d16c37ad164658985e0cf5fcaa950c90a482890cb9d13e0}"
+    APPIMAGE_TOOL_SHA256="${APPIMAGE_TOOL_SHA256:-ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0}"
     ;;
   aarch64)
-    APPIMAGE_TOOL_SHA256="${APPIMAGE_TOOL_SHA256:-1b00524ba8c6b678dc15ef88a5c25ec24def36cdfc7e3abb32ddcd068e8007fe}"
+    APPIMAGE_TOOL_SHA256="${APPIMAGE_TOOL_SHA256:-f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158}"
     ;;
 esac
 

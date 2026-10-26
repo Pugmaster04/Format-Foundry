@@ -1,0 +1,405 @@
+{
+  "schema_version": 1,
+  "revision": "2026-09-29.1",
+  "languages": [
+    {
+      "id": "python", "name": "Python", "category": "Programming", "baseline": "Python 3 core",
+      "extensions": [".py", ".pyw"], "aliases": ["python3", "cpython"],
+      "rules": {
+        "types": "Dynamic typing; optional annotations are not normally runtime-enforced. None is the null value; bool is an int subclass.",
+        "blocks": "Indentation defines suites after a colon. Use consistent spaces; newlines usually end statements.",
+        "comments": "# starts a line comment. Triple-quoted strings are strings and can serve as docstrings, not block-comment syntax.",
+        "variables": "Assignment binds names to objects. Objects may be mutable or immutable; assignment does not copy them. Scope uses local, enclosing, global and built-in names.",
+        "functions": "def defines functions; arguments may be positional or keyword. Default argument expressions are evaluated once when the definition runs.",
+        "control_flow": "if/elif/else, for over iterables, while, break and continue. and/or short-circuit and return operands, not necessarily booleans.",
+        "collections": "list, tuple, dict and set; slicing usually excludes the stop index. Dictionary keys and set members must be hashable.",
+        "errors": "raise and try/except/else/finally; with manages context-bound cleanup. Exception handling does not replace input validation.",
+        "modules": "import loads modules and may execute their top-level code. Packages and environments determine dependency resolution.",
+        "runtime": "Python interpreter; arbitrary-precision integers, floating-point approximations. CPython commonly uses reference counting plus cycle collection."
+      },
+      "example": "def total(values):\n    return sum(values)\n\nprint(total([1, 2, 3]))\n",
+      "pitfalls": ["/ is true division; // floors, including negative results.", "Mutable default arguments and shallow copies can share state unexpectedly.", "Do not translate Python truthiness, equality, indexing or async behavior by spelling alone."],
+      "reference_url": "https://docs.python.org/3/reference/"
+    },
+    {
+      "id": "javascript", "name": "JavaScript", "category": "Programming", "baseline": "ECMAScript 2020 core; host APIs separate",
+      "extensions": [".js", ".mjs", ".cjs"], "aliases": ["js", "ecmascript", "node"],
+      "rules": {
+        "types": "Dynamic typing; primitive values include string, number, bigint, boolean, undefined, symbol and null. Objects have reference identity.",
+        "blocks": "Braces delimit blocks. Automatic semicolon insertion exists but can change meaning at line boundaries.",
+        "comments": "// line comments and /* block comments */; block comments do not nest.",
+        "variables": "let and const are block-scoped; const prevents rebinding, not object mutation. var is function-scoped.",
+        "functions": "Function declarations/expressions and arrows; arrows capture lexical this. Closures retain access to enclosing bindings.",
+        "control_flow": "if/else, switch, loops and try. for...of iterates iterable values; for...in enumerates enumerable string property keys.",
+        "collections": "Arrays, objects, Map and Set. Array holes differ from explicit undefined; strings expose UTF-16 code units through indexing.",
+        "errors": "throw and try/catch/finally. Promise rejection must be handled; async functions return promises.",
+        "modules": "ES import/export; CommonJS require is a host convention, not ES module syntax. Resolution depends on browser or runtime.",
+        "runtime": "Browser or server engine with host APIs. Number uses IEEE-754 doubles; BigInt is distinct. Event-loop tasks and microtasks affect ordering."
+      },
+      "example": "function total(values) {\n  return values.reduce((sum, value) => sum + value, 0);\n}\nconsole.log(total([1, 2, 3]));\n",
+      "pitfalls": ["== coerces operands; === avoids most cross-type equality coercion.", "Number cannot exactly represent every integer above 2^53 - 1.", "DOM APIs are not general Node.js APIs; asynchronous control flow needs deliberate mapping."],
+      "reference_url": "https://tc39.es/ecma262/"
+    },
+    {
+      "id": "typescript", "name": "TypeScript", "category": "Programming", "baseline": "TypeScript 5 core; compiler options matter",
+      "extensions": [".ts", ".tsx", ".mts", ".cts"], "aliases": ["ts", "tsx"],
+      "rules": {
+        "types": "Static structural type checking layered over JavaScript; unions, interfaces and generics. Nullable unions depend on strictNullChecks. any bypasses many checks; unknown requires narrowing.",
+        "blocks": "JavaScript braces and statement rules plus type syntax. TSX also permits JSX and has additional parsing constraints.",
+        "comments": "// and /* */. Compiler directives in comments can affect checking and must not be silently carried over.",
+        "variables": "let/const with annotations or inference. readonly is generally a compile-time constraint, not runtime freezing.",
+        "functions": "Typed parameters, return annotations, overload signatures and generics. Implementation still obeys JavaScript runtime semantics.",
+        "control_flow": "JavaScript control flow plus type narrowing through guards and discriminated unions. Narrowing is not general runtime validation.",
+        "collections": "Array<T>, tuples, Record, Map and Set. Types do not automatically validate JSON or external input.",
+        "errors": "JavaScript exceptions/promises; static checks do not prove code cannot throw. Catch-variable typing depends on settings.",
+        "modules": "import/export with type-only imports. tsconfig module, target and resolution settings control emitted code and lookup.",
+        "runtime": "Typically compiled to JavaScript; type annotations are erased. Some constructs such as enums can emit runtime code. Requires a suitable JS host."
+      },
+      "example": "function total(values: readonly number[]): number {\n  return values.reduce((sum, value) => sum + value, 0);\n}\nconsole.log(total([1, 2, 3]));\n",
+      "pitfalls": ["Do not strip types with regex; JSX, generics, enums and module syntax require a real compiler.", "strictNullChecks and other tsconfig settings change what the checker accepts.", "A successful type check does not validate untrusted network data."],
+      "reference_url": "https://www.typescriptlang.org/docs/handbook/intro.html"
+    },
+    {
+      "id": "java", "name": "Java", "category": "Programming", "baseline": "Java 17 core",
+      "extensions": [".java"], "aliases": ["jvm"],
+      "rules": {
+        "types": "Static nominal typing; primitives differ from reference types. Generics usually use reference types and erase most type arguments at runtime.",
+        "blocks": "Braces form blocks; statements normally end with semicolons. Source organization follows classes and packages.",
+        "comments": "//, /* */ and documentation comments /** */.",
+        "variables": "Explicit types or local var inference; final prevents reassignment, not necessarily mutation of the referenced object.",
+        "functions": "Methods belong to classes/interfaces; static methods do not require an instance. Arguments are passed by value, including reference values.",
+        "control_flow": "if, switch, for, enhanced for, while and do/while; conditions require boolean expressions.",
+        "collections": "Fixed-length arrays and collection interfaces such as List, Set and Map. Equality and hashing contracts matter.",
+        "errors": "try/catch/finally, throw/throws and try-with-resources. Checked exceptions impose declaration/handling requirements.",
+        "modules": "package/import and optional Java platform modules. Imports name types; build tools resolve artifacts separately.",
+        "runtime": "Usually compiled to JVM bytecode with garbage collection. Fixed-width integer overflow wraps; integer division truncates toward zero."
+      },
+      "example": "class Example {\n    static int total(int[] values) {\n        int sum = 0;\n        for (int value : values) sum += value;\n        return sum;\n    }\n    public static void main(String[] args) {\n        System.out.println(total(new int[] {1, 2, 3}));\n    }\n}\n",
+      "pitfalls": ["== compares reference identity for objects; equals is used for value contracts.", "Null references, boxing and checked exceptions need explicit porting decisions.", "String indexing is based on UTF-16 code units, not user-visible characters."],
+      "reference_url": "https://docs.oracle.com/javase/specs/jls/se17/html/index.html"
+    },
+    {
+      "id": "c", "name": "C", "category": "Programming", "baseline": "C11 core",
+      "extensions": [".c", ".h"], "aliases": ["c11"],
+      "rules": {
+        "types": "Static types; integer widths and signedness can depend on implementation. Pointers refer to objects or functions; arrays are not pointers.",
+        "blocks": "Braces form compound statements; semicolons terminate most statements. Preprocessor directives are handled before compilation.",
+        "comments": "/* */ and, since C99, //; block comments do not nest.",
+        "variables": "Declarations have types, storage duration and scope. Automatic locals are not implicitly initialized.",
+        "functions": "Typed function declarations/prototypes; arguments are passed by value. Pointer parameters can expose caller-owned data.",
+        "control_flow": "if, switch, for, while, do/while and goto. Zero is false; nonzero is true.",
+        "collections": "Arrays and structs; dynamic collections require libraries or explicit allocation. Ordinary strings use a null terminator.",
+        "errors": "No language exceptions; use return codes and API-specific errno contracts. Release allocated resources on every path.",
+        "modules": "Headers, #include, translation units and linker symbols; macro expansion is not a language-aware module import.",
+        "runtime": "Normally native machine code. Explicit allocation/free and object-lifetime rules; undefined behavior is not a portable outcome."
+      },
+      "example": "#include <stdio.h>\nint main(void) {\n    int values[] = {1, 2, 3};\n    int sum = 0;\n    for (int i = 0; i < 3; ++i) sum += values[i];\n    printf(\"%d\\n\", sum);\n    return 0;\n}\n",
+      "pitfalls": ["Signed overflow, out-of-bounds access and use-after-free can be undefined behavior.", "Array length and ownership do not travel with a bare pointer.", ".h is ambiguous between C and C++; toolchain and include context decide."],
+      "reference_url": "https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf"
+    },
+    {
+      "id": "cpp", "name": "C++", "category": "Programming", "baseline": "C++17 core",
+      "extensions": [".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".h"], "aliases": ["cpp", "cxx"],
+      "rules": {
+        "types": "Static typing with classes, templates, references and pointers. auto infers types; value category affects overload resolution and moves.",
+        "blocks": "Braces and semicolon-terminated statements; namespaces organize names. Preprocessor and templates are distinct mechanisms.",
+        "comments": "// and /* */; block comments do not nest.",
+        "variables": "Initialization forms differ; object lifetime and const qualification matter. RAII binds resource cleanup to object lifetime.",
+        "functions": "Free/member functions, overloads, templates and lambdas. Parameters can pass values or references; captures affect lifetime.",
+        "control_flow": "if, switch, loops and range-for. Destructors run during normal scope exit and exception unwinding for constructed automatic objects.",
+        "collections": "std::vector, array, map, unordered_map and string. Iterator invalidation depends on container and operation.",
+        "errors": "Exceptions, error codes and vocabulary types such as optional. noexcept is a contract with termination consequences if violated.",
+        "modules": "C++17 commonly uses headers, translation units, namespaces and linking; language modules require a later baseline.",
+        "runtime": "Usually native code with deterministic destruction. Prefer standard containers and smart pointers; undefined behavior still exists."
+      },
+      "example": "#include <iostream>\n#include <numeric>\n#include <vector>\nint main() {\n    const std::vector<int> values{1, 2, 3};\n    std::cout << std::accumulate(values.begin(), values.end(), 0) << '\\n';\n}\n",
+      "pitfalls": ["Moves, copies, reference lifetimes and ownership cannot be translated as mere assignment syntax.", "Signed overflow and dangling references are not guaranteed runtime errors.", "Compiler ABI, templates and native dependencies can prevent a mechanical port."],
+      "reference_url": "https://isocpp.org/std/the-standard"
+    },
+    {
+      "id": "csharp", "name": "C#", "category": "Programming", "baseline": "C# 10 core; .NET host",
+      "extensions": [".cs", ".csx"], "aliases": ["csharp", "dotnet", ".net"],
+      "rules": {
+        "types": "Static typing with value/reference types, interfaces and generics. Nullable value types differ from nullable-reference annotations.",
+        "blocks": "Braces form blocks; semicolons end most statements. File-scoped namespaces and top-level statements have placement rules.",
+        "comments": "//, /* */ and /// XML documentation comments.",
+        "variables": "Explicit types or var inference. const values and readonly fields have different initialization and mutation contracts.",
+        "functions": "Methods, local functions, lambdas and delegates. ref/out/in affect parameter passing; async methods commonly return Task.",
+        "control_flow": "if, switch/patterns, foreach, for, while, break and continue; await composes asynchronous operations.",
+        "collections": "Arrays, List<T>, Dictionary<TKey,TValue>, spans and IEnumerable<T>; LINQ queries can be deferred.",
+        "errors": "throw and try/catch/finally. using/await using provide deterministic cleanup for disposable resources.",
+        "modules": "Namespaces and using declarations organize names; assemblies/projects and package references define build dependencies.",
+        "runtime": "Usually managed .NET execution with garbage collection. Integer overflow behavior depends on checked context and operation."
+      },
+      "example": "using System;\nclass Example {\n    static void Main() {\n        int sum = 0;\n        foreach (int value in new[] {1, 2, 3}) sum += value;\n        Console.WriteLine(sum);\n    }\n}\n",
+      "pitfalls": ["Value-type copies differ from reference-type aliases.", "Nullable annotations do not enforce every runtime non-null guarantee.", "Task scheduling, UI thread affinity and deferred LINQ need behavior tests."],
+      "reference_url": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/"
+    },
+    {
+      "id": "go", "name": "Go", "category": "Programming", "baseline": "Go 1.18 core",
+      "extensions": [".go"], "aliases": ["golang"],
+      "rules": {
+        "types": "Static typing with inference, structs, interfaces and type parameters. Interfaces are implemented implicitly; nil has context-dependent typed forms.",
+        "blocks": "Braces are required for control blocks; semicolons are often inserted automatically. Opening-brace placement matters.",
+        "comments": "// and /* */; special build directives have additional placement and formatting rules.",
+        "variables": "var declarations or local := short declarations; constants have distinct typing rules. Exported identifiers start with an uppercase letter.",
+        "functions": "func declarations, methods with receivers, closures and multiple return values. Arguments are passed by value.",
+        "control_flow": "if, for, switch and select; there is no separate while keyword. defer schedules calls for function exit.",
+        "collections": "Arrays have fixed length in their type; slices share backing arrays. Maps are reference-like and have unspecified iteration order.",
+        "errors": "Ordinary failures conventionally return error values. panic/recover are not a replacement for routine error handling.",
+        "modules": "package/import plus go.mod modules; import cycles are rejected. Module path and package name are distinct.",
+        "runtime": "Compiled code with garbage collection; goroutines and channels support concurrency. Data-race freedom remains the program's responsibility."
+      },
+      "example": "package main\nimport \"fmt\"\nfunc main() {\n    sum := 0\n    for _, value := range []int{1, 2, 3} { sum += value }\n    fmt.Println(sum)\n}\n",
+      "pitfalls": ["Copying a slice header does not copy its backing storage.", "A non-nil interface can hold a nil pointer.", "Range-loop variable behavior differs across language versions; check the module's go directive."],
+      "reference_url": "https://go.dev/ref/spec"
+    },
+    {
+      "id": "rust", "name": "Rust", "category": "Programming", "baseline": "Rust 2021 edition core",
+      "extensions": [".rs"], "aliases": ["rustlang"],
+      "rules": {
+        "types": "Static typing with inference, traits, enums and generics. Ownership, borrowing and lifetimes constrain access to values.",
+        "blocks": "Braced blocks are expressions. A trailing semicolon discards an expression's value; a final expression can become the block result.",
+        "comments": "//, nested /* */ and documentation comments /// or //!.",
+        "variables": "let bindings are immutable by default; mut permits mutation. Binding moves or copies depend on the value's type.",
+        "functions": "fn with typed parameters and optional -> return type; closures capture by borrow or move depending on use and declaration.",
+        "control_flow": "if, match, loop, while and for. match is exhaustive; patterns can bind or destructure values.",
+        "collections": "Arrays, Vec<T>, slices, HashMap and String. String is UTF-8; integer indexing of String is not supported.",
+        "errors": "Result<T,E> and Option<T>, with ? for compatible early propagation. panic is separate from ordinary recoverable errors.",
+        "modules": "mod/use, visibility and crates; Cargo manages packages and dependencies. Macro expansion is not plain text substitution.",
+        "runtime": "Usually native code without a tracing garbage collector; ownership drives destruction. unsafe permits operations requiring extra invariants."
+      },
+      "example": "fn main() {\n    let values = [1, 2, 3];\n    let sum: i32 = values.iter().sum();\n    println!(\"{}\", sum);\n}\n",
+      "pitfalls": ["Do not erase borrowing/lifetime constraints when mapping to a garbage-collected language.", "Integer overflow behavior can depend on build checks; explicit checked/wrapping APIs make intent clearer.", "A string byte offset need not be a Unicode character boundary."],
+      "reference_url": "https://doc.rust-lang.org/reference/"
+    },
+    {
+      "id": "swift", "name": "Swift", "category": "Programming", "baseline": "Swift 5.5 core",
+      "extensions": [".swift"], "aliases": ["swiftlang"],
+      "rules": {
+        "types": "Static typing with inference, protocols, generics and optionals. Structs/enums have value semantics; classes have reference semantics.",
+        "blocks": "Braces delimit scopes; semicolons are usually optional at line ends.",
+        "comments": "// and nestable /* */; documentation comments have tooling conventions.",
+        "variables": "let creates constants and var variables. A constant class reference does not necessarily freeze the instance.",
+        "functions": "func declarations, argument labels, closures and inout parameters. async/await supports concurrency.",
+        "control_flow": "if, guard, switch, for-in, while and repeat-while. switch is exhaustive; optional binding unwraps conditionally.",
+        "collections": "Array, Set and Dictionary with value semantics, often copy-on-write implementations. String indexes are not integer offsets.",
+        "errors": "throw/throws, do/catch and try variants; defer schedules scope-exit cleanup. Force unwraps can trap.",
+        "modules": "import loads module interfaces; packages and platform frameworks provide dependencies.",
+        "runtime": "Compiled code with automatic reference counting for class instances. Standard arithmetic can trap on overflow; wrapping operators are explicit."
+      },
+      "example": "func total(_ values: [Int]) -> Int {\n    values.reduce(0, +)\n}\nprint(total([1, 2, 3]))\n",
+      "pitfalls": ["Optionals are not interchangeable with unchecked null references.", "ARC cycles, weak references and value/reference distinctions affect behavior.", "UIKit/AppKit and Apple-specific frameworks do not become portable simply by translating syntax."],
+      "reference_url": "https://docs.swift.org/swift-book/documentation/the-swift-programming-language/"
+    },
+    {
+      "id": "kotlin", "name": "Kotlin", "category": "Programming", "baseline": "Kotlin 1.6 core; target-dependent libraries",
+      "extensions": [".kt", ".kts"], "aliases": ["kotlin-jvm"],
+      "rules": {
+        "types": "Static typing with inference, nullable types, classes and generics. Platform types from Java weaken normal null-safety guarantees.",
+        "blocks": "Braces form blocks; semicolons are generally optional. Some control constructs are expressions.",
+        "comments": "//, nested /* */ and KDoc comments /** */.",
+        "variables": "val prevents rebinding; var allows it. A val can reference mutable state. Properties may have custom accessors.",
+        "functions": "fun, extension functions, lambdas and named/default arguments. suspend marks functions usable in coroutine contexts.",
+        "control_flow": "if, when, for-in and while; smart casts require suitable stability guarantees. Ranges can be inclusive.",
+        "collections": "Read-only List/Set/Map interfaces differ from MutableList/MutableSet/MutableMap, but do not universally guarantee immutable storage.",
+        "errors": "try/catch/finally and throw; exceptions are unchecked at the language level. Resource management helpers depend on target libraries.",
+        "modules": "package/import, source sets and build-tool dependencies; JVM, JS and Native targets expose different APIs.",
+        "runtime": "Execution model depends on target. Kotlin/JVM runs on the JVM; multiplatform source still needs compatible libraries."
+      },
+      "example": "fun total(values: List<Int>): Int = values.sum()\nfun main() {\n    println(total(listOf(1, 2, 3)))\n}\n",
+      "pitfalls": ["== calls structural equality; === checks referential identity.", "!! can throw; null-safety is not proof that platform interop cannot fail.", "Coroutines are not mechanically interchangeable with threads or promises."],
+      "reference_url": "https://kotlinlang.org/docs/home.html"
+    },
+    {
+      "id": "php", "name": "PHP", "category": "Programming", "baseline": "PHP 8.0 core",
+      "extensions": [".php", ".phtml"], "aliases": ["php8"],
+      "rules": {
+        "types": "Dynamic typing with optional declarations, unions and nullable types. Coercion and strict_types affect scalar-call behavior.",
+        "blocks": "Braces and semicolons; alternative template syntax exists. PHP segments typically begin with <?php.",
+        "comments": "//, # and /* */; block comments do not nest.",
+        "variables": "$-prefixed names; scope and reference bindings with & require care. Assignment and object-handle behavior differ by value kind.",
+        "functions": "function declarations and closures; arrow functions capture outer variables by value. Arguments can be named or positional.",
+        "control_flow": "if/elseif/else, switch, match and loops. foreach supports array/object iteration; by-reference iteration requires special care.",
+        "collections": "array is an ordered map with integer/string keys and coercion rules; it is not solely a numeric vector.",
+        "errors": "Throwable includes Error and Exception; use try/catch/finally. Warnings and diagnostics are not always thrown exceptions.",
+        "modules": "Namespaces, include/require and autoloading. Composer package management is separate from language syntax.",
+        "runtime": "PHP runtime, commonly CLI or request-based server execution. Web output, superglobals and host configuration affect behavior."
+      },
+      "example": "<?php\nfunction total(array $values): int {\n    return array_sum($values);\n}\necho total([1, 2, 3]), PHP_EOL;\n",
+      "pitfalls": ["== coercion differs from === and has changed across PHP versions.", "Array key coercion and empty/isset semantics need explicit tests.", "Translation must preserve escaping, authentication and database parameterization, not just web output."],
+      "reference_url": "https://www.php.net/manual/en/langref.php"
+    },
+    {
+      "id": "ruby", "name": "Ruby", "category": "Programming", "baseline": "Ruby 3.0 core",
+      "extensions": [".rb", ".rake", ".gemspec"], "aliases": ["ruby3"],
+      "rules": {
+        "types": "Dynamic typing; values are objects. nil and false are falsey; zero and empty strings are truthy.",
+        "blocks": "Many constructs end with end. Blocks passed to methods use do/end or braces, with precedence differences.",
+        "comments": "# line comments; =begin/=end have line-position requirements. Documentation tooling generally uses line comments.",
+        "variables": "Local names, @instance, @@class and $global variables have distinct scopes; uppercase-leading names denote constants.",
+        "functions": "def defines methods; blocks, Proc and lambda have different return/argument behavior. Methods return their last expression by default.",
+        "control_flow": "if/unless, case, while/until and iterator methods; each yields values to a block. Modifier conditionals are supported.",
+        "collections": "Array, Hash and ranges; inclusive .. ranges differ from exclusive-end ... ranges. Symbols are distinct from strings.",
+        "errors": "raise and begin/rescue/ensure; rescue without a class normally catches StandardError descendants, not every Exception.",
+        "modules": "require/load files; modules group names and can be mixed into classes. Gems and Bundler manage dependencies.",
+        "runtime": "Ruby interpreter/implementation with garbage collection; monkey patching and metaprogramming can change runtime method lookup."
+      },
+      "example": "def total(values)\n  values.sum\nend\nputs total([1, 2, 3])\n",
+      "pitfalls": ["Zero and empty collections are truthy, unlike some other languages.", "Blocks, lambdas and procs do not have identical return semantics.", "Dynamic method generation and framework conventions can hide behavior from a syntax-only port."],
+      "reference_url": "https://docs.ruby-lang.org/en/3.0.0/doc/syntax_rdoc.html"
+    },
+    {
+      "id": "r", "name": "R", "category": "Programming", "baseline": "R 4 core",
+      "extensions": [".r"], "aliases": ["rstats"],
+      "rules": {
+        "types": "Dynamic, vector-oriented types; NA, NaN, NULL and Inf have different meanings. Factors encode categorical values, not plain strings.",
+        "blocks": "Braces group expressions; newlines or semicolons separate complete statements.",
+        "comments": "# line comments. Strings are data, not a general multiline comment mechanism.",
+        "variables": "<- commonly binds names; = is also used in suitable contexts. Lexical scope and environments govern name lookup.",
+        "functions": "function defines closures; arguments are usually lazy promises. A function normally returns its final evaluated expression.",
+        "control_flow": "if expects a single non-missing logical condition; for, while and repeat. Vectorized operations differ from scalar control flow.",
+        "collections": "Atomic vectors, lists, matrices and data frames. Indexing is usually one-based; [ and [[ have distinct subsetting semantics.",
+        "errors": "stop, warning, tryCatch and condition handlers; on.exit can register cleanup within functions.",
+        "modules": "Packages and namespaces; library attaches a package, while pkg::name retrieves an exported member.",
+        "runtime": "R interpreter with garbage collection and native extensions. Vector recycling and missing-value propagation are central semantics."
+      },
+      "example": "total <- function(values) {\n  sum(values)\n}\nprint(total(c(1, 2, 3)))\n",
+      "pitfalls": ["NA comparisons propagate missingness; use is.na instead of equality with NA.", "Vector recycling, one-based indexing and column coercion need explicit mapping.", "Package data structures may have class-specific dispatch and evaluation rules."],
+      "reference_url": "https://cran.r-project.org/doc/manuals/r-release/R-lang.html"
+    },
+    {
+      "id": "bash", "name": "Bash", "category": "Shell", "baseline": "Bash 4 core; not generic POSIX sh",
+      "extensions": [".sh", ".bash"], "aliases": ["shell", "bashscript"],
+      "rules": {
+        "types": "Shell variables primarily hold strings; arithmetic contexts interpret integers. Arrays are a Bash feature, not universally available in POSIX sh.",
+        "blocks": "Keyword pairs such as if/fi and do/done; grouping with braces or parentheses has syntax and environment differences.",
+        "comments": "An unquoted # starts a comment when it begins a shell word in the relevant parsing context.",
+        "variables": "name=value assigns without spaces. Quote expansions such as \"$name\" to avoid unintended word splitting and globbing.",
+        "functions": "name() { commands; }; positional parameters use $1 etc. Local variables require local inside a function.",
+        "control_flow": "if/while test command exit status; zero means success. [[ ... ]] differs from [ ... ]; && and || compose commands.",
+        "collections": "Indexed and associative arrays; quote \"${items[@]}\" to preserve individual elements. Pipelines usually exchange bytes, not typed objects.",
+        "errors": "Exit status, explicit checks and trap. set -e has context-sensitive exceptions and is not general exception handling.",
+        "modules": "source or . executes a file in the current shell; external commands are resolved through PATH and environment.",
+        "runtime": "Bash plus operating-system utilities. Command substitution, redirection and expansion can execute programs or affect files."
+      },
+      "example": "#!/usr/bin/env bash\nvalues=(1 2 3)\nsum=0\nfor value in \"${values[@]}\"; do\n  sum=$((sum + value))\ndone\nprintf '%s\\n' \"$sum\"\n",
+      "pitfalls": ["A .sh extension does not prove Bash; the shebang, launch command and shell determine the dialect.", "Quoting and expansion order are security-critical; never translate by concatenating untrusted shell strings.", "External utilities, exit codes and pipeline subshell behavior vary across platforms."],
+      "reference_url": "https://www.gnu.org/software/bash/manual/bash.html"
+    },
+    {
+      "id": "powershell", "name": "PowerShell", "category": "Shell", "baseline": "PowerShell 7 core; Windows PowerShell 5.1 differs",
+      "extensions": [".ps1", ".psm1", ".psd1"], "aliases": ["pwsh", "ps1"],
+      "rules": {
+        "types": "Dynamic object-oriented shell with .NET types, optional constraints and automatic conversions. $null has special comparison/enumeration behavior.",
+        "blocks": "Braces delimit script blocks; newlines or semicolons separate statements. Expression mode and argument mode parse differently.",
+        "comments": "# line comments and <# block comments #>; help comments have recognized conventions.",
+        "variables": "$name assignment; scope prefixes and environment providers change lookup. Single-quoted strings are literal; double-quoted strings expand.",
+        "functions": "function with param blocks; pipeline output includes uncaptured success-stream values, not just explicit return expressions.",
+        "control_flow": "if, switch, foreach, for, while and pipelines. foreach statement and ForEach-Object command have different execution contexts.",
+        "collections": "Arrays, hashtables and .NET collections. Pipelines normally carry objects; native programs add text/argument conversion boundaries.",
+        "errors": "Terminating and non-terminating errors differ; try/catch handles terminating errors. -ErrorAction Stop can promote many command errors.",
+        "modules": "Import-Module, module manifests and dot-sourcing. Loading scripts/modules can execute code; a .psd1 file is not necessarily an ordinary script.",
+        "runtime": "PowerShell host and .NET; platform-specific cmdlets may not exist on Linux. Native argument passing varies by host/version."
+      },
+      "example": "function Get-Total {\n    param([int[]]$Values)\n    ($Values | Measure-Object -Sum).Sum\n}\nGet-Total -Values @(1, 2, 3)\n",
+      "pitfalls": ["Unintended success-stream output can change a function's effective return value.", "Exit codes from native tools and PowerShell errors require different checks.", "Windows-only modules and 5.1 behavior are not guaranteed on cross-platform PowerShell 7."],
+      "reference_url": "https://learn.microsoft.com/en-us/powershell/scripting/lang-spec/chapter-01"
+    },
+    {
+      "id": "sql", "name": "SQL", "category": "Query", "baseline": "Common relational SQL subset; dialect must be chosen",
+      "extensions": [".sql"], "aliases": ["structured query language", "database"],
+      "rules": {
+        "types": "Column/expression types and coercion rules depend on the database. NULL introduces unknown into three-valued predicate logic.",
+        "blocks": "Statements commonly end in semicolons. Procedural blocks are dialect extensions, not a universal SQL scripting syntax.",
+        "comments": "-- line comments and commonly /* */; nesting and whitespace requirements vary by dialect.",
+        "variables": "Parameters, local variables and identifier quoting are driver/dialect-specific. Bind data values rather than interpolating user text.",
+        "functions": "Scalar, aggregate and window functions exist; user-defined function syntax and availability differ by engine.",
+        "control_flow": "SELECT/FROM/WHERE/GROUP BY/HAVING/ORDER BY describe queries; CASE selects expressions. Procedural loops are not universal.",
+        "collections": "Tables and result sets; duplicates remain unless removed. Row order is not guaranteed without a suitable ORDER BY.",
+        "errors": "Engine/driver errors, transactions and constraints determine failure handling. Atomicity and rollback behavior depend on engine and operation.",
+        "modules": "Schemas, views and migration files organize database logic; connection drivers and permissions are outside SQL text alone.",
+        "runtime": "Database engine/query planner. Collation, timezone, isolation and schema affect results even when query text is unchanged."
+      },
+      "example": "-- Assumes a numbers table with a numeric value column.\nSELECT SUM(value) AS total\nFROM numbers\nWHERE value IS NOT NULL;\n",
+      "pitfalls": ["Use IS NULL, not = NULL, for null checks.", "SQL dialect conversion requires a chosen source and target engine plus schema context.", "A SELECT can still be costly or invoke functions; this library never connects to a database or runs it."],
+      "reference_url": "https://www.postgresql.org/docs/current/sql-syntax.html"
+    },
+    {
+      "id": "dart", "name": "Dart", "category": "Programming", "baseline": "Dart 2.17 core with sound null safety",
+      "extensions": [".dart"], "aliases": ["dartlang", "flutter"],
+      "rules": {
+        "types": "Static typing with inference and sound null safety; dynamic opts out of many static checks. T? is nullable.",
+        "blocks": "Braces group blocks; most statements end in semicolons.",
+        "comments": "//, nestable /* */ and documentation comments ///.",
+        "variables": "var infers a type; final assigns once; const denotes compile-time constants. late postpones initialization checks.",
+        "functions": "Typed functions, closures and => expressions; named parameters use braces and can be required. async functions return Future values.",
+        "control_flow": "if, switch, loops and for-in; await and await-for consume asynchronous results/streams in appropriate contexts.",
+        "collections": "List, Set and Map with collection-if/collection-for and spread syntax. String indexing exposes UTF-16 units.",
+        "errors": "throw, try/on/catch/finally; Future errors need asynchronous handling. Assertions are not a substitute for production validation.",
+        "modules": "import/export and libraries; pubspec.yaml declares package dependencies. Flutter adds a framework, not a separate language.",
+        "runtime": "Dart VM/native or JavaScript target; isolates have separate memory and communicate by messages. Platform libraries differ by target."
+      },
+      "example": "int total(List<int> values) => values.fold(0, (sum, value) => sum + value);\nvoid main() {\n  print(total([1, 2, 3]));\n}\n",
+      "pitfalls": ["Native and JavaScript targets can differ in integer precision and available APIs.", "Isolates are not shared-memory threads.", "Porting Dart does not automatically port Flutter widgets, assets or platform plugins."],
+      "reference_url": "https://dart.dev/language"
+    },
+    {
+      "id": "lua", "name": "Lua", "category": "Programming", "baseline": "Lua 5.4 core; LuaJIT differs",
+      "extensions": [".lua"], "aliases": ["lua54"],
+      "rules": {
+        "types": "Dynamic typing; nil, boolean, number, string, function, userdata, thread and table. Only nil and false are falsey.",
+        "blocks": "Keyword blocks end with end; repeat ends with until. Semicolons are usually optional.",
+        "comments": "-- line comments and long-bracket comments such as --[[ ... ]]; matching equals signs allow different long-bracket delimiters.",
+        "variables": "local limits scope; otherwise names usually resolve through the environment. Assignment can bind several names at once.",
+        "functions": "function definitions, closures and multiple returns. Colon method syntax supplies an implicit self argument.",
+        "control_flow": "if/elseif/else, while, repeat/until, numeric/generic for and break; and/or short-circuit and return operands.",
+        "collections": "Tables implement arrays, maps and objects. Sequence conventions start at 1; holes make length and ipairs behavior important.",
+        "errors": "error raises; pcall/xpcall provide protected calls. Coroutine suspension and errors have host-sensitive integration.",
+        "modules": "require uses package loaders; embedding hosts may replace or remove standard libraries and loading behavior.",
+        "runtime": "Lua VM, often embedded in another application, with garbage collection. Lua 5.4 integers/floats and APIs differ from older Lua/LuaJIT."
+      },
+      "example": "local function total(values)\n  local sum = 0\n  for _, value in ipairs(values) do sum = sum + value end\n  return sum\nend\nprint(total({1, 2, 3}))\n",
+      "pitfalls": ["Zero is truthy; nil removes table entries.", "One-based sequence conventions and holes do not map directly to zero-based arrays.", "Game-engine APIs, LuaJIT and sandboxed hosts may differ from standard Lua 5.4."],
+      "reference_url": "https://www.lua.org/manual/5.4/"
+    },
+    {
+      "id": "html", "name": "HTML", "category": "Markup", "baseline": "HTML core markup; browser behavior matters",
+      "extensions": [".html", ".htm"], "aliases": ["html5", "markup"],
+      "rules": {
+        "types": "Markup describes document structure, not a general-purpose variable/type system. Elements and attributes have defined semantics.",
+        "blocks": "Start/end tags form elements; void elements such as img have no end tag. Nesting/content rules are element-specific.",
+        "comments": "<!-- ... -->; comments cannot be arbitrarily nested and are not a safe container for untrusted text.",
+        "variables": "No general variables in HTML itself. Template placeholders belong to a separate templating language.",
+        "functions": "No general function definitions. Event handlers and script elements involve JavaScript or external host behavior.",
+        "control_flow": "No loops/conditionals in core markup; templates or scripts add them. Navigation/forms have browser-defined behavior.",
+        "collections": "Elements form a document tree (DOM); lists/tables carry structure but are not ordinary program arrays.",
+        "errors": "Browsers recover from many parse errors. A displayed page is not proof of valid, accessible or safe markup.",
+        "modules": "Linked stylesheets, scripts and media are external resources, not language modules equivalent to programming imports.",
+        "runtime": "Browser/parser produces a DOM and rendering/accessibility trees. Untrusted HTML can trigger scripts, requests or active content when rendered."
+      },
+      "example": "<!doctype html>\n<html lang=\"en\">\n<head><meta charset=\"utf-8\"><title>Example</title></head>\n<body><main><h1>Numbers</h1><p>Total: 6</p></main></body>\n</html>\n",
+      "pitfalls": ["HTML-to-Python or HTML-to-JavaScript is not a direct language-equivalent port.", "Escaping must match text, attribute, URL or script context.", "This library displays markup as plain text; it never renders imported HTML."],
+      "reference_url": "https://html.spec.whatwg.org/"
+    },
+    {
+      "id": "css", "name": "CSS", "category": "Stylesheet", "baseline": "Core cascade/selectors/layout; feature support varies",
+      "extensions": [".css"], "aliases": ["stylesheets", "cascading style sheets"],
+      "rules": {
+        "types": "Property values follow property-specific grammars such as lengths, colors and keywords. This is not a general-purpose type system.",
+        "blocks": "Selectors precede braced declaration blocks; property: value declarations use semicolons. At-rules have their own forms.",
+        "comments": "/* ... */ only in plain CSS; // comments belong to some preprocessors, not ordinary CSS.",
+        "variables": "Custom properties use --name and var(--name). They participate in inheritance/cascade; they are not ordinary mutable program variables.",
+        "functions": "Built-in value functions include calc(), var() and color functions. Preprocessor mixins/functions are separate languages.",
+        "control_flow": "Selectors, media/support queries and cascade choose applicable declarations; they are not arbitrary imperative loops.",
+        "collections": "Selectors can match multiple elements; lists of values have property-specific meaning. There are no ordinary program arrays in core CSS.",
+        "errors": "Invalid declarations are often ignored; unsupported features may fall back silently. Inspect computed styles and browser support.",
+        "modules": "Stylesheets and @import resources; CSS Modules is a tooling convention. Sass/Less require separate compilation.",
+        "runtime": "A rendering engine applies cascade, inheritance, layout and painting. Origin, importance, specificity and order influence results."
+      },
+      "example": ":root { --accent: #176b72; }\nbody { margin: 2rem; color: #17232b; }\nh1 { color: var(--accent); }\n",
+      "pitfalls": ["Specificity alone does not determine the cascade winner.", "Browser defaults, viewport, fonts and document structure affect the same stylesheet's output.", "CSS is a presentation language; comparing it with code does not create an executable translation."],
+      "reference_url": "https://www.w3.org/Style/CSS/specs.en.html"
+    }
+  ]
+}

@@ -86,8 +86,8 @@ BACKEND_DEFINITIONS: tuple[BackendDefinition, ...] = (
     BackendDefinition(
         name="7-Zip",
         key="sevenzip",
-        description="Archive utility for formats beyond the built-in ZIP and TAR support.",
-        enables="7z and additional archive extraction and packaging workflows",
+        description="External archive utility. In-app extraction currently supports ZIP and TAR only.",
+        enables="Open .7z files in the external 7-Zip app; not an in-app extraction backend",
         homepage="https://www.7-zip.org/",
         docs="https://7-zip.org/7z.html",
         download="https://www.7-zip.org/download.html",

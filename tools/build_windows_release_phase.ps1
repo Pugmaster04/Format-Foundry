@@ -32,6 +32,16 @@ function Invoke-NativeCommand {
     }
 }
 
+function Get-ArtifactSha256([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([System.BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
 function Get-PackageVersion {
     $extractor = Join-Path $RepoRoot "tools\extract_app_version.py"
     $output = & $python $extractor
@@ -82,6 +92,7 @@ function Build-Binaries {
     Write-Host "[snapshot] Creating pre-build source snapshot..."
     Invoke-HistoricalSnapshot -Reason "pre-build"
 
+    Invoke-NativeCommand -FilePath $python -Arguments @("tools/collect_build_evidence.py", "--notices", "build/third-party-notices") -FailureMessage "Dependency notices failed"
     Write-Host "[build] Building app one-file executable..."
     Invoke-NativeCommand -FilePath $python -Arguments @(
         "-m", "PyInstaller", "--noconfirm", "--clean", "FormatFoundry.spec"
@@ -211,11 +222,14 @@ function Stage-Release {
         throw "Release license is missing: $licensePath"
     }
     Copy-Item -LiteralPath $licensePath -Destination (Join-Path $portableDirectory "LICENSE") -Force
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "dist\FormatFoundry_Updater.exe") -Destination (Join-Path $portableDirectory "FormatFoundry_Updater.exe") -Force
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "THIRD_PARTY_NOTICES.txt") -Destination $portableDirectory -Force
     if (Test-Path -LiteralPath $portableArchivePath -PathType Leaf) {
         Remove-Item -LiteralPath $portableArchivePath -Force
     }
     Compress-Archive -Path (Join-Path $portableDirectory "*") -DestinationPath $portableArchivePath -CompressionLevel Optimal
 
+    Invoke-NativeCommand -FilePath $python -Arguments @("tools/collect_build_evidence.py", "--frozen", "build/native-payload-windows.json") -FailureMessage "Frozen inventory failed"
     Write-Host "[validate] Checking the public install surface..."
     $setupName = "FormatFoundry_Setup_${version}.exe"
     Invoke-NativeCommand -FilePath $python -Arguments @(
@@ -227,10 +241,10 @@ function Stage-Release {
 
     $checksumLines = foreach ($entry in $sourceFiles.GetEnumerator()) {
         $stagedPath = Join-Path $stageDirectory $entry.Key
-        $hash = (Get-FileHash -LiteralPath $stagedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $hash = (Get-ArtifactSha256 $stagedPath)
         "$hash  $($entry.Key)"
     }
-    $portableHash = (Get-FileHash -LiteralPath $portableArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $portableHash = (Get-ArtifactSha256 $portableArchivePath)
     $checksumLines += "$portableHash  $portableArchiveName"
     $platformChecksumPath = Join-Path $stageDirectory "SHA256SUMS-windows"
     [System.IO.File]::WriteAllLines(

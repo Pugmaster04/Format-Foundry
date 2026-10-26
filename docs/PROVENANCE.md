@@ -22,7 +22,8 @@ Tagged releases contain:
 - `PROVENANCE.json`, which binds the release version and source commit to every artifact hash
 - `SHA256SUMS`, for ordinary checksum verification
 - `FormatFoundry_<version>_github-attestation.json`, a GitHub-signed Sigstore bundle
-- Authenticode signatures on public Windows executables
+- MSIX validation evidence for the Windows submission; the Microsoft Store signs
+  and distributes the certified Windows package
 
 Verify any downloaded artifact against the official repository with GitHub CLI:
 
@@ -30,7 +31,7 @@ Verify any downloaded artifact against the official repository with GitHub CLI:
 gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
 ```
 
-On Windows, also inspect the Authenticode publisher:
+For older or independently signed Windows EXE releases, also inspect the Authenticode publisher:
 
 ```powershell
 Get-AuthenticodeSignature .\FormatFoundry_Setup_<version>.exe | Format-List

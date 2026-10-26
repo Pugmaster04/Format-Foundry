@@ -11,6 +11,69 @@ This changelog includes:
 
 ## [Unreleased]
 
+No changes yet.
+
+## [7.1.5-beta] - 2026-10-26 (Beta 7.1.5 Security Update)
+
+This security update is the minimum compatible release. All Alpha versions and every earlier version are incompatible, and their download access is withdrawn. The update is being prepared and is not yet published.
+
+### Security
+- Updated Pillow to 13.0.0, pillow-heif to 1.8.1, and pypdfium2 to 5.14.0; removed the old bundled FFmpeg fallback from future packages.
+- Prevented local aria2 RPC tokens from passing through system HTTP proxies and stopped TypeScript project exports from including sources outside the selected project.
+- Hardened MSIX XML and metadata parsing, archive filename validation, updater manifests, release shell inputs, and persistent source/dependency security checks.
+- Blocked older release downloads in the application, updater, and website; labeled all previous versions incompatible.
+
+### Fixed
+- Pinned appimagetool 1.9.1 and verified architecture-specific SHA-256 values so Linux AppImage packaging no longer depends on changing upstream continuous-build assets.
+- Preserved existing outputs on conversion failure or cancellation and protected existing frame-extraction folders.
+- Fixed settings recovery and migration failures, invalid presets, per-job batch failures, bounded metadata probes, and Windows compiler-child cleanup.
+- Fixed Linux quality/type-check failures and kept audit evidence available after earlier quality-check failures.
+
+### Validation
+- Full audit before this version/policy change: 228 discovered unit tests on each platform (218 passed, 10 skipped), 8 real-backend tests per platform, 900 generated boundary cases, and 19 headless GUI cases.
+- Current release-label and download-policy checks are recorded separately under build/security-release-7.1.5.
+
+## [0.7.1-beta] - 2026-09-29 (Beta 0.7.1) [Incompatible]
+
+This is the next local Beta milestone. Its source, installer, and package versions are aligned; it is not yet a published release. The `v1.8.18` transport tag remains reserved for compatibility with installed Alpha updaters.
+
+### Windows MSIX
+- Added a clean-clone MSIX build with a combined one-folder app and optional-tools updater, launcher logos, bundled notices, SHA-256 block-map verification and extracted frozen startup probes.
+- Added a separate unsigned Windows 11 development identity and a Store submission mode requiring exact Partner Center product identifiers. The app stays Beta 0.7.1; the default numeric MSIX version is 1.7.1.0.
+- Packaged app/update actions use Microsoft Store, and uninstall opens Windows Installed apps instead of selecting a legacy EXE uninstaller. Private package settings copy missing EXE settings without altering originals.
+- CI builds MSIX candidates and configured Store submissions without signing credentials. Coordinated release publication waits for installed MSIX validation and Store availability; GitHub distributes Linux packages and verification evidence.
+- Website Windows buttons switch to the Store only after published product metadata is configured. The Store product is currently unreserved and unpublished.
+
+### Code Translation
+- Added the first executable translation path: single-file TypeScript `.ts`/`.mts`/`.cts` to JavaScript `.js`/`.mjs`/`.cjs` through the official TypeScript compiler.
+- Added bounded project compilation for local TypeScript imports and `tsconfig.json` settings, saving generated JavaScript as a non-overwriting ZIP while keeping project sources unchanged.
+- Added compiler detection, a clear setup route, strict diagnostics, cancellation/timeout limits, generated-code preview and staged non-overwriting output.
+- Added a pinned developer test compiler and cross-platform regression tests. Reference browsing remains available without it.
+
+### Offline Code Language Library
+- Added Development / Code Languages with 21 bundled profiles, searchable core rules, original examples, official-documentation links and language-to-language reference comparisons.
+- Distinguished programming, shell, query, markup and stylesheet languages; documented baselines and porting pitfalls rather than claiming universal translation.
+- Added bounded UTF-8 source inspection without execution, uploads or source-content logging. Python files receive AST parsing only; other languages are explicitly reference-only.
+- Bundled the versioned JSON library in Windows/Linux application builds and portable packaging; no new dependencies, AI service or API key required.
+
+### Adobe Interchange Compatibility
+- Added bounded PDF and PDF-compatible Illustrator AI import using PDFium: all-page TIFF or first-page PNG/JPEG, without requiring Adobe software or enabling PostScript execution.
+- Added Photoshop PSD/PSB flattened-composite import, with ImageMagick required for PSB and advanced PSD variants. Editable layers and native Adobe project export are not supported.
+- Preserved all TIFF pages during PDF export, added staged output commits, explicit format limitations, and malformed/canceled/oversized-input regression tests.
+- Added the PDF renderer to application build requirements and frozen imports; dependency notice collection now includes notices within LICENSES directories.
+
+### September 2026 Audit Remediation
+- Prevented batch rename collisions, LibreOffice output collisions, and failed updater downloads from overwriting or deleting preserved files.
+- Added authenticated aria2 RPC, validated responses, non-blocking pause/resume, and deliberate completion/shutdown of owned download processes.
+- Isolated and bounded UI queue callbacks; retained failed and canceled inputs for retry; corrected deferred error callbacks.
+- Added container-aware WebM output, capability-based document routing, cancellable checksum/archive processing, strict report parsing, and staged extraction.
+- Kept common primary actions and Stop visible outside scrolling modules; expanded responsive setup/settings/updater/theme tests.
+- Hardened update redirects, metadata/download limits, platform selection, compatibility enforcement, and Windows elevated installer handoff.
+- Corrected Alpha-to-Beta Debian ordering with epoch 1; pinned Ubuntu 24.04 builds, enabled PR package builds, and made Windows CI native-command failures fatal.
+- Bundled the updater in the portable ZIP, collected dependency notices/native inventories and per-platform environment SBOMs, and retained signing, licensing, and physical-Ubuntu release gates.
+- Updated five pinned dependencies; included main app/updater in lint coverage; corrected website offline behavior and unpublished-Beta download claims.
+- See `docs/AUDIT_REMEDIATION_2026-09-26.md` for evidence, limitations, and outstanding release requirements.
+
 ### Added
 - Added an optional, disabled-by-default Idea Bank workspace with local atomic persistence, search, status filtering, tags, CSV export, and malformed-data protection.
 - Added a dedicated Add-ons settings page and runtime menu toggle; disabling Idea Bank preserves its saved data.
@@ -48,7 +111,7 @@ This changelog includes:
 
 ## [0.5.0-beta] - 2026-07-17 (Beta 0.5) [Incompatible]
 
-This is the first Beta release. Every release listed below it is now classified as Alpha.
+This was the first local Beta milestone; it was not published. The public releases listed below it are classified as Alpha.
 
 ### Security
 - ZIP and TAR extraction now rejects path traversal, symbolic links, hard links, device files, FIFOs, oversized member sets, and archives whose declared expansion exceeds available disk space.

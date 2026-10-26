@@ -5,13 +5,15 @@ Check the installed versions and their licenses on the system where you build or
 The major components intended by this package include:
 - Pillow
 - pillow-heif
-- imageio-ffmpeg / FFmpeg
+- pypdfium2 / PDFium (PDF raster import; includes its own native dependency notices)
 - PyYAML
+- defusedxml (MSIX validation)
 - torrentool
 - windnd (Windows only)
 - PyInstaller
 
 Optional external tools the app can call if installed:
+- FFmpeg / FFprobe
 - ImageMagick
 - Pandoc
 - LibreOffice
@@ -20,3 +22,17 @@ Optional external tools the app can call if installed:
 - 7-Zip
 
 Before redistributing a built EXE, review the licenses and redistribution terms for the exact versions you bundle or rely on.
+
+Builds collect the installed requirements' license/notice files in third-party-notices
+and an accompanying dependencies.json. This includes transitive build requirements;
+the separate native-payload inventory identifies native files in the frozen bundles.
+The environment CycloneDX SBOM is build-environment evidence, not an assertion that
+every listed development tool is shipped to end users.
+
+Current builds explicitly exclude imageio-ffmpeg and its outdated native FFmpeg
+fallback. FFmpeg is supplied through a separate system installation managed by
+the user or Backend Center. Previously built artifacts may still contain the old
+binary and must be rebuilt before distribution. The exact remaining native builds,
+corresponding-source distribution arrangements, and consumer license terms must
+still be reviewed before publication; collected notices do not satisfy every
+redistribution obligation.

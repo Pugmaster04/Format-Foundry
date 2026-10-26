@@ -43,7 +43,7 @@ class Aria2SupportTests(unittest.TestCase):
                 return False
 
             def read(self) -> bytes:
-                return b'{\"result\": [\"gid-1\"]}'
+                return b'{"jsonrpc": "2.0", "id": "uch", "result": ["gid-1"]}'
 
         opener = mock.Mock(return_value=FakeResponse())
 

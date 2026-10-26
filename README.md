@@ -4,6 +4,7 @@ Format Foundry is a cross-platform desktop toolkit for conversion, compression, 
 
 Development version: **Beta 7.1.5 Security Update** (package version `7.1.5-beta`), not yet published.
 **All Alpha releases and every version before Beta 7.1.5 Security Update are incompatible. Older release downloads are withdrawn.**
+The current release page, not this development branch, is authoritative for available downloads.
 See the [security-update download status](https://pugmaster04.github.io/Format-Foundry/downloads.html#security-update-required) before installing.
 
 Website:
@@ -28,16 +29,17 @@ The saved appearance lives in `docs/theme.json` and its generated `docs/theme.cs
 [![Windows installer](https://img.shields.io/badge/Windows-Download%20Installer-19786B?style=for-the-badge&logo=windows&logoColor=white)](https://pugmaster04.github.io/Format-Foundry/downloads.html#windows-download)
 [![Ubuntu or Debian package](https://img.shields.io/badge/Ubuntu%20%2F%20Debian-Download%20.deb-19786B?style=for-the-badge&logo=ubuntu&logoColor=white)](https://pugmaster04.github.io/Format-Foundry/downloads.html#linux-download)
 
-The download page resolves the exact filenames from GitHub's current release assets and falls back to the release page instead of constructing a 404 URL. The [current release page](https://github.com/Pugmaster04/Format-Foundry/releases/latest) remains the complete artifact list.
+The download page enables only compatible security-update assets from GitHub. It blocks older releases and stays unavailable when a compatible release cannot be verified. The [current release page](https://github.com/Pugmaster04/Format-Foundry/releases/latest) remains the complete artifact list.
 
-Tagged releases include `SHA256SUMS`. After downloading it beside an installer, Linux users can verify matching files with:
+Compatible coordinated releases will include `SHA256SUMS`. Do not install older builds from saved copies or external mirrors.
+For releases that supply it, download it beside the installer and verify matching files with:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-Official builds also publish a source-and-artifact provenance manifest plus a GitHub-signed
-attestation. Verify any downloaded artifact with:
+The new release pipeline also produces a source-and-artifact provenance manifest and a GitHub-signed
+attestation. Only when that evidence is attached to the selected release, verify the artifact with:
 
 ```bash
 gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
@@ -45,21 +47,36 @@ gh attestation verify <artifact-path> -R Pugmaster04/Format-Foundry
 
 ### Windows
 
-1. Download `FormatFoundry_Setup_0.5.0-beta.exe`.
+**Beta Windows distribution is moving to Microsoft Store MSIX.** Store certification
+provides the package signature, installation, app updates and Windows uninstall support.
+The Store product has not been reserved or published yet. Older download buttons are disabled. The Store button will activate only for an approved compatible release.
+See [Windows MSIX build and submission](docs/WINDOWS_MSIX.md) for the developer path.
+
+After a compatible security-update installer is published:
+
+1. Download the versioned `FormatFoundry_Setup_*.exe` from the current release's asset list.
 2. Run the installer.
 3. Let the updater review optional feature tools, or clear that setup option to launch Format Foundry immediately.
 
 The installer is self-contained. A normal Windows 10/11 computer does not need Codex, Python, the source repository, or any backend before installation. Setup scans the registered product identity and the standard install folder for older Format Foundry and legacy-name builds, then upgrades those files in place while preserving settings and output folders.
 
-Portable alternatives are published with the same version:
-- `FormatFoundry_0.5.0-beta.exe` is the convenient single-file app.
-- `FormatFoundry_Portable_0.5.0-beta_windows_x86_64.zip` is the extracted one-folder build for faster startup without installation.
+Beta Windows developer artifacts (CI/local builds, not public consumer downloads):
+- `FormatFoundry_7.1.5-beta_x64_store.msix` is the unsigned Partner Center submission with the reserved Store identity.
+- `FormatFoundry_7.1.5-beta_x64_development.msix` is an isolated Windows 11 test package.
+- `FormatFoundry_Setup_7.1.5-beta.exe`, `FormatFoundry_7.1.5-beta.exe`, and
+  `FormatFoundry_Portable_7.1.5-beta_windows_x86_64.zip` remain legacy installer/portable test builds.
+
+Store builds keep **Beta 7.1.5 Security Update** as the product label; the numeric MSIX version is
+`8.1.5.0`. This mapping satisfies the Store's positive-major/four-part version rules.
 
 Uninstall:
 - `File -> Uninstall...`
 - `Settings -> Uninstall App`
 - `Start -> Uninstall Format Foundry`
 - Windows `Apps & Features`
+
+The packaged Beta's in-app uninstall action opens Windows Installed apps. Store
+uninstall removes private package settings; output files and old EXE settings remain.
 
 ### Ubuntu 24.04 / Debian
 
@@ -68,7 +85,7 @@ Use the packaged app. Normal Linux installs do not require the source folder aft
 Recommended `.deb` install:
 
 ```bash
-sudo apt install ./format-foundry_0.5.0-beta_amd64.deb
+sudo apt install ./format-foundry_7.1.5-beta_amd64.deb
 ```
 
 Launch:
@@ -84,9 +101,15 @@ Packaging note:
 Portable AppImage fallback:
 
 ```bash
-chmod +x FormatFoundry_linux_0.5.0-beta_x86_64.AppImage
-./FormatFoundry_linux_0.5.0-beta_x86_64.AppImage
+chmod +x FormatFoundry_linux_7.1.5-beta_x86_64.AppImage
+./FormatFoundry_linux_7.1.5-beta_x86_64.AppImage
 ```
+
+Use the exact version downloaded if it differs from these examples. Planned Beta files are
+`format-foundry_7.1.5-beta_amd64.deb` and `FormatFoundry_linux_7.1.5-beta_x86_64.AppImage`.
+Beta Debian metadata uses epoch `1:` so upgrading from Alpha is ordered correctly by APT;
+the epoch is not part of the filename. Ubuntu 24.04 x86_64 is the build baseline;
+other distributions need matching runtime libraries and are not promised compatible.
 
 Uninstall:
 - `File -> Uninstall...`
@@ -107,6 +130,7 @@ Uninstall:
 - Checksums / Integrity
 - Subtitles
 - Aria2 downloads and torrents
+- Code Languages: offline language rules, source inspection, and TypeScript-to-JavaScript file or local-import project compilation
 - Presets / Batch Jobs
 
 ## Optional Backends
@@ -116,7 +140,7 @@ The app launches without any separately installed backend. Features tied to a mi
 - FFmpeg + FFprobe
 - Pandoc
 - LibreOffice
-- 7-Zip
+- 7-Zip (external archive tool; in-app extraction currently supports ZIP and TAR, not `.7z`)
 - ImageMagick
 - Aria2
 
@@ -128,7 +152,17 @@ Use `Settings -> Backend Center` or launch `Format Foundry Updater --backends` t
 - Open official project pages and documentation
 - Copy a terminal-ready install command when direct installation is unavailable
 
-Backend installers are intentionally not bundled into the normal app installer. Keeping them separate avoids stale third-party binaries, unexpected installer size, and mixed license/update responsibilities. A future offline backend pack should only be published with per-file licenses, checksums, provenance, and an independent update policy.
+FFmpeg and the other command-line backends are installed through Backend Center. Current builds
+exclude the old FFmpeg executable supplied by the `imageio-ffmpeg` wheel; it is no longer a bundled
+fallback. Media workflows require a detected FFmpeg installation.
+The build collects third-party notices and a dependency inventory; these are not a substitute for
+the corresponding-source and consumer-license review required before publishing Beta.
+
+The Code Languages translator separately requires Node.js and the official TypeScript compiler.
+Its **Compiler Setup** button opens installation guidance; the rest of the language library works
+offline without either tool. **Compile Project...** uses a project's `tsconfig.json` and writes a ZIP
+of generated files without changing source files. See the [user guide](docs/USER_GUIDE.md) for its
+bounded input/output limits and unsupported external-package or project-reference configurations.
 
 ## Optional Add-ons
 
@@ -157,10 +191,10 @@ system, memory, home-disk space, and security-provider status.
 - `File -> Export Bug Report...` exports a JSON snapshot with OS details, backend versions, security settings, and recent log lines.
 - Update checks can be restricted to trusted hosts in `Settings -> Security`.
 - Update manifests can now declare compatibility metadata so the app/updater can avoid surfacing releases that are not targeted to the current OS or architecture.
-- Beta and later tagged releases fail closed unless all Windows executables have valid, timestamped Authenticode signatures. Azure Artifact Signing with GitHub OIDC is the recommended public-release provider; a protected PFX remains available as a compatible fallback. The release also publishes `SHA256SUMS` and a Windows signature receipt.
-- The portable ZIP contains the same signed application executable and is covered by checksums, provenance, performance evidence, and the GitHub release attestation.
+- Beta Windows releases use Microsoft Store MSIX. The Store signs packages after certification; coordinated publication requires installed-package validation and the published Store version. No publisher signing service is required for this channel.
+- MSIX submission/development packages and legacy EXE/portable test builds remain CI artifacts. GitHub consumer releases include Linux installers, `SHA256SUMS`, provenance and Windows MSIX validation evidence.
 - Every executable embeds the canonical Format Foundry provenance ID, and tagged releases bind exact artifact hashes to the source commit with `PROVENANCE.json` and a GitHub-signed attestation. Run an executable with `--provenance` to inspect its identity.
-- Beta 0.5 uses Git tag `v1.8.18` as a compatibility bridge for installed Alpha `1.8.17` updaters; the product label and every package filename remain `Beta 0.5` / `0.5.0-beta`.
+- The first published Beta is planned to use Git tag `v1.8.18` as a compatibility bridge for installed Alpha `1.8.17` updaters; this development version's product label and package filenames are `Beta 7.1.5 Security Update` / `7.1.5-beta`. No Beta tag or assets have been published yet.
 
 ## OpenAI Build Week Collaboration
 
@@ -178,6 +212,7 @@ that truthful contribution, its evidence, and the Codex `/feedback` Session ID b
 
 - Full guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 - Windows release signing: [docs/WINDOWS_SIGNING.md](docs/WINDOWS_SIGNING.md)
+- Windows MSIX / Store: [docs/WINDOWS_MSIX.md](docs/WINDOWS_MSIX.md)
 - Release and ownership verification: [docs/PROVENANCE.md](docs/PROVENANCE.md)
 - OpenAI Build Week audit trail: [hackathon-audit/HACKATHON_WEEK_AUDIT.md](hackathon-audit/HACKATHON_WEEK_AUDIT.md)
 - Optimization audit and recommendations: [docs/OPTIMIZATION_AUDIT.md](docs/OPTIMIZATION_AUDIT.md)
@@ -207,10 +242,4 @@ chmod +x build_linux.sh
 
 `build_linux.sh` is for contributor/source builds. On Ubuntu/Debian it bootstraps a repo-local `.venv` automatically instead of expecting a pre-activated environment.
 The script verifies its downloaded AppImage packaging tool before executing it.
-
-
-
-
-
-
 

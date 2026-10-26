@@ -24,6 +24,17 @@ SURFACE_CASES = (
     (1024, 768, 100, "pc-health"),
     (1280, 720, 100, "pc-health"),
     (1280, 720, 150, "pc-health"),
+    (1024, 768, 100, "settings"),
+    (1280, 720, 150, "settings"),
+    (1024, 768, 100, "first-run"),
+    (1280, 720, 150, "first-run"),
+    (1280, 720, 150, "images"),
+    (1280, 720, 150, "torrents"),
+    (1024, 768, 100, "code-languages"),
+    (1280, 720, 150, "code-languages"),
+    (1280, 720, 150, "dark"),
+    (1280, 720, 150, "contrast"),
+    (1024, 768, 100, "updater"),
 )
 
 
@@ -44,7 +55,31 @@ def descendants(widget: Any) -> list[Any]:
     return found
 
 
-def child_probe(width: int, height: int, scale: int, surface: str, output: Path, result_path: Path) -> int:
+def _prevent_activation(root: Any) -> None:
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    user32.GetParent.argtypes = [wintypes.HWND]
+    user32.GetParent.restype = wintypes.HWND
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowLongW.restype = ctypes.c_long
+    user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+    user32.SetWindowLongW.restype = ctypes.c_long
+    user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+    user32.SetWindowPos.restype = wintypes.BOOL
+    hwnd = user32.GetParent(root.winfo_id()) or root.winfo_id()
+    style = user32.GetWindowLongW(hwnd, -20)
+    user32.SetWindowLongW(hwnd, -20, style | 0x08000000)  # WS_EX_NOACTIVATE
+    user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x37)  # Preserve bounds and z-order while applying the style.
+
+
+def child_probe(
+    width: int, height: int, scale: int, surface: str, output: Path, result_path: Path,
+    origin_x: int = 0, origin_y: int = 0, no_activate: bool = False,
+) -> int:
     import tkinter as tk
 
     from PIL import ImageGrab
@@ -59,8 +94,8 @@ def child_probe(width: int, height: int, scale: int, surface: str, output: Path,
         appdata / "settings.json",
         {
             "first_run_done": True,
-            "dark_mode": False,
-            "high_contrast_mode": False,
+            "dark_mode": surface == "dark",
+            "high_contrast_mode": surface == "contrast",
             "fullscreen": False,
             "borderless_maximized": False,
             "show_overview_panel": False,
@@ -80,17 +115,22 @@ def child_probe(width: int, height: int, scale: int, surface: str, output: Path,
     )
 
     root = tk.Tk()
+    root.withdraw()
     failures: list[str] = []
     try:
         app = SuiteApp(root)
-        app.select_tab("PC Health" if surface == "pc-health" else "Convert")
-        root.geometry(f"{width}x{height}+0+0")
+        app.select_tab({"pc-health": "PC Health", "images": "Images", "torrents": "Torrents", "code-languages": "Code Languages"}.get(surface, "Convert"))
+        root.geometry(f"{width}x{height}+{origin_x}+{origin_y}")
+        root.update_idletasks()
+        if no_activate:
+            _prevent_activation(root)
         root.deiconify()
-        root.lift()
-        try:
-            root.attributes("-topmost", True)
-        except tk.TclError:
-            pass
+        if not no_activate:
+            root.lift()
+            try:
+                root.attributes("-topmost", True)
+            except tk.TclError:
+                pass
         root.update_idletasks()
         root.update()
         if surface == "pc-health" and app.pc_health_tab is not None:
@@ -106,6 +146,10 @@ def child_probe(width: int, height: int, scale: int, surface: str, output: Path,
             failures.append(f"window expanded beyond requested viewport: {actual_width}x{actual_height}")
         root_x, root_y, _, _ = widget_bounds(root)
         critical_widgets = [app.top_notebook]
+        for widget in descendants(root):
+            footer = getattr(widget, "module_action_footer", None)
+            if footer is not None and footer.winfo_ismapped():
+                critical_widgets.append(footer)
         for widget in descendants(root):
             try:
                 style_name = str(widget.cget("style"))
@@ -147,12 +191,97 @@ def child_probe(width: int, height: int, scale: int, surface: str, output: Path,
                 root.update_idletasks()
                 root.update()
 
+        if surface == "code-languages":
+            language_tab: Any = app.tabs.get("Code Languages")
+            if language_tab is None:
+                failures.append("Code Languages tab was not available")
+            else:
+                canvas = language_tab.module_scroll_canvas
+                for control_name in ("translate_button", "project_button"):
+                    control = getattr(language_tab, control_name, None)
+                    if control is None or not control.winfo_ismapped() or control.winfo_width() <= 1:
+                        failures.append(f"Code Languages control is not reachable: {control_name}")
+                        continue
+                    for _ in range(40):
+                        cx, cy, cw, ch = widget_bounds(canvas)
+                        bx, by, bw, bh = widget_bounds(control)
+                        if bx >= cx and by >= cy and bx + bw <= cx + cw and by + bh <= cy + ch:
+                            break
+                        previous = canvas.yview()
+                        canvas.yview_scroll(1, "units")
+                        root.update()
+                        if canvas.yview() == previous:
+                            failures.append(f"Code Languages action cannot be scrolled into view: {control_name}")
+                            break
+                    else:
+                        failures.append(f"Code Languages action remained outside the viewport: {control_name}")
+
+        captured_root: Any = root
+        dialog = None
+
+        def check_dialog(window: Any, required_text: str) -> None:
+            window.geometry(f"{min(width, 800)}x{min(height, 600)}+{origin_x}+{origin_y}")
+            window.update()
+            buttons = []
+            for child in descendants(window):
+                try:
+                    if child.cget("text") == required_text:
+                        buttons.append(child)
+                except tk.TclError:
+                    pass
+            if not buttons:
+                failures.append(f"Missing dialog action: {required_text}")
+            for child in buttons:
+                x, y, w, h = widget_bounds(child)
+                rx, ry, rw, rh = widget_bounds(window)
+                if not child.winfo_ismapped() or x < rx or y < ry or x + w > rx + rw or y + h > ry + rh:
+                    failures.append(f"Dialog action is clipped: {required_text}")
+
+        if surface == "settings":
+            app._open_settings_dialog()
+            dialog = next(child for child in root.winfo_children() if isinstance(child, tk.Toplevel))
+            check_dialog(dialog, "Save Settings")
+            captured_root = dialog
+        elif surface == "first-run":
+            app.settings["first_run_done"] = False
+            def inspect_wizard() -> None:
+                wizard = next(child for child in root.winfo_children() if isinstance(child, tk.Toplevel))
+                check_dialog(wizard, "Save and Continue")
+                for child in descendants(wizard):
+                    try:
+                        if child.cget("text") == "Save and Continue":
+                            child.invoke()
+                            return
+                    except tk.TclError:
+                        pass
+                wizard.destroy()
+            root.after(200, inspect_wizard)
+            app._run_first_run_setup_wizard()
+            if not app.settings["first_run_done"]:
+                failures.append("First-run acceptance did not save the setup choices")
+        elif surface == "updater":
+            from suite_updater import UpdaterApp
+            dialog = tk.Toplevel(root)
+            updater = UpdaterApp(dialog)
+            dialog.geometry(f"{width}x{height}+0+0")
+            dialog.update()
+            # Exercise the real scroll range, not just the root window bounds.
+            if updater._body_canvas.yview()[1] < 1:
+                updater._body_canvas.yview_moveto(1)
+                dialog.update()
+                if updater._body_canvas.yview()[0] <= 0:
+                    failures.append("Updater content did not scroll")
+            captured_root = dialog
+
         output.parent.mkdir(parents=True, exist_ok=True)
+        cx, cy, cw, ch = widget_bounds(captured_root)
         image = ImageGrab.grab(
-            bbox=(root.winfo_rootx(), root.winfo_rooty(), root.winfo_rootx() + actual_width, root.winfo_rooty() + actual_height),
+            bbox=(cx, cy, cx + cw, cy + ch),
             all_screens=True,
         )
         image.save(output, format="PNG")
+        if dialog is not None:
+            dialog.destroy()
         try:
             root.attributes("-topmost", False)
         except tk.TclError:
@@ -161,6 +290,7 @@ def child_probe(width: int, height: int, scale: int, surface: str, output: Path,
             "requested": {"width": width, "height": height, "scale_percent": scale},
             "surface": surface,
             "actual": {"width": actual_width, "height": actual_height},
+            "origin": {"x": root_x, "y": root_y},
             "screenshot": output.name,
             "failures": failures,
         }
@@ -170,13 +300,20 @@ def child_probe(width: int, height: int, scale: int, surface: str, output: Path,
         root.destroy()
 
 
-def parent_probe(output_dir: Path) -> int:
+def parent_probe(
+    output_dir: Path, origin_x: int = 0, origin_y: int = 0, no_activate: bool = False,
+    only_surface: str | None = None,
+) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     failures: list[str] = []
     with tempfile.TemporaryDirectory(prefix="format-foundry-ui-probe-") as temporary_directory:
         temp_root = Path(temporary_directory)
         cases = tuple((*viewport, "convert") for viewport in VIEWPORTS) + SURFACE_CASES
+        if only_surface:
+            cases = tuple(case for case in cases if case[3] == only_surface)
+            if not cases:
+                raise ValueError(f"No layout cases configured for {only_surface}")
         for width, height, scale, surface in cases:
             case_name = f"{surface}-{width}x{height}-scale{scale}"
             screenshot = output_dir / f"{case_name}.png"
@@ -199,6 +336,11 @@ def parent_probe(output_dir: Path) -> int:
                     str(scale),
                     "--surface",
                     surface,
+                    "--origin-x",
+                    str(origin_x),
+                    "--origin-y",
+                    str(origin_y),
+                    *(("--no-activate",) if no_activate else ()),
                     "--output",
                     str(screenshot),
                     "--result",
@@ -235,15 +377,19 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--scale", type=int, default=100)
-    parser.add_argument("--surface", choices=("convert", "pc-health"), default="convert")
+    parser.add_argument("--surface", choices=("convert", "pc-health", "settings", "first-run", "images", "torrents", "code-languages", "dark", "contrast", "updater"), default="convert")
+    parser.add_argument("--only-surface", choices=("convert", "pc-health", "settings", "first-run", "images", "torrents", "code-languages", "dark", "contrast", "updater"))
+    parser.add_argument("--origin-x", type=int, default=0)
+    parser.add_argument("--origin-y", type=int, default=0)
+    parser.add_argument("--no-activate", action="store_true")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--result", type=Path)
     args = parser.parse_args()
     if args.child:
         if args.output is None or args.result is None:
             parser.error("--output and --result are required in child mode")
-        return child_probe(args.width, args.height, args.scale, args.surface, args.output, args.result)
-    return parent_probe(args.output_dir)
+        return child_probe(args.width, args.height, args.scale, args.surface, args.output, args.result, args.origin_x, args.origin_y, args.no_activate)
+    return parent_probe(args.output_dir, args.origin_x, args.origin_y, args.no_activate, args.only_surface)
 
 
 if __name__ == "__main__":

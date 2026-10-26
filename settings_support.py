@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,12 +33,22 @@ def _recovery_copy(path: Path, reason: str) -> Path | None:
     if not path.is_file():
         return None
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    recovery_path = path.with_name(f"{path.stem}.{reason}.{stamp}{path.suffix}")
+    recovery_path = None
     try:
+        descriptor, name = tempfile.mkstemp(prefix=f"{path.stem}.{reason}.{stamp}.", suffix=path.suffix, dir=path.parent)
+        os.close(descriptor)
+        recovery_path = Path(name)
         shutil.copy2(path, recovery_path)
     except OSError:
+        if recovery_path is not None:
+            with suppress(OSError):
+                recovery_path.unlink(missing_ok=True)
         return None
     return recovery_path
+
+
+def _reject_nonfinite_json(value: str) -> None:
+    raise ValueError(f"Non-finite JSON number is not a valid setting: {value}")
 
 
 def migrate_v0_to_v1(data: dict[str, Any]) -> dict[str, Any]:
@@ -68,7 +81,7 @@ def load_settings_document(
         return SettingsLoadResult(merged_defaults)
 
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"), parse_constant=_reject_nonfinite_json)
         if not isinstance(payload, dict):
             raise ValueError("settings root is not a JSON object")
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
@@ -76,7 +89,7 @@ def load_settings_document(
         notice = f"Settings were reset because {path.name} could not be read: {exc}."
         if recovery_path:
             notice += f" A recovery copy was preserved as {recovery_path.name}."
-        return SettingsLoadResult(merged_defaults, notice=notice, recovery_path=recovery_path)
+        return SettingsLoadResult(merged_defaults, notice=notice, recovery_path=recovery_path, read_only=recovery_path is None)
 
     raw_version = payload.get(SETTINGS_SCHEMA_KEY, 0)
     try:
@@ -100,7 +113,7 @@ def load_settings_document(
         if migration is None:
             recovery_path = _recovery_copy(path, "unmigrated")
             notice = f"No settings migration exists from schema {source_version}; defaults were restored."
-            return SettingsLoadResult(merged_defaults, notice=notice, recovery_path=recovery_path)
+            return SettingsLoadResult(merged_defaults, notice=notice, recovery_path=recovery_path, read_only=recovery_path is None)
         payload = migration(payload)
         source_version += 1
         migrated = True
@@ -109,7 +122,13 @@ def load_settings_document(
     merged.update(payload)
     merged[SETTINGS_SCHEMA_KEY] = schema_version
     if migrated:
-        atomic_write_json(path, merged)
+        try:
+            atomic_write_json(path, merged)
+        except OSError as exc:
+            return SettingsLoadResult(
+                merged, notice=f"Settings were migrated in memory but could not be saved: {exc}.",
+                migrated=True, read_only=True,
+            )
     return SettingsLoadResult(merged, migrated=migrated)
 
 

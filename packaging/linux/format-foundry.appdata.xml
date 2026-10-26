@@ -37,8 +37,28 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="7.1.5-beta" type="development" date="2026-10-26">
+      <description>
+        <p>Beta 7.1.5 Security Update is the minimum compatible release.</p>
+        <ul>
+          <li>Updated vulnerable image dependencies and hardened local RPC, project exports, archives, manifests, and MSIX validation.</li>
+          <li>Preserved conversion outputs and settings on failure, improved batch recovery, and blocked older incompatible downloads.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.7.1-beta" type="development" date="2026-09-29">
+      <description>
+        <p>Incompatible: superseded by Beta 7.1.5 Security Update. Downloads are withdrawn.</p>
+        <ul>
+          <li>Added an offline code-language reference and bounded TypeScript-to-JavaScript compilation for files and local-import projects.</li>
+          <li>Expanded PDF, TIFF, and Adobe interchange support with staged, non-overwriting output.</li>
+          <li>Hardened file operations, downloads, updater security, responsive controls, and Linux packaging.</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.5.0-beta" type="development" date="2026-07-18">
       <description>
+        <p>Incompatible: superseded by Beta 7.1.5 Security Update. Downloads are withdrawn.</p>
         <ul>
           <li>Introduced the Beta 0.5 lifecycle and classified all earlier builds as Alpha.</li>
           <li>Added an updater-based backend center with feature-impact guidance, official links, and package-manager installation.</li>
@@ -50,6 +70,7 @@
     </release>
     <release version="0.5.0-alpha" type="development" date="2026-07-05">
       <description>
+        <p>Incompatible: superseded by Beta 7.1.5 Security Update. Downloads are withdrawn.</p>
         <p>
           Final Alpha line, covering the historical build identifiers through 1.8.17.
           Detailed Alpha history remains available in the project changelog.
@@ -63,7 +84,6 @@
     <category>Office</category>
   </categories>
 </component>
-
 
 
 

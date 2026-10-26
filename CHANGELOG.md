@@ -24,6 +24,7 @@ This security update is the minimum compatible release. All Alpha versions and e
 - Blocked older release downloads in the application, updater, and website; labeled all previous versions incompatible.
 
 ### Fixed
+- Pinned appimagetool 1.9.1 and verified architecture-specific SHA-256 values so Linux AppImage packaging no longer depends on changing upstream continuous-build assets.
 - Preserved existing outputs on conversion failure or cancellation and protected existing frame-extraction folders.
 - Fixed settings recovery and migration failures, invalid presets, per-job batch failures, bounded metadata probes, and Windows compiler-child cleanup.
 - Fixed Linux quality/type-check failures and kept audit evidence available after earlier quality-check failures.

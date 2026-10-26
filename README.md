@@ -5,6 +5,7 @@ Format Foundry is a cross-platform desktop toolkit for conversion, compression, 
 Development version: **Beta 7.1.5 Security Update** (package version `7.1.5-beta`), not yet published.
 **All Alpha releases and every version before Beta 7.1.5 Security Update are incompatible. Older release downloads are withdrawn.**
 The current release page, not this development branch, is authoritative for available downloads.
+See the [security-update download status](https://pugmaster04.github.io/Format-Foundry/downloads.html#security-update-required) before installing.
 
 Website:
 - Overview: [index.html](https://pugmaster04.github.io/Format-Foundry/index.html)

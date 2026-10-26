@@ -1,5 +1,7 @@
 # Changelog
 
+**Minimum compatible release: Beta 7.1.5 Security Update. All Alpha releases and every version before this security update are incompatible; their application downloads are withdrawn.**
+
 All notable changes to this project are documented in this file.
 
 This changelog includes:
